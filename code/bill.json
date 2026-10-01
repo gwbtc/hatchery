@@ -1,1 +1,20 @@
-{"counter.counter": "/counter/app", "weather.weather": "/weather/app", "routes.routes": "/routes/app", "places.places": "/places/app"}
+{
+ "counter.counter": "/counter/app",
+ "weather.weather": "/weather/app",
+ "routes.routes": "/routes/app",
+ "places.places": "/places/app",
+ "calendar.calendar": "/calendar/app",
+ "feeds.feeds": "/feeds/app",
+ "pad.pad": "/pad/app",
+ "test.guestbook": "/guestbook/app",
+ "test.web-test": "/web-test/app",
+ "geocode.geocode": "/geocode/app",
+ "ghostprompter": "/ghostprompter/app",
+ "nostr": "/nostr/app",
+ "itinerary": "/itinerary/app",
+ "s3": "/s3/app",
+ "shapeshift": "/shapeshift/app",
+ "typesafe": "/typesafe/app",
+ "anthropic.anthropic": "/anthropic/app",
+ "openrouter.openrouter": "/openrouter/app"
+}
