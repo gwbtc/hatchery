@@ -6,7 +6,15 @@
 'use strict';
 
 (function () {
-  var ITINS = '/grubbery/ball/apps/itinerary/itineraries';
+  // the file manager speaks the kernel's file API, which takes absolute
+  // paths. This app may live under /apps or under a desk, so it asks the
+  // server where it is (resolved by name through /sys/link) and builds
+  // the trip's files/ URL from that.
+  var ITINS = null;
+  var rootReady = fetch('/grubbery/itinerary/api/root')
+    .then(function (r) { return r.json(); })
+    .then(function (j) { ITINS = '/grubbery/ball' + j.root + '/itineraries'; })
+    .catch(function () { ITINS = null; });
   var mount = document.getElementById('files-mount');
   var fm = FileManager.mount(mount, { persist: 'itin-files-view', rootLabel: 'files', lazy: true });
   var loaded = false;
@@ -15,9 +23,9 @@
   function bind() {
     var id = window.currentId;
     loaded = false;
-    fm.ready.then(function () {
-      fm.setRoot(id ? ITINS + '/' + encodeURIComponent(id) + '/files' : null);
-      if (id && visible()) { loaded = true; fm.load(); }
+    Promise.all([fm.ready, rootReady]).then(function () {
+      fm.setRoot(id && ITINS ? ITINS + '/' + encodeURIComponent(id) + '/files' : null);
+      if (id && ITINS && visible()) { loaded = true; fm.load(); }
     });
   }
   window.addEventListener('itin-changed', bind);

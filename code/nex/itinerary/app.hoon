@@ -125,6 +125,17 @@
         ?:  ?&(=(%'GET' method) =([%ui %'file-manager.js' ~] suffix))
           (serve-file eyre-id /ui 'file-manager.js')
         ::
+        ::  GET /api/root — this app's absolute root, found by its own
+        ::  name through /sys/link. The files tab mounts the shared file
+        ::  manager on the kernel's file API, which takes absolute paths,
+        ::  so the page asks where it lives instead of guessing.
+        ::
+        ?:  ?&(=(%'GET' method) =([%api %root ~] suffix))
+          ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@itinerary')
+          ?.  ?=([~ %| *] root)
+            (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'itinerary is not in /sys/link')])
+          (send-json eyre-id (en:json:html (pairs:enjs:format ~[['root' s+(spat p.u.root)]])))
+        ::
         ::  GET /api/list — list all itineraries
         ::
         ?:  ?&(=(%'GET' method) =([%api %list ~] suffix))
