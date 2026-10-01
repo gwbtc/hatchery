@@ -44,11 +44,7 @@
         ;<  =view:nexus  bind:m  (peek:io (cord-to-road:tarball '../../counters/') ~)
         ?.  ?=([%ball *] view)  $
         =/  counters=(list [@ta @ud])
-          =/  =lump:tarball  (fall fil.ball.view *lump:tarball)
-          %+  murn  ~(tap by contents.lump)
-          |=  [name=@ta =sang:tarball gain=? bang=(unit tang)]
-          ?.  ?=(%ud name.p.sang)  ~
-          `[name !<(@ud (need-vase:tarball sang))]
+          (lump-counters (fall fil.ball.view *lump:tarball))
         =/  page=manx  (counter-page counters)
         ;<  ~  bind:m  (replace:io (crip (en-xml:html page)))
         $
@@ -72,6 +68,31 @@
         =/  prefix=path  /grubbery/counters
         =/  site=path  site:(parse-url:http-utils url.request.req)
         =/  suffix=path  (slag (lent prefix) site)
+        =/  method=@t  method.request.req
+        ::  the app's own API, addressed relative to this fiber: the page
+        ::  cannot know its absolute root (it may be a desk install), so it
+        ::  never names one. /counters is two levels up from /ui/requests.
+        ?:  ?=([%api %list ~] suffix)
+          ;<  cv=view:nexus  bind:m  (peek:io [%| 2 %| /counters] ~)
+          =/  counters=(list [@ta @ud])
+            ?.  ?=([%ball *] cv)  ~
+            (lump-counters (fall fil.ball.cv *lump:tarball))
+          =/  jon=json
+            :-  %o
+            %-  ~(gas by *(map @t json))
+            (turn counters |=([n=@ta v=@ud] [`@t`n (numb:enjs:format v)]))
+          =/  body=octs  (as-octs:mimes:html (en:json:html jon))
+          ;<  ~  bind:m
+            (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `body])
+          (pure:m ~)
+        ?:  &(=('PUT' method) ?=([%api %counter @ ~] suffix))
+          ;<  ~  bind:m  (make:io [%| 2 %& /counters i.t.t.suffix] |+[[[/ %ud] 0] ~])
+          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+          (pure:m ~)
+        ?:  &(=('DELETE' method) ?=([%api %counter @ ~] suffix))
+          ;<  *  bind:m  (cull-soft:io [%| 2 %& /counters i.t.t.suffix])
+          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+          (pure:m ~)
         ::  Serve counter page from view grub
         ;<  =view:nexus  bind:m  (peek:io [%| 2 %& /ui/views %'page.html'] `[/ %mime])
         ?.  ?=([%file *] view)
@@ -101,20 +122,27 @@
 ::  HTTP response door (road from /ui/requests/* to /ui/main.sig)
 ::
 ++  srv  ~(. http-res:io [%| 1 %& ~ %'main.sig'])
+::  +lump-counters: the counters in a directory lump — every %ud file
+::
+++  lump-counters
+  |=  =lump:tarball
+  ^-  (list [@ta @ud])
+  %+  murn  ~(tap by contents.lump)
+  |=  [name=@ta =sang:tarball gain=? bang=(unit tang)]
+  ?.  ?=(%ud name.p.sang)  ~
+  `[name !<(@ud (need-vase:tarball sang))]
 ::
 ++  counter-page
   |=  counters=(list [@ta @ud])
   ^-  manx
   =/  js=tape
     ;:  weld
-      "var P=window.location.pathname;"
-      "var API,KEEP;"
-      "if(P.indexOf('/ball/')>=0)\{API=P.replace('/ball/','/api/file/').replace('/ui/views/page.html','/counters');KEEP=P.replace('/ball/','/api/keep/').replace('/ui/views/page.html','/counters')}else\{API='/grubbery/api/file/apps/counter.counter/counters';KEEP='/grubbery/api/keep/apps/counter.counter/counters'}"
-      "document.getElementById('create').onclick=function()\{fetch(API+'/'+Date.now().toString(36)+'?blot=/ud',\{method:'PUT',headers:\{'Content-Type':'text/plain'},body:'0'})};"
+      "var API='/grubbery/counters/api';"
+      "document.getElementById('create').onclick=function()\{fetch(API+'/counter/'+Date.now().toString(36),\{method:'PUT'})};"
       "function removeCounter(n)\{var e=document.getElementById('c-'+n);if(e)e.remove();if(!document.querySelector('.counter'))document.getElementById('counters').textContent='No counters'}"
-      "function deleteCounter(n)\{fetch(API+'/'+n,\{method:'DELETE'});removeCounter(n)}"
+      "function deleteCounter(n)\{fetch(API+'/counter/'+n,\{method:'DELETE'});removeCounter(n)}"
       "function upsertCounter(n,v)\{var b=document.getElementById('counters');var e=document.getElementById('c-'+n);if(!e)\{if(b.textContent==='No counters')b.textContent='';e=document.createElement('div');e.id='c-'+n;e.className='counter fc fh g2 p2 b1 br1 jcsb';b.appendChild(e)}e.innerHTML='<div class=\"fc-col\"><span class=\"s7 bold\">'+v+'</span><span class=\"s9 muted\">'+n+'</span></div><button class=\"p-1 b1 br1 hover pointer s9\" onclick=\"deleteCounter(\\x27'+n+'\\x27)\">Delete</button>'}"
-      "async function connect()\{try\{var r=await fetch(KEEP+'?blot=/txt',\{headers:\{Accept:'text/event-stream'}});var R=r.body.getReader();var d=new TextDecoder();var buf='';while(true)\{var c=await R.read();if(c.done)break;buf+=d.decode(c.value,\{stream:true});var ps=buf.split('\\n\\n');buf=ps.pop();for(var i=0;i<ps.length;i++)\{if(!ps[i].trim())continue;var ev='',data='',ls=ps[i].split('\\n');for(var j=0;j<ls.length;j++)\{if(ls[j].indexOf('event: ')===0)ev=ls[j].slice(7);else if(ls[j].indexOf('data: ')===0)data=ls[j].slice(6)}if(!ev)continue;var sp=ev.indexOf(' ');if(sp<0)continue;var act=ev.slice(0,sp);var nm=ev.slice(sp+2);if(act==='old')continue;if(act==='del')removeCounter(nm);else upsertCounter(nm,data)}}}catch(x)\{}setTimeout(connect,2000)}connect()"
+      "async function poll()\{try\{var r=await fetch(API+'/list');var m=await r.json();var seen=\{};for(var n in m)\{seen[n]=1;upsertCounter(n,m[n])}var es=document.querySelectorAll('.counter');for(var i=0;i<es.length;i++)\{var id=es[i].id.slice(2);if(!seen[id])removeCounter(id)}}catch(x)\{}setTimeout(poll,1000)}poll()"
     ==
   ;html
     ;head
