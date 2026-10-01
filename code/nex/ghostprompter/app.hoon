@@ -50,7 +50,7 @@
             ==
             :-  'peek'
             :-  %a
-            :~  (pairs:enjs:format ~[['road' s+'/apps/nostr/'] ['why' s+'the flow: feed.json, events/, profiles/ (the nostr mirror)']])
+            :~  (pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the anthropic proxy and the nostr mirror by name']]) (pairs:enjs:format ~[['road' s+'@nostr/'] ['why' s+'the flow: feed.json, events/, profiles/ (the nostr mirror)']])
             ==
         ==
       =/  tile=json
@@ -85,7 +85,7 @@
           ::  (code at nex/ghostprompter/agent.hoon), docs-agent pattern.
           ::  Its weir grants the library (read), proposals (write), the
           ::  metered anthropic proxy, and loopback iris for the feed.
-          [%fall %| /agent [`[`[/ghostprompter %agent] `agent-weir %.n ~] ~]]
+          [%fall %| /agent [`[`[/ghostprompter %agent] `(agent-weir ~ ~) %.n ~] ~]]
       ==
     ::
     ++  on-file
@@ -97,6 +97,14 @@
       ?+    rail  stay:m
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%ghostprompter main: failed")
+        ::  the agent reaches the anthropic proxy and the nostr mirror by
+        ::  NAME; on-load has no fiber to look them up, so the agent is
+        ::  born with the base weir and sanded here once per rise
+        ;<  anth=(unit lane:tarball)   bind:m  (resolve-link:io '@anthropic')
+        ;<  nostr=(unit lane:tarball)  bind:m  (resolve-link:io '@nostr')
+        =/  fold  |=(u=(unit lane:tarball) ^-((unit path) ?.(?=([~ %| *] u) ~ `p.u.u)))
+        ;<  ~  bind:m
+          (sand:io (nex-road:io rail [%| /agent]) `(agent-weir (fold anth) (fold nostr)))
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/ghostprompter])
         (http-dispatch:io %ghostprompter)
           [[%requests ~] @]
@@ -258,19 +266,22 @@
 ::    peek: /library, /proposals, proxy calls, and /apps/nostr — the
 ::          flow (get_feed reads the mirror's feed.json + event grubs)
 ++  agent-weir
+  |=  [anth=(unit path) nostr=(unit path)]
   ^-  weir:tarball
   =/  dir  |=(p=path `road:tarball`[%& %| p])
   =/  fil  |=([p=path n=@ta] `road:tarball`[%& %& p n])
-  :*  make=(sy ~[(dir /apps/ghostprompter/proposals)])
+  ::  our own tree, relative to the agent dir: one up is this nexus
+  =/  own  |=(p=path `road:tarball`[%| 1 %| p])
+  =/  opt  |=([u=(unit path) f=$-(path road:tarball)] ^-((list road:tarball) ?~(u ~ ~[(f u.u)])))
+  :*  make=(sy ~[(own /proposals)])
       %-  sy
-      :~  (fil /sys 'bowl.sig')
-          (fil /apps/'anthropic.anthropic' 'main.sig')
-      ==
+      %+  weld  ~[(fil /sys 'bowl.sig')]
+      (opt anth |=(p=path (fil p 'main.sig')))
       %-  sy
-      :~  (dir /apps/ghostprompter/library)
-          (dir /apps/ghostprompter/proposals)
-          (dir /apps/'anthropic.anthropic'/calls)
-          (dir /apps/nostr)
+      ;:  weld
+        ~[(own /library) (own /proposals) (dir /sys/link/anthropic) (dir /sys/link/nostr)]
+        (opt anth |=(p=path (dir (snoc p %calls))))
+        (opt nostr |=(p=path (dir p)))
       ==
   ==
 ::

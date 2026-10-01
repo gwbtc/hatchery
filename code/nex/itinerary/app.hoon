@@ -52,7 +52,7 @@
       %+  spin:loader  ball
       :~  (manifest:loader 0)
           [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'itinerary'] ['description' s+'Travel maps with pins']])]]
-          [%over %& [/ %'weir.json'] [[/ %json] (pairs:enjs:format ~[['poke' a+~[(pairs:enjs:format ~[['road' s+'/sys/bowl.sig'] ['why' s+'time, identity, entropy — every fiber op']]) (pairs:enjs:format ~[['road' s+'/sys/eyre/'] ['why' s+'serve its page over HTTP']]) (pairs:enjs:format ~[['road' s+'/apps/geocode.geocode/main.sig'] ['why' s+'map search box geocoding']])]]])]]
+          [%over %& [/ %'weir.json'] [[/ %json] (pairs:enjs:format ~[['poke' a+~[(pairs:enjs:format ~[['road' s+'/sys/bowl.sig'] ['why' s+'time, identity, entropy — every fiber op']]) (pairs:enjs:format ~[['road' s+'/sys/eyre/'] ['why' s+'serve its page over HTTP']]) (pairs:enjs:format ~[['road' s+'@geocode/main.sig'] ['why' s+'map search box geocoding']])]] ['peek' a+~[(pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the geocode and anthropic proxies by name']]) (pairs:enjs:format ~[['road' s+'@geocode/calls/'] ['why' s+'read a geocode result']])]]])]]
           [%over %& [/ %'tile.json'] [[/ %json] tile]]
           [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
           [%over %& [/ %'index.html'] [[/ %mime] index-html]]
@@ -333,21 +333,33 @@
   ==
 ::  +agent-bole: a fresh agent mount — the agent nexus under its weir
 ++  agent-bole
+  |=  [anth=(unit path) geo=(unit path)]
   ^-  bole:tarball
-  [`[`[/itinerary %agent] `agent-weir %.n ~] ~]
+  [`[`[/itinerary %agent] `(agent-weir anth geo) %.n ~] ~]
+::  +proxy-roots: the anthropic and geocode proxies, found by name
+::
+++  proxy-roots
+  =/  m  (fiber:fiber:nexus ,[(unit path) (unit path)])
+  ^-  form:m
+  ;<  anth=(unit lane:tarball)  bind:m  (resolve-link:io '@anthropic')
+  ;<  geo=(unit lane:tarball)   bind:m  (resolve-link:io '@geocode')
+  =/  fold  |=(u=(unit lane:tarball) ^-((unit path) ?.(?=([~ %| *] u) ~ `p.u.u)))
+  (pure:m [(fold anth) (fold geo)])
 ::  +ensure-trip: the trip dir and its agent exist. Idempotent; called
 ::  before any write or chat so pre-agent trips get their agent lazily.
 ++  ensure-trip
   |=  itin-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ;<  roots=[anth=(unit path) geo=(unit path)]  bind:m  proxy-roots
+  =/  agent=bole:tarball  (agent-bole roots)
   ;<  dv=view:nexus  bind:m  (peek:io (itin-dir itin-id) ~)
   ?.  ?=([%ball *] dv)
     %+  make:io  (itin-dir itin-id)
-    &+[`[~ ~ %.n ~] (malt ~[[%agent agent-bole]])]
+    &+[`[~ ~ %.n ~] (malt ~[[%agent agent]])]
   ;<  av=view:nexus  bind:m  (peek:io (agent-road itin-id [%| /]) ~)
   ?:  ?=([%ball *] av)  (pure:m ~)
-  (make:io (agent-road itin-id [%| /]) &+agent-bole)
+  (make:io (agent-road itin-id [%| /]) &+agent)
 ::
 ++  serve-file
   |=  [eyre-id=@ta dir=path filename=@ta]
@@ -521,20 +533,24 @@
 ::    poke: bowl.sig (time + entropy), the proxies' main.sig
 ::    peek: the trip dir, proxy calls
 ++  agent-weir
+  |=  [anth=(unit path) geo=(unit path)]
   ^-  weir:tarball
   =/  trip  `road:tarball`[%| 1 %| /]
   =/  dir  |=(p=path `road:tarball`[%& %| p])
   =/  fil  |=([p=path n=@ta] `road:tarball`[%& %& p n])
+  =/  opt  |=([u=(unit path) f=$-(path road:tarball)] ^-((list road:tarball) ?~(u ~ ~[(f u.u)])))
   :*  make=(sy ~[trip])
       %-  sy
-      :~  (fil /sys 'bowl.sig')
-          (fil /apps/'anthropic.anthropic' 'main.sig')
-          (fil /apps/'geocode.geocode' 'main.sig')
+      ;:  weld
+        ~[(fil /sys 'bowl.sig')]
+        (opt anth |=(p=path (fil p 'main.sig')))
+        (opt geo |=(p=path (fil p 'main.sig')))
       ==
       %-  sy
-      :~  trip
-          (dir /apps/'anthropic.anthropic'/calls)
-          (dir /apps/'geocode.geocode'/calls)
+      ;:  weld
+        ~[trip (dir /sys/link/anthropic) (dir /sys/link/geocode)]
+        (opt anth |=(p=path (dir (snoc p %calls))))
+        (opt geo |=(p=path (dir (snoc p %calls))))
       ==
   ==
 ::  +ask-agent: bridge one browser turn to the agent nexus. Subscribe to
@@ -584,7 +600,10 @@
   |=  [=rail:tarball kind=@t q=@t lat=@t lon=@t poly=@t ftype=@t tag=@t radius=@t]
   =/  m  (fiber:fiber:nexus ,json)
   ^-  form:m
-  =/  proxy=path  /apps/'geocode.geocode'
+  ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@geocode')
+  ?.  ?=([~ %| *] root)
+    (pure:m (pairs:enjs:format ~[['error' s+'geocode proxy not found']]))
+  =/  proxy=path  p.u.root
   ;<  eny=@uvJ  bind:m  get-entropy:io
   =/  call-id=@t     (scot %uv (end [3 8] eny))
   =/  call-name=@ta  (crip "{(trip call-id)}.json")

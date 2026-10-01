@@ -92,7 +92,6 @@
       ==
     --
 |%
-++  proxy  `path`/apps/'anthropic.anthropic'
 ++  weir-json
   ^-  json
   =/  line  |=([r=@t w=@t] `json`(pairs:enjs:format ~[['road' s+r] ['why' s+w]]))
@@ -101,11 +100,12 @@
       :-  %a
       :~  (line '/sys/bowl.sig' 'entropy for call ids')
           (line '/sys/eyre/' 'bind the UI route and send page responses')
-          (line '/apps/anthropic.anthropic/main.sig' 'one metered model call per intent request')
+          (line '@anthropic/main.sig' 'one metered model call per intent request')
       ==
       :-  'peek'
       :-  %a
-      :~  (line '/apps/anthropic.anthropic/calls/' 'read the call result')
+      :~  (line '/sys/link/anthropic/' 'find the anthropic proxy by name')
+          (line '@anthropic/calls/' 'read the call result')
       ==
   ==
 ::
@@ -368,6 +368,10 @@
   |=  body=json
   =/  m  (fiber:fiber:nexus ,(unit json))
   ^-  form:m
+  ::  the proxy is found by NAME through /sys/link
+  ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@anthropic')
+  ?.  ?=([~ %| *] root)  (pure:m ~)
+  =/  proxy=path  p.u.root
   ;<  eny=@uvJ  bind:m  get-entropy:io
   =/  call-id=@t     (scot %uv (end [3 8] eny))
   =/  call-name=@ta  (crip "{(trip call-id)}.json")
