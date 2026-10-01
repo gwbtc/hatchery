@@ -218,6 +218,7 @@
             ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'no itinerary selected')])
             (pure:m ~)
           ;<  ~  bind:m  (ensure-trip chat)
+          ;<  ~  bind:m  (refresh-agent chat)
           ;<  [reply=@t trace=json parts=json]  bind:m  (ask-agent chat msg)
           (send-json eyre-id (en:json:html (pairs:enjs:format ~[['reply' s+reply] ['trace' trace] ['parts' parts]])))
         ::
@@ -270,6 +271,7 @@
           =/  chat=@t  (fall (jget jon 'chat') '')
           ?:  =('' chat)  (send-json eyre-id '{"ok":false}')
           ;<  ~  bind:m  (ensure-trip chat)
+          ;<  ~  bind:m  (refresh-agent chat)
           =/  sys=@t    (fall (jget jon 'system') '')
           =/  model=@t  =/(mo=@t (fall (jget jon 'model') '') ?:(=('' mo) 'claude-sonnet-4-6' mo))
           =/  mt=json   (fall (~(get by po) 'max_tokens') [%n '1024'])
@@ -289,6 +291,7 @@
           =/  chat=@t  (fall (~(get by (malt args)) 'chat') '')
           ?:  =('' chat)  (send-json eyre-id '{}')
           ;<  ~  bind:m  (ensure-trip chat)
+          ;<  ~  bind:m  (refresh-agent chat)
           ;<  sv=view:nexus  bind:m
             (peek:io (agent-road chat [%& / %'system.md']) `[/ %mime])
           =/  sys=@t
@@ -351,15 +354,27 @@
   |=  itin-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  roots=[anth=(unit path) geo=(unit path)]  bind:m  proxy-roots
-  =/  agent=bole:tarball  (agent-bole roots)
+  ::  a read never depends on resolving a proxy: the names are looked
+  ::  up only on the path that actually makes an agent
   ;<  dv=view:nexus  bind:m  (peek:io (itin-dir itin-id) ~)
   ?.  ?=([%ball *] dv)
+    ;<  roots=[anth=(unit path) geo=(unit path)]  bind:m  proxy-roots
     %+  make:io  (itin-dir itin-id)
-    &+[`[~ ~ %.n ~] (malt ~[[%agent agent]])]
+    &+[`[~ ~ %.n ~] (malt ~[[%agent (agent-bole roots)]])]
   ;<  av=view:nexus  bind:m  (peek:io (agent-road itin-id [%| /]) ~)
   ?:  ?=([%ball *] av)  (pure:m ~)
-  (make:io (agent-road itin-id [%| /]) &+agent)
+  ;<  roots=[anth=(unit path) geo=(unit path)]  bind:m  proxy-roots
+  (make:io (agent-road itin-id [%| /]) &+(agent-bole roots))
+::  +refresh-agent: re-sand a trip's agent with the proxies as they
+::  resolve NOW. Chat calls it so an agent born under old roads (or
+::  before a proxy existed) reaches the proxies where they are today.
+::
+++  refresh-agent
+  |=  itin-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  roots=[anth=(unit path) geo=(unit path)]  bind:m  proxy-roots
+  (sand:io (agent-road itin-id [%| /]) `(agent-weir roots))
 ::
 ++  serve-file
   |=  [eyre-id=@ta dir=path filename=@ta]
