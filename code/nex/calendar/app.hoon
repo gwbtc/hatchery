@@ -627,6 +627,7 @@
       :-  'peek'
       :-  %a
       :~  (line '/code/lib/rules/' 'build recurrence-rule kinds from the rules code library')
+          (line '/sys/link/' 'find the notifications bus by name')
       ==
   ==
 ::  +resolve-kinds: load kind gates from the code namespace
