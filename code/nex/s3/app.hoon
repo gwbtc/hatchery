@@ -131,6 +131,10 @@
           (line '/sys/eyre/' 'bind the UI route and send page responses')
           (line '/sys/iris/' 'the only nexus that talks to the buckets over HTTP')
       ==
+      :-  'peek'
+      :-  %a
+      :~  (line '/sys/link/' 'find its own root by name, for the page')
+      ==
   ==
 ::  +at: a road to a lane of this nexus, from any grub in it
 ::
@@ -603,6 +607,12 @@
   =/  [site=path args=quay:eyre]  (parse-url:http-utils url.request.req)
   =/  suffix=path  (slag (lent prefix) site)
   ?+    suffix  (serve-static:web eyre-id suffix)
+      ::  the page mounts the file manager on the kernel's file API, which
+      ::  takes absolute paths; it asks where this app lives rather than guess
+      [%api %root ~]
+    ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@s3')
+    ?.  ?=([~ %| *] root)  (reply eyre-id 404 's3 is not in /sys/link')
+    (send-json eyre-id (pairs:enjs:format ~[['root' s+(spat p.u.root)]]))
       [%api %status ~]
     ;<  bks=buckets  bind:m  (read-buckets rail)
     ;<  mts=mounts  bind:m  (read-mounts rail)

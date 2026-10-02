@@ -6,7 +6,6 @@
 ::  the result grub, cull it.
 ::
 =>  |%
-    ++  proxy  `path`/apps/'geocode.geocode'
     ++  take-news
       |=  =wire
       =/  m  (fiber:fiber:nexus ,~)
@@ -50,6 +49,10 @@
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
   ;<  st=tool-state:tools  bind:m  (get-state-as:io ,tool-state:tools)
+  ::  the proxy is found by NAME through /sys/link
+  ;<  gr=(unit lane:tarball)  bind:m  (resolve-link:io '@geocode')
+  ?.  ?=([~ %| *] gr)  (pure:m [%error 'the geocode proxy is not installed'])
+  =/  proxy=path  p.u.gr
   =/  args=json  [%o args.st]
   =/  jstr
     |=  key=@t

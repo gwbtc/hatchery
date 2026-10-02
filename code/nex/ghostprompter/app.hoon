@@ -146,6 +146,16 @@
         ?:  ?&(=(%'GET' method) =([%ui %'file-manager.js' ~] suffix))
           (serve-file eyre-id /ui 'file-manager.js')
         ::
+        ::  GET /api/root — this app's absolute root, found by its own name
+        ::  through /sys/link; the page mounts the file manager on the
+        ::  kernel's file API, which takes absolute paths
+        ::
+        ?:  ?&(=(%'GET' method) =([%api %root ~] suffix))
+          ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@ghostprompter')
+          ?.  ?=([~ %| *] root)
+            (send-json eyre-id '{"error":"ghostprompter is not in /sys/link"}')
+          (send-json eyre-id (en:json:html (pairs:enjs:format ~[['root' s+(spat p.u.root)]])))
+        ::
         ::  GET /api/feed?limit=n — the timeline, from the nostr mirror
         ::
         ?:  ?&(=(%'GET' method) =([%api %feed ~] suffix))
@@ -342,7 +352,9 @@
   |=  limit=@ud
   =/  m  (fiber:fiber:nexus ,(list @t))
   ^-  form:m
-  ;<  idx=(unit json)  bind:m  (peek-as:io [%& %& /apps/nostr %'feed.json'] ,json)
+  ;<  nr=(unit lane:tarball)  bind:m  (resolve-link:io '@nostr')
+  ?.  ?=([~ %| *] nr)  (pure:m ~)
+  ;<  idx=(unit json)  bind:m  (peek-as:io [%& %& p.u.nr %'feed.json'] ,json)
   %-  pure:m
   ?~  idx  ~
   ?.  ?=([%o *] u.idx)  ~
@@ -355,7 +367,9 @@
   =/  m  (fiber:fiber:nexus ,(unit json))
   ^-  form:m
   ?:  =('' id)  (pure:m ~)
-  (peek-as:io [%& %& /apps/nostr/events (cat 3 id '.json')] ,json)
+  ;<  nr=(unit lane:tarball)  bind:m  (resolve-link:io '@nostr')
+  ?.  ?=([~ %| *] nr)  (pure:m ~)
+  (peek-as:io [%& %& (snoc p.u.nr %events) (cat 3 id '.json')] ,json)
 ++  peek-events
   |=  ids=(list @t)
   =/  m  (fiber:fiber:nexus ,(list json))
@@ -386,11 +400,13 @@
   |=  pks=(list @t)
   =/  m  (fiber:fiber:nexus ,(list [@t json]))
   ^-  form:m
+  ;<  nr=(unit lane:tarball)  bind:m  (resolve-link:io '@nostr')
+  =/  nostr=path  ?.(?=([~ %| *] nr) / p.u.nr)
   =|  out=(list [@t json])
   |-  ^-  form:m
   ?~  pks  (pure:m (flop out))
   ;<  prof=(unit json)  bind:m
-    (peek-as:io [%& %& /apps/nostr/profiles (cat 3 i.pks '.json')] ,json)
+    (peek-as:io [%& %& (snoc nostr %profiles) (cat 3 i.pks '.json')] ,json)
   =/  slim=json
     ?~  prof  [%o ~]
     (pairs:enjs:format ~[['name' s+(jget-s u.prof 'name')] ['picture' s+(jget-s u.prof 'picture')]])

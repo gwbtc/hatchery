@@ -20,8 +20,8 @@
     =/  v  (~(get by args.st) 'limit')
     ?.  ?=([~ %n *] v)  20
     (fall (rush p.u.v dem) 20)
-  ;<  sto=view:nexus  bind:m
-    (peek:io [%& %| /apps/'feeds.feeds'/store] ~)
+  ;<  sr=road:tarball  bind:m  (ancestor-road:io [/feeds %app] [%| /store])
+  ;<  sto=view:nexus  bind:m  (peek:io sr ~)
   =/  stores=(list feed-store:rss)
     ?.  ?=([%ball *] sto)  ~
     %+  murn  ~(tap ba:tarball ball.sto)

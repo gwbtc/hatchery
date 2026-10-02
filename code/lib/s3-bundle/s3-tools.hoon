@@ -5,7 +5,6 @@
 ::
 /<  tools  /lib/tools.hoon
 |%
-++  root  `path`/apps/s3
 ::  +call-s3: run one op body through the nexus; the response json
 ::
 ++  call-s3
@@ -15,8 +14,9 @@
   ;<  eny=@uvJ  bind:m  get-entropy:io
   =/  call-id=@t     (scot %uv (end [3 8] eny))
   =/  call-name=@ta  (crip "{(trip call-id)}.json")
-  =/  main-road=road:tarball  [%& %& root %'main.sig']
-  =/  call-road=road:tarball  [%& %& (snoc root %calls) call-name]
+  ::  the s3 nexus this tool runs inside, addressed relative to it
+  ;<  main-road=road:tarball  bind:m  (ancestor-road:io [/s3 %app] [%& / %'main.sig'])
+  ;<  call-road=road:tarball  bind:m  (ancestor-road:io [/s3 %app] [%& /calls call-name])
   ;<  *  bind:m  (keep:io /call call-road ~)
   ;<  ~  bind:m
     %-  poke:io

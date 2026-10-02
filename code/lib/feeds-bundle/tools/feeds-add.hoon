@@ -20,7 +20,7 @@
     ?.(?=([~ %s *] v) '' p.u.v)
   ?:  =('' url)
     (pure:m [%error 'Missing required argument: url'])
-  =/  config=road:tarball  [%& %& /apps/'feeds.feeds' %'feeds.json']
+  ;<  config=road:tarball  bind:m  (ancestor-road:io [/feeds %app] [%& / %'feeds.json'])
   ;<  cfg=view:nexus  bind:m  (peek:io config `[/ %json])
   =/  urls=(list @t)
     ?.  ?=([%file *] cfg)  ~
@@ -32,7 +32,7 @@
   ;<  ~  bind:m
     %+  over:io  config
     [[/ %json] `json`[%a (turn (snoc urls url) |=(u=@t s+u))]]
-  ;<  ~  bind:m
-    (poke:io [%& %& /apps/'feeds.feeds' %'refresh.sig'] [[/ %sig] ~])
+  ;<  rs=road:tarball  bind:m  (ancestor-road:io [/feeds %app] [%& / %'refresh.sig'])
+  ;<  ~  bind:m  (poke:io rs [[/ %sig] ~])
   (pure:m [%text 'Added; refresh started.'])
 --

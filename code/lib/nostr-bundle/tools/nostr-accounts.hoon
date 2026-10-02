@@ -61,21 +61,23 @@
       ;<  now=@da  bind:m  get-time:io
       (pure:m (div (sub now ~1970.1.1) ~s1))
     ::  grubs under /apps/nostr
-    ++  root  `path`/apps/nostr
-    ++  file
-      |=  [dir=path name=@t]
-      ^-  road:tarball
-      [%& %& `path`(weld root dir) `@ta`name]
+    ::  grubs of the nostr nexus this tool runs inside, addressed
+    ::  relative to it, so the tool works wherever the nexus lives
+    ++  at
+      |=  =lane:tarball
+      (ancestor-road:io [/nostr %app] lane)
     ++  read
       |=  [dir=path name=@t]
       =/  m  (fiber:fiber:nexus ,(unit json))
       ^-  form:m
-      (peek-as:io (file dir name) ,json)
+      ;<  =road:tarball  bind:m  (at [%& dir `@ta`name])
+      (peek-as:io road ,json)
     ++  names-in
       |=  dir=path
       =/  m  (fiber:fiber:nexus ,(list @ta))
       ^-  form:m
-      ;<  v=view:nexus  bind:m  (peek-shallow:io [%& %| `path`(weld root dir)] ~)
+      ;<  =road:tarball  bind:m  (at [%| dir])
+      ;<  v=view:nexus  bind:m  (peek-shallow:io road ~)
       %-  pure:m
       ?.  ?=([%ball *] v)  ~
       ?~  fil.ball.v  ~
@@ -84,7 +86,8 @@
       |=  dir=path
       =/  m  (fiber:fiber:nexus ,(list @ta))
       ^-  form:m
-      ;<  v=view:nexus  bind:m  (peek-shallow:io [%& %| `path`(weld root dir)] ~)
+      ;<  =road:tarball  bind:m  (at [%| dir])
+      ;<  v=view:nexus  bind:m  (peek-shallow:io road ~)
       %-  pure:m
       ?.  ?=([%ball *] v)  ~
       ~(tap in ~(key by dir.ball.v))
@@ -142,9 +145,11 @@
   ;<  cur=(unit @t)  bind:m  current
   ?:  =('use' action)
     ?:  =('' pk)  (pure:m [%error 'pubkey required'])
-    ;<  have=?  bind:m  (peek-exists:io [%& %| `path`(weld root `path`[%accounts `@ta`pk ~])])
+    ;<  ar=road:tarball  bind:m  (at [%| `path`[%accounts `@ta`pk ~]])
+    ;<  have=?  bind:m  (peek-exists:io ar)
     ?.  have  (pure:m [%error 'no such account'])
-    ;<  ~  bind:m  (over:io (file / 'me.json') [[/ %json] (pairs:enjs:format ~[['current' s+pk]])])
+    ;<  mr=road:tarball  bind:m  (at [%& / %'me.json'])
+    ;<  ~  bind:m  (over:io mr [[/ %json] (pairs:enjs:format ~[['current' s+pk]])])
     (pure:m [%text (crip "current account is now {(trip pk)}")])
   ?:  |(=('follow' action) =('unfollow' action))
     ?:  =('' pk)  (pure:m [%error 'pubkey required'])
@@ -154,7 +159,7 @@
       ?:  =('unfollow' action)  (skip pks.fl |=(p=@t =(p pk)))
       ?:((lien pks.fl |=(p=@t =(p pk))) pks.fl (snoc pks.fl pk))
     =/  doc=json  (pairs:enjs:format ~[['pubkeys' [%a (turn next |=(p=@t s+p))]]])
-    =/  road=road:tarball  (file `path`[%accounts `@ta`u.cur ~] 'follows.json')
+    ;<  road=road:tarball  bind:m  (at [%& `path`[%accounts `@ta`u.cur ~] %'follows.json'])
     ;<  have=?  bind:m  (peek-exists:io road)
     ;<  ~  bind:m
       ?:  have  (over:io road [[/ %json] doc])
@@ -166,7 +171,8 @@
       =/  m  (fiber:fiber:nexus ,~)
       |-  ^-  form:m
       ?~  sigs  (pure:m ~)
-      ;<  *  bind:m  (poke-soft:io (file /relays i.sigs) [/ %json] (pairs:enjs:format ~[['action' s+'reconnect']]))
+      ;<  rr=road:tarball  bind:m  (at [%& /relays i.sigs])
+      ;<  *  bind:m  (poke-soft:io rr [/ %json] (pairs:enjs:format ~[['action' s+'reconnect']]))
       $(sigs t.sigs)
     (pure:m [%text (crip "{(trip action)}ed {(short pk 12)}: {(a-co:co (lent next))} follows now; relay clients reconnecting")])
   ::  list

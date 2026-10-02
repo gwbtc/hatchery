@@ -15,7 +15,8 @@
   ^-  tool-handler:tools
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
-  ;<  dv=view:nexus  bind:m  (peek:io [%& %| /apps/ghostprompter/library] ~)
+  ;<  lr=road:tarball  bind:m  (ancestor-road:io [/ghostprompter %app] [%| /library])
+  ;<  dv=view:nexus  bind:m  (peek:io lr ~)
   =/  cs
     ?.  ?=([%ball *] dv)  ~
     ?~  fil.ball.dv  ~
@@ -26,8 +27,8 @@
   =/  rows=(list [n=@ta size=@ud lines=@ud])  ~
   |-
   ?^  names
-    ;<  fv=view:nexus  bind:m
-      (peek:io [%& %& /apps/ghostprompter/library i.names] `[/ %mime])
+    ;<  fr=road:tarball  bind:m  (ancestor-road:io [/ghostprompter %app] [%& /library i.names])
+    ;<  fv=view:nexus  bind:m  (peek:io fr `[/ %mime])
     =/  row=[n=@ta size=@ud lines=@ud]
       ?.  ?=([%file *] fv)  [i.names 0 0]
       =/  mv=(unit mime)  (mole |.(!<(mime (need-vase:tarball sang.fv))))

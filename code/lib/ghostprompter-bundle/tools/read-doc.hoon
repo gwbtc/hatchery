@@ -44,8 +44,8 @@
   =/  offset=(unit @ud)  (jnum args.st 'offset')
   =/  length=(unit @ud)  (jnum args.st 'length')
   =/  query=(unit @t)    (deg /find so:dejs:format)
-  ;<  fv=view:nexus  bind:m
-    (peek:io [%& %& /apps/ghostprompter/library `@ta`nm] `[/ %mime])
+  ;<  fr=road:tarball  bind:m  (ancestor-road:io [/ghostprompter %app] [%& /library `@ta`nm])
+  ;<  fv=view:nexus  bind:m  (peek:io fr `[/ %mime])
   ?.  ?=([%file *] fv)
     (pure:m [%error (cat 3 'no such document: ' nm)])
   =/  =mime  !<(mime (need-vase:tarball sang.fv))

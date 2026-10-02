@@ -13,15 +13,15 @@
   ^-  tool-handler:tools
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
-  ;<  cfg=view:nexus  bind:m
-    (peek:io [%& %& /apps/'feeds.feeds' %'feeds.json'] `[/ %json])
+  ;<  cr=road:tarball  bind:m  (ancestor-road:io [/feeds %app] [%& / %'feeds.json'])
+  ;<  cfg=view:nexus  bind:m  (peek:io cr `[/ %json])
   =/  urls=(list @t)
     ?.  ?=([%file *] cfg)  ~
     =/  jon=json  !<(json (need-vase:tarball sang.cfg))
     ?.  ?=([%a *] jon)  ~
     (murn p.jon |=(j=json ?.(?=([%s *] j) ~ `p.j)))
-  ;<  sto=view:nexus  bind:m
-    (peek:io [%& %| /apps/'feeds.feeds'/store] ~)
+  ;<  sr=road:tarball  bind:m  (ancestor-road:io [/feeds %app] [%| /store])
+  ;<  sto=view:nexus  bind:m  (peek:io sr ~)
   =/  stores=(list feed-store:rss)
     ?.  ?=([%ball *] sto)  ~
     %+  murn  ~(tap ba:tarball ball.sto)

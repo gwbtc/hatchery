@@ -113,10 +113,18 @@ function fmtAge(unix) {
 // ---------- library ----------
 // a plain directory under the nexus; the shared file-manager is the whole
 // surface (list/grid, upload, new file, edit, preview, delete)
+// the file manager speaks the kernel's file API, which takes absolute
+// paths; this app may live under /apps or a desk, so it asks the server
+// where it is and mounts once it knows
+var GP_ROOT = null;
 var libFm = FileManager.mount(document.getElementById('lib-mount'), {
-  root: '/grubbery/ball/apps/ghostprompter/library',
   rootLabel: 'library',
   persist: 'gp-lib-view',
+  lazy: true,
+});
+var gpRootReady = fetch('/grubbery/ghostprompter/api/root').then(function (r) { return r.json(); }).then(function (j) {
+  GP_ROOT = '/grubbery/ball' + j.root;
+  return libFm.ready.then(function () { libFm.setRoot(GP_ROOT + '/library'); libFm.load(); });
 });
 function loadLibrary() { libFm.ready.then(function () { libFm.load(); }); }
 
@@ -265,7 +273,8 @@ async function renderRefs(p) {
     ctx.textContent = 'loading context…';
     libBody.appendChild(ctx);
     try {
-      var raw = await fetch('/grubbery/ball/apps/ghostprompter/library/' + encodeURIComponent(d.source) + '?raw=1').then(function(r) { return r.text(); });
+      await gpRootReady;
+      var raw = await fetch(GP_ROOT + '/library/' + encodeURIComponent(d.source) + '?raw=1').then(function(r) { return r.text(); });
       if (token !== refsToken) return;
       var lines = raw.split('\n');
       ctx.textContent = '';

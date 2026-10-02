@@ -82,8 +82,8 @@
         ['post_ids' [%a (turn ids |=(i=@t s+i))]]
         ['at' (sect:enjs:format now)]
     ==
-  =/  =road:tarball
-    [%& %& /apps/ghostprompter/proposals (crip "{(trip id)}.json")]
+  ;<  =road:tarball  bind:m
+    (ancestor-road:io [/ghostprompter %app] [%& /proposals (crip "{(trip id)}.json")])
   ;<  err=(unit tang)  bind:m  (make-soft:io road |+[[[/ %json] doc] ~])
   ?^  err  (pure:m [%error 'failed to write the connection'])
   (pure:m [%text (cat 3 'Filed connection ' id)])

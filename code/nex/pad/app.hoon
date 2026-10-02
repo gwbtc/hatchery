@@ -113,13 +113,10 @@
       ==
       :-  'peek'
       :-  %a
-      :~  (line '/sys/ames/ships/' 'subscribe to and mirror remote docs from their host ships')
+      :~  (line '/sys/link/' 'find its own root by name, for the public grant')
+          (line '/sys/ames/ships/' 'subscribe to and mirror remote docs from their host ships')
       ==
   ==
-::  the instance directory as registered in root.hoon; used to build
-::  remote roads into other ships' pad instances
-::
-++  nex-dir  `path`/apps/'pad.pad'
 ++  max-update-bytes  2.000.000
 ::  HTTP response door (road from /requests/* to /main.sig)
 ::
@@ -133,7 +130,10 @@
   ^-  form:m
   ;<  here=rail:tarball  bind:m  (here-abs:sh rail)
   ;<  ~  bind:m  (reg-register-at:io here)
-  =/  docs=road:tarball  [%& %| (weld nex-dir /docs)]
+  ::  a group's roads are absolute: our own root, found by our name
+  ;<  me=(unit lane:tarball)  bind:m  (resolve-link:io '@pad')
+  ?.  ?=([~ %| *] me)  (pure:m ~)
+  =/  docs=road:tarball  [%& %| (weld p.u.me /docs)]
   (reg-how:io /public [~ (sy ~[docs]) (sy ~[docs])])
 ::  +inbox-loop: sequence update pokes into log grubs. Bad input is
 ::  skipped, never crashed on — a crashed sequencer would drop edits.
@@ -180,7 +180,11 @@
   |=  [host=@ta doc=@ta]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  src-path=path  :(weld /sys/ames/ships/[host]/root nex-dir /docs/[doc])
+  ::  the host's pad is found by name in ITS registry, read through its
+  ::  place in our tree; the lane comes back already prefixed
+  ;<  hr=(unit lane:tarball)  bind:m  (resolve-link-on:io (slav %p host) '@pad')
+  ?.  ?=([~ %| *] hr)  (pure:m ~)
+  =/  src-path=path  (weld p.u.hr /docs/[doc])
   ;<  init=wave:nexus  bind:m  (keep:io /src [%& %| src-path] ~)
   ;<  ~  bind:m  (sync-changes src-path *wave:nexus init)
   =/  prev=wave:nexus  init
@@ -337,10 +341,15 @@
   ?:  |(?=(~ host) ?=(~ doc) ?=(~ blob) !(valid-name u.doc))
     (reply eyre-id 400 'Bad request')
   =/  doc-ta=@ta  `@ta`u.doc
-  =/  sig=road:tarball
-    ?:  =(u.host our)  [%| 1 %& /docs/[doc-ta] target]
-    =/  hostta=@ta  (scot %p u.host)
-    [%& %& :(weld /sys/ames/ships/[hostta]/root nex-dir /docs/[doc-ta]) target]
+  ;<  found=(unit road:tarball)  bind:m
+    =/  m  (fiber:fiber:nexus ,(unit road:tarball))
+    ?:  =(u.host our)  (pure:m `[%| 1 %& /docs/[doc-ta] target])
+    ;<  hr=(unit lane:tarball)  bind:m  (resolve-link-on:io u.host '@pad')
+    %-  pure:m
+    ?.  ?=([~ %| *] hr)  ~
+    `[%& %& (weld p.u.hr /docs/[doc-ta]) target]
+  ?~  found  (reply eyre-id 404 'no pad on that ship')
+  =/  sig=road:tarball  u.found
   ::  the deadline is ours, not the poke's: an HTTP request can't wait
   ::  forever on a dead host
   ;<  res=(unit (unit tang))  bind:m

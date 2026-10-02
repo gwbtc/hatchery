@@ -60,21 +60,23 @@
       ;<  now=@da  bind:m  get-time:io
       (pure:m (div (sub now ~1970.1.1) ~s1))
     ::  grubs under /apps/nostr
-    ++  root  `path`/apps/nostr
-    ++  file
-      |=  [dir=path name=@t]
-      ^-  road:tarball
-      [%& %& `path`(weld root dir) `@ta`name]
+    ::  grubs of the nostr nexus this tool runs inside, addressed
+    ::  relative to it, so the tool works wherever the nexus lives
+    ++  at
+      |=  =lane:tarball
+      (ancestor-road:io [/nostr %app] lane)
     ++  read
       |=  [dir=path name=@t]
       =/  m  (fiber:fiber:nexus ,(unit json))
       ^-  form:m
-      (peek-as:io (file dir name) ,json)
+      ;<  =road:tarball  bind:m  (at [%& dir `@ta`name])
+      (peek-as:io road ,json)
     ++  names-in
       |=  dir=path
       =/  m  (fiber:fiber:nexus ,(list @ta))
       ^-  form:m
-      ;<  v=view:nexus  bind:m  (peek-shallow:io [%& %| `path`(weld root dir)] ~)
+      ;<  =road:tarball  bind:m  (at [%| dir])
+      ;<  v=view:nexus  bind:m  (peek-shallow:io road ~)
       %-  pure:m
       ?.  ?=([%ball *] v)  ~
       ?~  fil.ball.v  ~
@@ -83,7 +85,8 @@
       |=  dir=path
       =/  m  (fiber:fiber:nexus ,(list @ta))
       ^-  form:m
-      ;<  v=view:nexus  bind:m  (peek-shallow:io [%& %| `path`(weld root dir)] ~)
+      ;<  =road:tarball  bind:m  (at [%| dir])
+      ;<  v=view:nexus  bind:m  (peek-shallow:io road ~)
       %-  pure:m
       ?.  ?=([%ball *] v)  ~
       ~(tap in ~(key by dir.ball.v))

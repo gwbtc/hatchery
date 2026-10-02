@@ -13,7 +13,8 @@
   ^-  tool-handler:tools
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
   ^-  form:m
-  ;<  dv=view:nexus  bind:m  (peek:io [%& %| /apps/ghostprompter/proposals] ~)
+  ;<  pr=road:tarball  bind:m  (ancestor-road:io [/ghostprompter %app] [%| /proposals])
+  ;<  dv=view:nexus  bind:m  (peek:io pr ~)
   =/  entries
     ?.  ?=([%ball *] dv)  ~
     ?~  fil.ball.dv  ~

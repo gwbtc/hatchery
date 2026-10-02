@@ -6,7 +6,10 @@
 // folder ('a/b/', '' = the whole bucket) or a single file ('a/b.txt').
 const $ = (id) => document.getElementById(id);
 const BASE = '/grubbery/s3';
-const BALL = '/grubbery/ball/apps/s3';
+// the file API takes absolute paths; this app may live under /apps or a
+// desk, so it asks the server where it is before building any URL
+let BALL = null;
+const rootReady = fetch('/grubbery/s3/api/root').then((r) => r.json()).then((j) => { BALL = '/grubbery/ball' + j.root; });
 
 async function jget(u) { const r = await fetch(BASE + u); if (!r.ok) throw new Error(await r.text()); return r.json(); }
 async function jpost(u, b) { const r = await fetch(BASE + u, { method: 'POST', body: JSON.stringify(b) }); if (!r.ok) throw new Error(await r.text()); return r; }
@@ -269,14 +272,15 @@ function remoteSource(bucket) {
 }
 
 function localSource(bucket) {
-  const root = `${BALL}/mounts/${bucket}`;
+  const rootUrl = () => `${BALL}/mounts/${bucket}`;
   return {
     kind: 'local', tag: 'LOCAL MOUNT', title: bucket,
     sub: `/apps/s3/mounts/${bucket}/ · the local copies of ${bucket}'s mounted paths`,
     rootLabel: bucket,
     foot: 'The local copy in the namespace. Push uploads to the bucket; Delete only removes the local copy.',
     async list(prefix) {
-      const r = await fetch(`${root}/${prefix}?list=1`.replace(/\/\?/, '?'));
+      await rootReady;
+      const r = await fetch(`${rootUrl()}/${prefix}?list=1`.replace(/\/\?/, '?'));
       if (r.status === 404) return [];
       if (!r.ok) throw new Error(`listing failed (${r.status})`);
       const data = await r.json();
@@ -286,7 +290,7 @@ function localSource(bucket) {
         path: prefix + c.name + (c.kind === 'dir' ? '/' : ''),
       }));
     },
-    raw: (it) => `${root}/${it.path}?raw=1`,
+    raw: (it) => `${rootUrl()}/${it.path}?raw=1`,
     actions: (it) => it.kind === 'dir'
       ? [{ label: 'Push', action: 'push' }]
       : [{ label: 'Push', action: 'push' }, { label: 'Delete', action: 'delete', danger: true }],
@@ -295,7 +299,7 @@ function localSource(bucket) {
       if (action === 'delete') {
         if (!confirm(`Delete the local copy ${it.name}? The bucket is untouched.`)) return;
         // the ball's own directory api, as the explorer uses it: POST to the dir
-        const dir = `${root}/${it.path.slice(0, it.path.lastIndexOf('/') + 1)}`.replace(/\/$/, '');
+        const dir = `${rootUrl()}/${it.path.slice(0, it.path.lastIndexOf('/') + 1)}`.replace(/\/$/, '');
         const r = await fetch(dir, {
           method: 'POST', redirect: 'manual',
           headers: { 'content-type': 'application/x-www-form-urlencoded' },

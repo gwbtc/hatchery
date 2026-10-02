@@ -54,7 +54,11 @@
       ?:  ?=([~ %n *] v)  (fall (rush p.u.v dem) 20)
       20
     ?:(=(0 n) 20 (min n 50))
-  ;<  idx=(unit json)  bind:m  (peek-as:io [%& %& /apps/nostr %'feed.json'] ,json)
+  ::  the mirror is found by NAME; the agent's weir grants the read
+  ;<  nr=(unit lane:tarball)  bind:m  (resolve-link:io '@nostr')
+  ?.  ?=([~ %| *] nr)  (pure:m [%error 'the nostr mirror is not installed'])
+  =/  nostr=path  p.u.nr
+  ;<  idx=(unit json)  bind:m  (peek-as:io [%& %& nostr %'feed.json'] ,json)
   =/  ids=(list @t)
     ?~  idx  ~
     =/  a  (jget u.idx 'ids')
@@ -66,7 +70,7 @@
     |-  ^-  form:m
     ?~  ids  (pure:m (flop out))
     ;<  ev=(unit json)  bind:m
-      (peek-as:io [%& %& /apps/nostr/events (cat 3 i.ids '.json')] ,json)
+      (peek-as:io [%& %& (snoc nostr %events) (cat 3 i.ids '.json')] ,json)
     ?~  ev  $(ids t.ids)
     $(ids t.ids, out [[(jnum u.ev 'created_at') i.ids (jstr u.ev 'pubkey') (jstr u.ev 'content')] out])
   =/  sorted  (sort events |=([a=[at=@ud *] b=[at=@ud *]] (gth at.a at.b)))

@@ -20,7 +20,7 @@
     ?.(?=([~ %s *] v) '' p.u.v)
   ?:  =('' url)
     (pure:m [%error 'Missing required argument: url'])
-  =/  config=road:tarball  [%& %& /apps/'feeds.feeds' %'feeds.json']
+  ;<  config=road:tarball  bind:m  (ancestor-road:io [/feeds %app] [%& / %'feeds.json'])
   ;<  cfg=view:nexus  bind:m  (peek:io config `[/ %json])
   =/  urls=(list @t)
     ?.  ?=([%file *] cfg)  ~
@@ -32,8 +32,8 @@
   ;<  ~  bind:m
     %+  over:io  config
     [[/ %json] `json`[%a (turn (skip urls |=(u=@t =(u url))) |=(u=@t s+u))]]
-  =/  store=road:tarball
-    [%& %& /apps/'feeds.feeds'/store (rap 3 (scot %uv (sham url)) '.feed' ~)]
+  ;<  store=road:tarball  bind:m
+    (ancestor-road:io [/feeds %app] [%& /store (rap 3 (scot %uv (sham url)) '.feed' ~)])
   ;<  =view:nexus  bind:m  (peek:io store ~)
   ;<  ~  bind:m
     ?.  ?=([%file *] view)  (pure:(fiber:fiber:nexus ,~) ~)
