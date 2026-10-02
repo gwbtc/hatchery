@@ -104,11 +104,15 @@ not the place to edit. Everything below is MCP calls against the ship.
    was a one-line fix in this repo.
 6. When it works, commit and push through the lane: `git_cmd` (call_tool
    with `path: /apps/forge.git_forge/tools`, `path` arg = the repo instance)
-   with `add <file>` per file, then `commit -m "..."`, then `push`. Read
-   `run.git-action` after each; the log entry says `staged N path(s)`,
-   the commit hash, or the refusal. `data/ui/status.json` and
-   `current.json` are rebuilt on the data nexus's next reload, so they can
-   lag the lane's log by a moment.
+   with `add <file>` per file or bare `add` for everything, then
+   `commit -m "..."`, then `push`. Read `run.git-action` after each; the
+   log entry says `staged N path(s)`, the commit hash, or the refusal.
+   `data/ui/status.json` and `current.json` are rebuilt on the data
+   nexus's next reload, so they can lag the lane's log by a moment. The
+   push speaks git's own protocol: it packs the objects the remote lacks
+   and posts them to `git-receive-pack`, so the commit on GitHub is the
+   same hash as the one on the ship. A push is refused if the remote tip
+   moved since the last pull.
 
 Commit needs `author_name` and `author_email` in the repo's `config.json`;
 push needs `account` set to a GitHub login the github nexus holds a token
