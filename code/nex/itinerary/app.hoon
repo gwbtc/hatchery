@@ -52,7 +52,7 @@
       %+  spin:loader  ball
       :~  (manifest:loader 0)
           [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'itinerary'] ['description' s+'Travel maps with pins']])]]
-          [%over %& [/ %'weir.json'] [[/ %json] (pairs:enjs:format ~[['poke' a+~[(pairs:enjs:format ~[['road' s+'/sys/bowl.sig'] ['why' s+'time, identity, entropy — every fiber op']]) (pairs:enjs:format ~[['road' s+'/sys/eyre/'] ['why' s+'serve its page over HTTP']]) (pairs:enjs:format ~[['road' s+'@geocode/main.sig'] ['why' s+'map search box geocoding']])]] ['peek' a+~[(pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the geocode and anthropic proxies by name']]) (pairs:enjs:format ~[['road' s+'@geocode/calls/'] ['why' s+'read a geocode result']])]]])]]
+          [%over %& [/ %'weir.json'] [[/ %json] (pairs:enjs:format ~[['poke' a+~[(pairs:enjs:format ~[['road' s+'/sys/bowl.sig'] ['why' s+'time, identity, entropy — every fiber op']]) (pairs:enjs:format ~[['road' s+'/sys/eyre/'] ['why' s+'serve its page over HTTP']]) (pairs:enjs:format ~[['road' s+'@geocode/main.sig'] ['why' s+'map search box geocoding']]) (pairs:enjs:format ~[['road' s+'@anthropic/main.sig'] ['why' s+'each trip agent makes metered model calls; the agent is nested here, so its reach is ours']])]] ['peek' a+~[(pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the geocode and anthropic proxies by name']]) (pairs:enjs:format ~[['road' s+'@geocode/calls/'] ['why' s+'read a geocode result']]) (pairs:enjs:format ~[['road' s+'@anthropic/calls/'] ['why' s+'the trip agents read their call results']])]]])]]
           [%over %& [/ %'tile.json'] [[/ %json] tile]]
           [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
           [%over %& [/ %'index.html'] [[/ %mime] index-html]]

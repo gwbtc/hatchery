@@ -47,10 +47,11 @@
             :-  %a
             :~  (pairs:enjs:format ~[['road' s+'/sys/bowl.sig'] ['why' s+'time, identity, entropy — every fiber op']])
                 (pairs:enjs:format ~[['road' s+'/sys/eyre/'] ['why' s+'serve the dashboard over HTTP']])
+                (pairs:enjs:format ~[['road' s+'@anthropic/main.sig'] ['why' s+'the ghostwriting agent makes metered model calls; it is nested here, so its reach is ours']])
             ==
             :-  'peek'
             :-  %a
-            :~  (pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the anthropic proxy and the nostr mirror by name']]) (pairs:enjs:format ~[['road' s+'@nostr/'] ['why' s+'the flow: feed.json, events/, profiles/ (the nostr mirror)']])
+            :~  (pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the anthropic proxy and the nostr mirror by name']]) (pairs:enjs:format ~[['road' s+'@nostr/'] ['why' s+'the flow: feed.json, events/, profiles/ (the nostr mirror)']]) (pairs:enjs:format ~[['road' s+'@anthropic/calls/'] ['why' s+'the agent reads its call results']])
             ==
         ==
       =/  tile=json
