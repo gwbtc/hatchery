@@ -51,7 +51,9 @@
             ==
             :-  'peek'
             :-  %a
-            :~  (pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the anthropic proxy and the nostr mirror by name']]) (pairs:enjs:format ~[['road' s+'@nostr/'] ['why' s+'the flow: feed.json, events/, profiles/ (the nostr mirror)']]) (pairs:enjs:format ~[['road' s+'@anthropic/calls/'] ['why' s+'the agent reads its call results']])
+            :~  (pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the anthropic proxy and the nostr mirror by name']])
+                (pairs:enjs:format ~[['road' s+'@nostr/'] ['why' s+'the flow: feed.json, events/, profiles/ (the nostr mirror)']])
+                (pairs:enjs:format ~[['road' s+'@anthropic/calls/'] ['why' s+'the agent reads its call results']])
             ==
         ==
       =/  tile=json
