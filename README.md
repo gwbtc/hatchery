@@ -111,8 +111,9 @@ not the place to edit. Everything below is MCP calls against the ship.
    nexus's next reload, so they can lag the lane's log by a moment. The
    push speaks git's own protocol: it packs the objects the remote lacks
    and posts them to `git-receive-pack`, so the commit on GitHub is the
-   same hash as the one on the ship. A push is refused if the remote tip
-   moved since the last pull.
+   same hash as the one on the ship, and GitHub shows the commit's own
+   time, not the push's. A push is refused if the remote tip moved since
+   the last pull.
 
 Commit needs `author_name` and `author_email` in the repo's `config.json`;
 push needs `account` set to a GitHub login the github nexus holds a token
