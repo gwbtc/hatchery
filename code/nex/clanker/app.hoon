@@ -1,17 +1,22 @@
-::  clanker: the grubbery chat workspace. See man/clanker.
+::  clanker: the chat workspace, a COLLECTION of clankers.
 ::
-::  THE FOUNDATION is the tree, not the engine. The workspace lives in the
-::  namespace as durable structure:
+::  A clanker is a scoped chat agent: its standing prompt, model, the tools
+::  it advertises and WHERE they run, and its chats. The collection is a
+::  directory tree, the assistants/usergroups rule: a dir named
+::  <name>.clanker IS a clanker; any other dir is a category.
 ::
-::    /projects/<proj>/config.json          the project RECORD (data)
-::    /projects/<proj>/chats/<chat>.json     one append-only event log
-::    /main.sig                              the poke loop (turns, interrupt)
-::    /http.sig, /requests/                  the page and its API
+::    /projects/                                the collection root
+::      grubbery.clanker/config.json           a clanker's RECORD (data)
+::      grubbery.clanker/chats/<chat>.json     one append-only event log each
+::      work/                                  a category
+::        hatchery.clanker/
+::    /main.sig                                the poke loop (turns, interrupt)
+::    /http.sig, /requests/                    the page and its API
+::    /ui/components.js                        the welded kit (tree, tabs, …)
 ::
-::  A project is DATA: name, system prompt, model, the advertised tool
-::  schema, and WHERE its tools run (tools_root, a link-relative path to
-::  a tools nexus). The engine only reads it, so adding a project is
-::  writing a /projects/<name>/ dir, not a code change.
+::  A clanker is DATA. The engine reads one record at one path; adding a
+::  clanker is writing a dir, not a code change. tools_root in the record
+::  is link-relative (@mcp/tools) and resolved per turn.
 ::
 ::  The STORED TRUTH of a chat is a log of EVENTS, never a messages array.
 ::  The request sent to the model is a DERIVED VIEW: +assemble folds the
@@ -28,6 +33,12 @@
 /&  app-js      ./app.js
 /&  style-css   ./style.css
 /&  icon        ./icon.svg
+::  shared web components from /lib/ui, welded into one served file
+/&  sv-js       /lib/ui/split-view.js
+/&  tg-js       /lib/ui/tab-group.js
+/&  tv-js       /lib/ui/tree-view.js
+/&  dm-js       /lib/ui/drop-menu.js
+/&  md-js       /lib/ui/modal-dialog.js
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -55,7 +66,7 @@
     --
 |%
 ::  +ck: lib/clanker's door, used only for its generic plumbing. Its cfg
-::  is unused by those arms: the per-project schema/prompt/model come
+::  is unused by those arms: the per-clanker schema/prompt/model come
 ::  from the tree.
 ++  ck  ~(. clanker:clanker [%clanker [%a ~] '' [%o ~]])
 ++  srv  ~(. http-res:io [%| 1 %& ~ %'http.sig'])
@@ -63,10 +74,13 @@
 ::  tree is the live, user-owned record); %over for product code.
 ++  rows
   ^-  (list row:loader)
-  =/  proj=bole:tarball
-    =/  b=bole:tarball  *bole:tarball
-    =.  b  (~(put bo:tarball b) [/ %'config.json'] [[/ %json] grubbery-config])
-    (put-bole:loader b /chats empty-dir:loader)
+  =/  wrap
+    |=  =mime  ^-  @
+    (rap 3 ~[123 10 q.q.mime 10 125 10])
+  =/  kit-js=mime
+    :-  /application/javascript
+    %-  as-octs:mimes:html
+    (rap 3 ~[(wrap sv-js) (wrap tg-js) (wrap tv-js) (wrap dm-js) (wrap md-js)])
   =/  tile=json
     %-  pairs:enjs:format
     :~  title+s+'Clanker'
@@ -83,12 +97,21 @@
       [%over %& [/ %'app.js'] [[/ %mime] app-js]]
       [%over %& [/ %'style.css'] [[/ %mime] style-css]]
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
+      [%fall %| /ui empty-dir:loader]
+      [%over %& [/ui %'components.js'] [[/ %mime] kit-js]]
       [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
       [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
       [%fall %| /requests empty-dir:loader]
       [%fall %| /projects empty-dir:loader]
-      [%fall %| /projects/grubbery proj]
+      [%fall %| [%projects %'grubbery.clanker' ~] (clanker-bole grubbery-config)]
   ==
+::  +clanker-bole: a fresh clanker dir — its record and an empty chats/.
+++  clanker-bole
+  |=  cfg=json
+  ^-  bole:tarball
+  =/  b=bole:tarball  *bole:tarball
+  =.  b  (~(put bo:tarball b) [/ %'config.json'] [[/ %json] cfg])
+  (put-bole:loader b /chats empty-dir:loader)
 ::  +weir-ask: what this nexus needs to reach. The model proxy and the
 ::  tools nexus are found by name through /sys/link.
 ++  weir-ask
@@ -100,7 +123,7 @@
       :~  (road '/sys/bowl.sig' 'time, identity, entropy')
           (road '/sys/eyre/' 'serve its page over HTTP')
           (road '@anthropic/main.sig' 'metered model calls')
-          (road '@mcp/tools/main.sig' 'the grubbery project runs its tools in the kernel tools nexus')
+          (road '@mcp/tools/main.sig' 'the grubbery clanker runs its tools in the kernel tools nexus')
       ==
       :-  'peek'
       :-  %a
@@ -109,9 +132,31 @@
           (road '@mcp/tools/runs/' 'read a tool run result')
       ==
   ==
-::  +serve: the main.sig poke loop. Each {message, project, chat} poke
-::  runs a turn; {action:'interrupt'} is swallowed here (it lands
-::  mid-await inside a running turn, which cancels it).
+::
+::  Paths. A clanker is addressed by its path under /projects, as the page
+::  sends it: "/grubbery.clanker", "/work/hatchery.clanker". A category is
+::  the same without the suffix; "/" is the collection root.
+::
+++  parse-proj
+  |=  t=@t
+  ^-  (unit path)
+  (rush t stap)
+++  is-clanker
+  |=  n=@ta
+  ^-  ?
+  =/  t=tape  (trip n)
+  =/  len=@ud  (lent t)
+  &((gth len 8) =(".clanker" (slag (sub len 8) t)))
+++  strip-json
+  |=  n=@ta
+  ^-  (unit @ta)
+  =/  t=tape  (trip n)
+  =/  len=@ud  (lent t)
+  ?.  &((gth len 5) =(".json" (slag (sub len 5) t)))  ~
+  `(crip (scag (sub len 5) t))
+::  +serve: the main.sig poke loop. Each {path, chat, message} poke runs
+::  a turn; {action:'interrupt'} is swallowed here (it lands mid-await
+::  inside a running turn, which cancels it).
 ++  serve
   |=  [=rail:tarball =prod:fiber:nexus]
   =/  m  (fiber:fiber:nexus ,~)
@@ -124,16 +169,17 @@
     ?.  ?=([%o *] jon)  ~
     (bind (~(get by p.jon) 'action') |=(j=json ?>(?=(%s -.j) p.j)))
   ?:  ?=([~ %'interrupt'] act)  $
-  =/  project=@t  =/(p=@t (jstr:clanker jon 'project') ?:(=('' p) 'grubbery' p))
-  =/  chat=@t     =/(c=@t (jstr:clanker jon 'chat') ?:(=('' c) 'main' c))
-  ;<  ~  bind:m  (turn-chat rail jon project chat)
+  =/  proj=(unit path)  (parse-proj (jstr:clanker jon 'path'))
+  ?~  proj  $
+  =/  chat=@t  =/(c=@t (jstr:clanker jon 'chat') ?:(=('' c) 'main' c))
+  ;<  ~  bind:m  (turn-chat rail jon u.proj chat)
   $
-::  +turn-chat: one turn. Load the project record from the tree, append
+::  +turn-chat: one turn. Load the clanker's record from the tree, append
 ::  the %input event to the chat log, persist (so a refresh shows it even
-::  if the turn stalls), then run the loop with THIS project's prompt,
+::  if the turn stalls), then run the loop with THIS clanker's prompt,
 ::  model, schema, and tools root.
 ++  turn-chat
-  |=  [=rail:tarball jon=json project=@t chat=@t]
+  |=  [=rail:tarball jon=json proj=path chat=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ?.  ?=([%o *] jon)  (pure:m ~)
@@ -141,7 +187,7 @@
     (bind (~(get by p.jon) 'message') |=(j=json ?>(?=(%s -.j) p.j)))
   ?~  msg  (pure:m ~)
   ;<  pv=view:nexus  bind:m
-    (peek:io (nex-road:io rail [%& [%projects project ~] %'config.json']) `[/ %json])
+    (peek:io (nex-road:io rail [%& (welp /projects proj) %'config.json']) `[/ %json])
   ?.  ?=([%file *] pv)  (pure:m ~)
   =/  prec=json  (fall (mole |.(!<(json (need-vase:tarball sang.pv)))) [%o ~])
   =/  sys=@t     (jstr:clanker prec 'system')
@@ -151,7 +197,8 @@
     ?~  s=(~(get by ?>(?=([%o *] prec) p.prec)) 'tools')  [%a ~]
     u.s
   ;<  root=(unit path)  bind:m  (tools-root (jstr:clanker prec 'tools_root'))
-  =/  road=road:tarball  (chat-road rail project chat)
+  =/  road=road:tarball
+    (nex-road:io rail [%& (welp /projects (welp proj /chats)) (crip "{(trip chat)}.json")])
   ;<  cur=view:nexus  bind:m  (peek:io road `[/ %json])
   =/  log=(list json)
     ?.  ?=([%file *] cur)  ~
@@ -183,7 +230,7 @@
     |=(b=json ?&(?=([%o *] b) ?=([~ %s %'tool_use'] (~(get by p.b) 'type'))))
   ?~  tool-uses  (pure:m ~)
   ?~  root
-    ::  the project advertises tools but names no tools nexus: answer the
+    ::  the clanker advertises tools but names no tools nexus: answer the
     ::  model honestly and stop, so the log says why
     =/  results=(list json)
       %+  turn  tool-uses
@@ -191,7 +238,7 @@
       %-  pairs:enjs:format
       :~  ['type' s+'tool_result']
           ['tool_use_id' s+(jstr:clanker tu 'id')]
-          ['content' s+'this project has no tools nexus (tools_root unset or unresolvable)']
+          ['content' s+'this clanker has no tools nexus (tools_root unset or unresolvable)']
           ['is_error' b+%.y]
       ==
     =.  log  (snoc log (event-results results ~))
@@ -201,7 +248,7 @@
   =.  log  (snoc log (event-results -.u.ran +.u.ran))
   ;<  ~  bind:m  (write-chat:ck road %.y log)
   $
-::  +tools-root: a project's tools_root resolved to an absolute dir.
+::  +tools-root: a clanker's tools_root resolved to an absolute dir.
 ::  '@name/rest' resolves the name through /sys/link; '/abs/path' is
 ::  taken as is; '' is no tools.
 ++  tools-root
@@ -211,16 +258,16 @@
   =/  t=tape  (trip spec)
   ?~  t  (pure:m ~)
   ?.  =('@' i.t)  (pure:m (rush spec stap))
-  =/  sl=(unit @ud)  (find "/" t)
   ::  t is a lest after the ?~ above; scag/slag return ^+ their list, so
   ::  hand them a plain tape or their ~ case fails to nest
   =/  tt=tape  t
+  =/  sl=(unit @ud)  (find "/" t)
   =/  nm=@t  ?~(sl spec (crip (scag u.sl tt)))
   =/  rest=path  ?~(sl / (fall (rush (crip (slag u.sl tt)) stap) /))
   ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io nm)
   ?.  ?=([~ %| *] root)  (pure:m ~)
   (pure:m `(weld p.u.root rest))
-::  +run-tools: execute each tool_use against the project's tools nexus;
+::  +run-tools: execute each tool_use against the clanker's tools nexus;
 ::  yield the tool_result blocks (for the model) and trace entries (for
 ::  the UI). ~ on interrupt.
 ++  run-tools
@@ -315,11 +362,6 @@
   =/  st=tool-state:nex-tools  !<(tool-state:nex-tools (need-vase:tarball sang.view))
   ?.  =(%done step.st)  $
   (pure:m `update.st)
-::  +chat-road: where a chat's event log lives in the tree.
-++  chat-road
-  |=  [=rail:tarball project=@t chat=@t]
-  ^-  road:tarball
-  (nex-road:io rail [%& [%projects project %chats ~] (crip "{(trip chat)}.json")])
 ::  +assemble: THE context policy. Fold the event log into Anthropic
 ::  messages. v1 = append-all. %input -> a user turn; %response -> an
 ::  assistant turn carrying the stored content array (text + tool_use);
@@ -382,11 +424,16 @@
 ::  HTTP: the page and its API. A request fiber lives at /requests/<id>,
 ::  one level under the nexus root, so the root is [%| 1 ...].
 ::
-::    GET  /                         the page
-::    GET  /api/projects             [{name, model, chats:[...]}]
-::    GET  /api/log?project&chat     the event log
-::    POST /api/send {project, chat, message}   -> pokes main.sig
+::    GET  /                             the page; /app.js /style.css /icon.svg
+::    GET  /ui/components.js             the welded kit
+::    GET  /api/tree                     the whole collection, names only
+::    GET  /api/record?path=             a clanker's record + its chats
+::    POST /api/record {path, ...}       update record fields
+::    GET  /api/log?path=&chat=          one chat's event log
+::    POST /api/send {path, chat, message}      -> pokes main.sig
 ::    POST /api/stop                            -> interrupts the running turn
+::    POST /api/new {kind, parent, name}        category | clanker | chat
+::    POST /api/delete {path} | {path, chat}
 ::
 ++  handle-request
   |=  eyre-id=@ta
@@ -404,76 +451,170 @@
     |=(s=@ta =('' s))
   =/  method=@t  method.request.req
   =/  arg  |=(k=@t ^-(@t (fall (~(get by (malt args)) k) '')))
+  =/  body=json
+    (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) *json)
+  =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
   ?:  ?&(=(%'GET' method) =(~ suffix))
-    (serve-file eyre-id 'index.html')
+    (serve-file eyre-id / 'index.html')
   ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'app.js' i.suffix) =(%'style.css' i.suffix) =(%'icon.svg' i.suffix)))
-    (serve-file eyre-id i.suffix)
-  ?:  ?&(=(%'GET' method) =([%api %projects ~] suffix))
-    ;<  body=json  bind:m  list-projects
-    (send-json eyre-id (en:json:html body))
+    (serve-file eyre-id / i.suffix)
+  ?:  ?&(=(%'GET' method) =([%ui %'components.js' ~] suffix))
+    (serve-file eyre-id /ui 'components.js')
+  ?:  ?&(=(%'GET' method) =([%api %tree ~] suffix))
+    ;<  dv=view:nexus  bind:m  (peek:io [%| 1 %| /projects] ~)
+    ?.  ?=([%ball *] dv)  (send-json eyre-id '{}')
+    (send-json eyre-id (en:json:html (tree-json ball.dv)))
+  ?:  ?&(=(%'GET' method) =([%api %record ~] suffix))
+    =/  proj=(unit path)  (parse-proj (arg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    ;<  rec=json  bind:m  (record-json u.proj)
+    (send-json eyre-id (en:json:html rec))
+  ?:  ?&(=(%'POST' method) =([%api %record ~] suffix))
+    =/  proj=(unit path)  (parse-proj (jarg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    =/  road=road:tarball  [%| 1 %& (welp /projects u.proj) %'config.json']
+    ;<  cv=view:nexus  bind:m  (peek:io road `[/ %json])
+    ?.  ?=([%file *] cv)  (bad eyre-id 'no such clanker')
+    =/  cur=(map @t json)
+      =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.cv)))) [%o ~])
+      ?:(?=([%o *] j) p.j ~)
+    ::  only the record's editable fields move; tools and name stay
+    =/  new=(map @t json)
+      %+  roll  `(list @t)`~['system' 'model' 'max_tokens' 'tools_root']
+      |=  [k=@t acc=_cur]
+      =/  v=(unit json)  ?.(?=([%o *] body) ~ (~(get by p.body) k))
+      ?~(v acc (~(put by acc) k u.v))
+    ;<  ~  bind:m  (over:io road [[/ %json] [%o new]])
+    (send-json eyre-id '{"ok":true}')
   ?:  ?&(=(%'GET' method) =([%api %log ~] suffix))
-    =/  project=@t  =/(p=@t (arg 'project') ?:(=('' p) 'grubbery' p))
-    =/  chat=@t     =/(c=@t (arg 'chat') ?:(=('' c) 'main' c))
+    =/  proj=(unit path)  (parse-proj (arg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    =/  chat=@t  =/(c=@t (arg 'chat') ?:(=('' c) 'main' c))
     ;<  lv=view:nexus  bind:m
-      (peek:io [%| 1 %& [%projects project %chats ~] (crip "{(trip chat)}.json")] `[/ %json])
+      (peek:io [%| 1 %& (welp /projects (welp u.proj /chats)) (crip "{(trip chat)}.json")] `[/ %json])
     =/  log=json
       ?.  ?=([%file *] lv)  [%a ~]
       (fall (mole |.(!<(json (need-vase:tarball sang.lv)))) [%a ~])
     (send-json eyre-id (en:json:html log))
   ?:  ?&(=(%'POST' method) =([%api %send ~] suffix))
-    =/  jon=json
-      (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) *json)
-    ?.  ?=([%o *] jon)
-      ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'bad json')])
-      (pure:m ~)
-    ;<  ~  bind:m  (poke:io [%| 1 %& ~ %'main.sig'] [[/ %json] jon])
+    ?.  ?=([%o *] body)  (bad eyre-id 'bad json')
+    ;<  ~  bind:m  (poke:io [%| 1 %& ~ %'main.sig'] [[/ %json] body])
     (send-json eyre-id '{"ok":true}')
   ?:  ?&(=(%'POST' method) =([%api %stop ~] suffix))
     ;<  ~  bind:m
       (poke:io [%| 1 %& ~ %'main.sig'] [[/ %json] (pairs:enjs:format ~[['action' s+'interrupt']])])
     (send-json eyre-id '{"ok":true}')
+  ?:  ?&(=(%'POST' method) =([%api %new ~] suffix))
+    =/  kind=@t  (jarg 'kind')
+    =/  parent=(unit path)  (parse-proj =/(p=@t (jarg 'parent') ?:(=('' p) '/' p)))
+    =/  name=@t  (jarg 'name')
+    ?~  parent  (bad eyre-id 'bad parent')
+    ?:  =('' name)  (bad eyre-id 'name required')
+    ?:  =('category' kind)
+      ;<  ~  bind:m
+        (make:io [%| 1 %| (welp /projects (snoc u.parent `@ta`name))] &+empty-dir:loader)
+      (send-json eyre-id '{"ok":true}')
+    ?:  =('clanker' kind)
+      =/  dir=@ta  (crip "{(trip name)}.clanker")
+      ;<  ~  bind:m
+        (make:io [%| 1 %| (welp /projects (snoc u.parent dir))] &+(clanker-bole (fresh-config name)))
+      (send-json eyre-id '{"ok":true}')
+    ?:  =('chat' kind)
+      =/  road=road:tarball
+        [%| 1 %& (welp /projects (welp u.parent /chats)) (crip "{(trip name)}.json")]
+      ;<  err=(unit tang)  bind:m  (make-soft:io road |+[[[/ %json] [%a ~]] ~])
+      ?^  err  (bad eyre-id 'could not create the chat')
+      (send-json eyre-id '{"ok":true}')
+    (bad eyre-id 'kind must be category, clanker, or chat')
+  ?:  ?&(=(%'POST' method) =([%api %delete ~] suffix))
+    =/  proj=(unit path)  (parse-proj (jarg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    ?~  u.proj  (bad eyre-id 'the collection root stays')
+    =/  chat=@t  (jarg 'chat')
+    ?:  =('' chat)
+      ;<  *  bind:m  (cull-soft:io [%| 1 %| (welp /projects u.proj)])
+      (send-json eyre-id '{"ok":true}')
+    ;<  *  bind:m
+      (cull-soft:io [%| 1 %& (welp /projects (welp u.proj /chats)) (crip "{(trip chat)}.json")])
+    (send-json eyre-id '{"ok":true}')
   ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
   (pure:m ~)
-::  +list-projects: every dir under /projects with its record's model and
-::  the chats it holds.
-++  list-projects
+::  +tree-json: the collection as nested data, names only — one deep peek.
+::  {"<name>": {"kind":"category","children":{…}} | {"kind":"clanker","chats":[…]}}
+++  tree-json
+  |=  b=ball:tarball
+  ^-  json
+  :-  %o
+  %-  ~(gas by *(map @t json))
+  %+  turn  ~(tap by dir.b)
+  |=  [n=@ta kid=ball:tarball]
+  ^-  [@t json]
+  :-  n
+  ?.  (is-clanker n)
+    (pairs:enjs:format ~[['kind' s+'category'] ['children' (tree-json kid)]])
+  =/  chats=(list @ta)
+    =/  c=(unit ball:tarball)  (~(get by dir.kid) %chats)
+    ?~  c  ~
+    ?~  fil.u.c  ~
+    (murn (sort ~(tap in ~(key by contents.u.fil.u.c)) aor) strip-json)
+  (pairs:enjs:format ~[['kind' s+'clanker'] ['chats' [%a (turn chats |=(x=@ta s+x))]]])
+::  +record-json: a clanker's record plus its chats with their event counts.
+++  record-json
+  |=  proj=path
   =/  m  (fiber:fiber:nexus ,json)
   ^-  form:m
-  ;<  dv=view:nexus  bind:m  (peek:io [%| 1 %| /projects] ~)
-  ?.  ?=([%ball *] dv)  (pure:m [%a ~])
-  =/  names=(list @ta)  (sort ~(tap in ~(key by dir.ball.dv)) aor)
-  =|  out=(list json)
-  |-
-  ?~  names  (pure:m [%a (flop out)])
   ;<  cv=view:nexus  bind:m
-    (peek:io [%| 1 %& [%projects i.names ~] %'config.json'] `[/ %json])
+    (peek:io [%| 1 %& (welp /projects proj) %'config.json'] `[/ %json])
   =/  cfg=json
     ?.  ?=([%file *] cv)  [%o ~]
     (fall (mole |.(!<(json (need-vase:tarball sang.cv)))) [%o ~])
-  ;<  chv=view:nexus  bind:m  (peek:io [%| 1 %| [%projects i.names %chats ~]] ~)
-  =/  chats=(list @ta)
+  ;<  chv=view:nexus  bind:m  (peek:io [%| 1 %| (welp /projects (welp proj /chats))] ~)
+  =/  names=(list @ta)
     ?.  ?=([%ball *] chv)  ~
     ?~  fil.ball.chv  ~
-    %+  murn  (sort ~(tap in ~(key by contents.u.fil.ball.chv)) aor)
-    |=  n=@ta
-    =/  t=tape  (trip n)
-    =/  len=@ud  (lent t)
-    ?.  &((gth len 5) =(".json" (slag (sub len 5) t)))  ~
-    `(crip (scag (sub len 5) t))
-  =/  entry=json
+    (murn (sort ~(tap in ~(key by contents.u.fil.ball.chv)) aor) strip-json)
+  =|  chats=(list json)
+  |-
+  ?~  names
+    %-  pure:m
     %-  pairs:enjs:format
-    :~  ['name' s+i.names]
-        ['model' s+(jstr:clanker cfg 'model')]
-        ['tools_root' s+(jstr:clanker cfg 'tools_root')]
-        ['chats' [%a (turn chats |=(c=@ta s+c))]]
+    :~  ['path' s+(spat proj)]
+        ['record' cfg]
+        ['chats' [%a (flop chats)]]
     ==
-  $(names t.names, out [entry out])
+  ;<  lv=view:nexus  bind:m
+    (peek:io [%| 1 %& (welp /projects (welp proj /chats)) (crip "{(trip i.names)}.json")] `[/ %json])
+  =/  n=@ud
+    ?.  ?=([%file *] lv)  0
+    =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.lv)))) [%a ~])
+    ?.(?=([%a *] j) 0 (lent p.j))
+  =/  entry=json  (pairs:enjs:format ~[['name' s+i.names] ['events' (numb:enjs:format n)]])
+  $(names t.names, chats [entry chats])
+::  +fresh-config: a new clanker's record. No prompt, no tools: the user
+::  fills it in on its page.
+++  fresh-config
+  |=  name=@t
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['name' s+name]
+      ['system' s+'']
+      ['model' s+'claude-sonnet-4-6']
+      ['max_tokens' (numb:enjs:format 4.096)]
+      ['tools_root' s+'']
+      ['tools' [%a ~]]
+  ==
 ::
-++  serve-file
-  |=  [eyre-id=@ta filename=@ta]
+++  bad
+  |=  [eyre-id=@ta msg=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  =view:nexus  bind:m  (peek:io [%| 1 %& ~ filename] `[/ %mime])
+  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html msg)])
+::
+++  serve-file
+  |=  [eyre-id=@ta dir=path filename=@ta]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  =view:nexus  bind:m  (peek:io [%| 1 %& dir filename] `[/ %mime])
   ?.  ?=([%file *] view)
     ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
     (pure:m ~)
@@ -486,7 +627,7 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   (send-simple:srv eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
-::  +grubbery-config: the seeded grubbery project RECORD. The engine reads
+::  +grubbery-config: the seeded grubbery clanker's RECORD. The engine reads
 ::  these fields; nothing here is special-cased in code. Its tools run in
 ::  the kernel's tools nexus, found by name.
 ++  grubbery-config
@@ -499,7 +640,7 @@
       ['tools_root' s+'@mcp/tools']
       ['tools' tool-schema]
   ==
-::  +tool-schema: the grubbery project's advertised tools, a focused
+::  +tool-schema: the grubbery clanker's advertised tools, a focused
 ::  self-editing set. Descriptions and param names mirror the kernel's
 ::  tool handlers.
 ++  tool-schema
@@ -557,7 +698,7 @@
         ~['mount_point']
       ==
   ==
-::  +grubbery-system: the grubbery project's standing prompt.
+::  +grubbery-system: the grubbery clanker's standing prompt.
 ++  grubbery-system
   ^-  @t
   '''

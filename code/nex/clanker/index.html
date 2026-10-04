@@ -15,25 +15,32 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         clanker
       </a>
-      <select id="project" class="sel" title="project"></select>
-      <input id="chat" type="text" value="main" spellcheck="false" autocomplete="off" title="chat">
-      <span id="model"></span>
+      <button id="sb-toggle" class="icon-btn" title="toggle sidebar">☰</button>
       <div id="tb-actions">
         <span id="status"></span>
-        <button id="stop" class="hdr-btn danger" title="interrupt the running turn">stop</button>
       </div>
     </div>
-    <div id="log"><div id="thread"></div></div>
-    <form id="compose">
-      <div id="compose-inner">
-        <textarea id="message" rows="1" placeholder="Message the project…" spellcheck="false"></textarea>
-        <button type="submit" id="send" title="send (⌘↩)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
+    <split-view id="body" orientation="horizontal" primary="start" size="250" min="170" max="480" persist="clanker-sidebar">
+      <div id="sidebar" slot="start">
+        <div class="sb-head">clankers <span class="ft-all"><button id="tree-toggle" type="button">expand all</button></span></div>
+        <tree-view id="tree"></tree-view>
       </div>
-      <div id="hint">⌘↩ to send · the transcript is the stored event log, nothing is held in the page</div>
-    </form>
+      <div id="workspace" slot="end">
+        <tab-group id="tabs" closable>
+          <!-- tab 0, fixed: the collection view — the root, a category, or a
+               clanker's own page, whichever the tree last selected -->
+          <div id="home" tab-label="/" tab-title="/" tab-fixed tab-icon="folder"></div>
+        </tab-group>
+      </div>
+    </split-view>
   </div>
+  <!-- right-click menu; items are built per click by app.js -->
+  <drop-menu id="ctx" style="position:fixed; display:none; z-index:50;">
+    <button slot="trigger" style="display:none"></button>
+  </drop-menu>
+  <!-- classic, not module: the bundle is plain concatenated component source
+       and app.js's boot calls the elements' methods synchronously -->
+  <script src="/grubbery/clanker/ui/components.js"></script>
   <script src="/grubbery/clanker/app.js"></script>
 </body>
 </html>
