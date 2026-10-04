@@ -15,12 +15,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         clanker
       </a>
-      <button id="sb-toggle" class="icon-btn" title="toggle sidebar">☰</button>
       <div id="tb-actions">
         <span id="status"></span>
       </div>
     </div>
-    <split-view id="body" orientation="horizontal" primary="start" size="250" min="170" max="480" persist="clanker-sidebar">
+    <split-view id="body" orientation="horizontal" primary="start" size="260" min="170" max="520" persist="clanker-sidebar">
       <div id="sidebar" slot="start">
         <div class="sb-head">clankers <span class="ft-all"><button id="tree-toggle" type="button">expand all</button></span></div>
         <tree-view id="tree"></tree-view>
@@ -38,9 +37,11 @@
   <drop-menu id="ctx" style="position:fixed; display:none; z-index:50;">
     <button slot="trigger" style="display:none"></button>
   </drop-menu>
-  <!-- classic, not module: the bundle is plain concatenated component source
-       and app.js's boot calls the elements' methods synchronously -->
+  <!-- classic scripts, in order: the welded kit, the file preview + view
+       surfaces (file tabs mount FileView), then the app -->
   <script src="/grubbery/clanker/ui/components.js"></script>
+  <script src="/grubbery/clanker/ui/file-preview.js"></script>
+  <script src="/grubbery/clanker/ui/file-view.js"></script>
   <script src="/grubbery/clanker/app.js"></script>
 </body>
 </html>
