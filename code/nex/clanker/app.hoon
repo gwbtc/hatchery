@@ -22,6 +22,7 @@
 /<  nex-tools  /lib/tools.hoon
 /&  index-html  ./index.html
 /&  app-js      ./app.js
+/&  viewer-js   ./viewer.js
 /&  style-css   ./style.css
 /&  icon        ./icon.svg
 ::  shared web components from /lib/ui, welded into one served file
@@ -82,6 +83,9 @@
       [%over %& [/ %'tile.json'] [[/ %json] tile]]
       [%over %& [/ %'index.html'] [[/ %mime] index-html]]
       [%over %& [/ %'app.js'] [[/ %mime] app-js]]
+      ::  the chat viewer the explorer opens a chat-log in (register it in
+      ::  the explorer's viewers.json as "chat-log": "/grubbery/clanker/viewer.js")
+      [%over %& [/ %'viewer.js'] [[/ %mime] viewer-js]]
       [%over %& [/ %'style.css'] [[/ %mime] style-css]]
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
       [%fall %| /ui empty-dir:loader]
@@ -231,7 +235,7 @@
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
   ?:  ?&(=(%'GET' method) =(~ suffix))
     (serve-file eyre-id / 'index.html')
-  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'app.js' i.suffix) =(%'style.css' i.suffix) =(%'icon.svg' i.suffix)))
+  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'app.js' i.suffix) =(%'viewer.js' i.suffix) =(%'style.css' i.suffix) =(%'icon.svg' i.suffix)))
     (serve-file eyre-id / i.suffix)
   ?:  ?&(=(%'GET' method) ?=([%ui @ ~] suffix))
     (serve-file eyre-id /ui i.t.suffix)
@@ -278,7 +282,7 @@
     ?~  proj  (bad eyre-id 'path required')
     =/  chat=@t  =/(c=@t (arg 'chat') ?:(=('' c) 'main' c))
     ;<  log=json  bind:m
-      (read-json [%| 1 %& (welp /projects (welp u.proj [%chats `@ta`chat ~])) %'log.json'])
+      (read-json [%| 1 %& (welp /projects (welp u.proj [%chats `@ta`chat ~])) %'log.chat-log'])
     (send-json eyre-id (en:json:html ?:(?=([%a *] log) log [%a ~])))
   ?:  ?&(=(%'POST' method) =([%api %send ~] suffix))
     =/  proj=(unit path)  (parse-proj (jarg 'path'))
@@ -322,7 +326,7 @@
         ?:  ?=([%ball *] dv)  (pure:m ~)
         (make:io [%| 1 %| dir] &+empty-dir:loader)
       ;<  err=(unit tang)  bind:m
-        (make-soft:io [%| 1 %& dir %'log.json'] |+[[[/ %json] [%a ~]] ~])
+        (make-soft:io [%| 1 %& dir %'log.chat-log'] |+[[[/ %chat-log] [%a ~]] ~])
       (send-json eyre-id '{"ok":true}')
     (bad eyre-id 'kind must be category, clanker, or chat')
   ?:  ?&(=(%'POST' method) =([%api %delete ~] suffix))
@@ -338,12 +342,12 @@
     (send-json eyre-id '{"ok":true}')
   ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
   (pure:m ~)
-::  +tree-json: the collection as nested {dirs, files}, names only, one
-::  deep peek. The page tells clankers from categories by name, chats by
-::  position, so this stays a plain directory listing. A tools nexus is
-::  folded: tools/code/lib/tools/*.hoon shows as tools/*.hoon, and its
-::  runs/ stays as tools/runs/<id>, each run summarised from its state
-::  ({tool, step, arg}) so the tree can show what ran and how it ended.
+::  +tree-json: the collection as nested {dirs, files}, the directories
+::  as they are, one deep peek, nothing folded. The page tells clankers
+::  from categories by name, chats by position. Each dir node also says
+::  whether it is a nexus (has a neck), and a dir named runs carries a
+::  summary of each run grub in it ({tool, step, arg}), so the tree can
+::  show what ran and how it ended.
 ++  tree-json
   |=  b=ball:tarball
   ^-  json
@@ -355,25 +359,10 @@
       %+  turn  ~(tap by dir.b)
       |=  [n=@ta kid=ball:tarball]
       ^-  [@t json]
-      ?.  =(%tools n)  [n (tree-json kid)]
-      ::  tools/code/lib/tools/*.hoon -> tools/*.hoon
-      =/  src=(unit ball:tarball)
-        =/  a  (~(get by dir.kid) %code)
-        ?~  a  ~
-        =/  b  (~(get by dir.u.a) %lib)
-        ?~  b  ~
-        (~(get by dir.u.b) %tools)
-      =/  names=(list @ta)
-        ?~  src  ~
-        ?~  fil.u.src  ~
-        (sort ~(tap in ~(key by contents.u.fil.u.src)) aor)
-      =/  runs=json  (runs-json (~(get by dir.kid) %runs))
-      :-  n
-      %-  pairs:enjs:format
-      :~  ['dirs' [%o (malt `(list [@t json])`~[['runs' runs]])]]
-          ['files' [%a (turn names |=(x=@ta s+x))]]
-          ['tools' b+%.y]
-      ==
+      =/  sub=json  ?:(=(%runs n) (runs-json `kid) (tree-json kid))
+      ?>  ?=([%o *] sub)
+      =/  necked=?  ?~(fil.kid %.n ?=(^ neck.u.fil.kid))
+      [n o+(~(put by p.sub) 'nexus' b+necked)]
       ['files' [%a (turn files |=(x=@ta s+x))]]
   ==
 ::  +runs-json: a tools nexus's runs/ as a tree node with a `runs` map

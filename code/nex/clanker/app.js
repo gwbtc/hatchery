@@ -56,25 +56,9 @@
     if (ss.length >= 3 && ss[ss.length - 2] === 'chats' && isClanker(ss[ss.length - 3])) return 'chat';
     return clankerOf(path) ? 'dir' : 'category';
   }
-  // the namespace path of a tree path: a clanker's tools/ is folded in
-  // the listing (tools/x.hoon is tools/code/lib/tools/x.hoon); its runs/
-  // is where it really is
-  function realPath(path) {
-    var ss = segs(path);
-    var out = [];
-    for (var i = 0; i < ss.length; i++) {
-      out.push(ss[i]);
-      if (ss[i] === 'tools' && i > 0 && isClanker(ss[i - 1]) && i < ss.length - 1 && ss[i + 1] !== 'runs') out.push('code', 'lib', 'tools');
-    }
-    return '/' + out.join('/');
-  }
-  // a run's summary {tool, step, arg} if this file is a tool run
-  function runOf(path) {
-    var node = nodeAt(parentOf(path));
-    return node && node.runs ? node.runs[baseOf(path)] || null : null;
-  }
-  function isToolsDir(path) { var ss = segs(path); return ss.length >= 2 && ss[ss.length - 1] === 'tools' && isClanker(ss[ss.length - 2]); }
-  function fileUrl(path) { return '/grubbery/ball' + ROOT + '/projects' + realPath(path); }
+  // the tree is the namespace as it is: a tree path IS the path under
+  // /projects, nothing folded or hidden
+  function fileUrl(path) { return '/grubbery/ball' + ROOT + '/projects' + path; }
   function icon(path) {
     var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none');
@@ -94,7 +78,7 @@
     var items = [];
     Object.keys(node.dirs || {}).forEach(function (n) {
       var p = join(path, n);
-      items.push({ name: n, isDir: true, kind: kindOf(p), path: p });
+      items.push({ name: n, isDir: true, kind: kindOf(p), path: p, nexus: !!node.dirs[n].nexus });
     });
     var files = (node.files || []).slice();
     if (node.runs) files.reverse();   // runs: newest first
@@ -113,7 +97,7 @@
   };
   tree.onOpenFile = function (item, path) {
     var k = kindOf(parentOf(path));
-    if (k === 'chat' && item.name === 'log.json') openChat(clankerOf(path), baseOf(parentOf(path)));
+    if (k === 'chat' && item.name === 'log.chat-log') openChat(clankerOf(path), baseOf(parentOf(path)));
     else openFile(path);
   };
   tree.decorateRow = function (row, item, path, isDir) {
@@ -125,7 +109,8 @@
     } else if (isDir && item.kind === 'chat') {
       if (name) name.textContent = item.name;
       row.appendChild(el('span', 'row-kind', 'chat'));
-    } else if (isDir && isToolsDir(path)) {
+    } else if (isDir && item.nexus) {
+      // any other nexus in the tree (a clanker's tools, its code)
       row.appendChild(el('span', 'row-kind', 'nexus'));
     } else if (!isDir && item.run) {
       // a tool run: the tool it ran, how it ended; the id is the title
@@ -294,12 +279,15 @@
     cs.appendChild(newRow('new chat', 'chat', path));
     v.appendChild(cs);
     // the standing context: files
-    ['skills', 'memories', 'tools'].forEach(function (sec) {
+    ['skills', 'memories'].forEach(function (sec) {
       if (d[sec]) v.appendChild(listing(path + '/' + sec, d[sec], { title: sec, empty: 'none yet' }));
     });
-    // tool runs, newest first: what ran and how it ended
-    var runs = d.tools && d.tools.dirs && d.tools.dirs.runs;
-    if (runs) v.appendChild(listing(path + '/tools/runs', runs, { title: 'tool runs', empty: 'no runs yet' }));
+    // its tools nexus: the tool sources live in its own code namespace,
+    // the runs beside them
+    var toolsrc = nodeAt(path + '/tools/code/lib/tools');
+    if (toolsrc) v.appendChild(listing(path + '/tools/code/lib/tools', toolsrc, { title: 'tools (tools/code/lib/tools)', empty: 'none yet' }));
+    var runs = nodeAt(path + '/tools/runs');
+    if (runs) v.appendChild(listing(path + '/tools/runs', runs, { title: 'tool runs (tools/runs)', empty: 'no runs yet' }));
     // the record
     api('/api/record?path=' + encodeURIComponent(path)).then(function (r) { return r.json(); }).then(function (doc) {
       if (homePath !== path) return;
@@ -445,6 +433,8 @@
           });
           pending = null;
         }
+      } else if (ev.k === 'interrupt') {
+        threadEl.appendChild(el('div', 'meta', 'stopped'));
       } else threadEl.appendChild(el('div', 'err', JSON.stringify(ev)));
     });
     var last = log[log.length - 1];
@@ -515,7 +505,7 @@
       pane.load();
       saveTabs();
     }
-    selectPane(pane, path + '/chats/' + chat + '/log.json');
+    selectPane(pane, path + '/chats/' + chat + '/log.chat-log');
   }
   function selectPane(pane, treePath) {
     // select after the slotchange rebuild has settled
@@ -544,7 +534,7 @@
     var p = tabPanels()[e.detail.index];
     if (p && p.__pane) {
       p.__pane.load();
-      tree.markActive(p.__pane.chat ? p.__pane.path + '/chats/' + p.__pane.chat + '/log.json' : p.__pane.path);
+      tree.markActive(p.__pane.chat ? p.__pane.path + '/chats/' + p.__pane.chat + '/log.chat-log' : p.__pane.path);
     } else tree.markActive(null);
   });
   function saveTabs() {

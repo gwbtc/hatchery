@@ -92,6 +92,7 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  ~  bind:m  (rise-wait:io prod "%clanker agent: failed")
+  ;<  ~  bind:m  (resume rail)
   |-
   ;<  =sage:tarball  bind:m  take-poke:io
   =/  jon=json  (fall (mole |.(!<(json q.sage))) *json)
@@ -125,7 +126,7 @@
   ;<  ~  bind:m
     ?:  ?=([%ball *] dv)  (pure:m ~)
     (make:io (nex-road:io rail [%| chat-dir]) &+empty-dir:loader)
-  =/  road=road:tarball  (nex-road:io rail [%& chat-dir %'log.json'])
+  =/  road=road:tarball  (nex-road:io rail [%& chat-dir log-name])
   ;<  cur=view:nexus  bind:m  (peek:io road `[/ %json])
   =/  log=(list json)
     ?.  ?=([%file *] cur)  ~
@@ -133,8 +134,61 @@
     ?.(?=([%a *] j) ~ p.j)
   =/  existed=?  ?=([%file *] cur)
   =.  log  (snoc log (event-input u.msg))
-  ;<  ~  bind:m  (write-chat:ck road existed log)
+  ;<  ~  bind:m  (write-log road existed log)
   (run rail chat road log sys model max schema)
+::  the chat log: one file per chat, its own mark (the explorer opens a
+::  chat-log in the chat viewer), json inside
+++  log-name  %'log.chat-log'
+++  write-log
+  |=  [road=road:tarball existed=? log=(list json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?:  existed  (over:io road [[/ %chat-log] [%a log]])
+  ;<  err=(unit tang)  bind:m  (make-soft:io road |+[[[/ %chat-log] [%a log]] ~])
+  (pure:m ~)
+::  +resume: the restart contract. This fiber may be restarted at any
+::  moment (a deploy, a crash); the log is the truth, so a chat whose log
+::  ends mid-turn (an input or tool results not yet answered, or a
+::  response still asking for tools) is picked up where it stopped. A
+::  model call that was in flight is simply made again. A chat the user
+::  stopped ends in an %interrupt event and is left alone.
+++  resume
+  |=  =rail:tarball
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  dv=view:nexus  bind:m  (peek:io (nex-road:io rail [%| /chats]) ~)
+  ?.  ?=([%ball *] dv)  (pure:m ~)
+  =/  chats=(list @ta)  ~(tap in ~(key by dir.ball.dv))
+  |-
+  ?~  chats  (pure:m ~)
+  =/  road=road:tarball  (nex-road:io rail [%& [%chats i.chats ~] log-name])
+  ;<  cur=view:nexus  bind:m  (peek:io road `[/ %json])
+  =/  log=(list json)
+    ?.  ?=([%file *] cur)  ~
+    =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.cur)))) [%a ~])
+    ?.(?=([%a *] j) ~ p.j)
+  ?.  (open-turn log)  $(chats t.chats)
+  ;<  cfg=json  bind:m  (read-json rail [%& / %'config.json'])
+  =/  model=@t  =/(mo=@t (jstr:clanker cfg 'model') ?:(=('' mo) 'claude-sonnet-4-6' mo))
+  =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
+  ;<  sys=@t  bind:m  (standing rail)
+  ;<  schema=json  bind:m  (list-tools rail)
+  ;<  ~  bind:m  (run rail `@t`i.chats road log sys model max schema)
+  $(chats t.chats)
+::  +open-turn: does this log end mid-turn? An input or tool results
+::  await a response; a response that stopped for tool_use awaits its
+::  results. Anything else (a finished response, an interrupt, an empty
+::  log) is at rest.
+++  open-turn
+  |=  log=(list json)
+  ^-  ?
+  ?~  log  %.n
+  =/  last=json  (rear log)
+  =/  k=@t  (jstr:clanker last 'k')
+  ?|  =('input' k)
+      =('results' k)
+      &(=('response' k) =('tool_use' (jstr:clanker last 'stop')))
+  ==
 ::  +standing: the clanker's standing context, assembled from its files:
 ::  system.md, then every skill, then every memory. Each file is a
 ::  titled section so the model (and the context panel) can tell them
@@ -223,31 +277,39 @@
     ==
     ~['name' 'message']
   ==
-::  +run: the agent loop over the event log. Assemble the request from
-::  the log, send it, append the %response event, persist. If the model
-::  asked for tools, run them, append the %results event, persist, loop.
-::  An interrupt (~ from the proxy / tools) stops with the log intact up
-::  to the last persisted event.
+::  +run: the agent loop over the event log, driven by its tail. A log
+::  ending in a response that asked for tools runs them and appends the
+::  %results event; anything else assembles the request, sends it and
+::  appends the %response event. Each event is persisted as it lands, so
+::  a restart resumes from the tail (+resume). An interrupt (~ from the
+::  proxy / tools) appends an %interrupt event and stops: the log is
+::  intact and at rest.
 ++  run
   |=  [=rail:tarball chat=@t road=road:tarball log=(list json) sys=@t model=@t max=@ud schema=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   |-  ^-  form:m
+  =/  last=json  ?~(log [%o ~] (rear log))
+  =/  tool-uses=(list json)
+    ?.  &(=('response' (jstr:clanker last 'k')) =('tool_use' (jstr:clanker last 'stop')))  ~
+    %+  skim  (resp-content last)
+    |=(b=json ?&(?=([%o *] b) ?=([~ %s %'tool_use'] (~(get by p.b) 'type'))))
+  ?^  tool-uses
+    ;<  ran=(unit [(list json) (list json)])  bind:m  (run-tools rail chat tool-uses)
+    ?~  ran
+      (write-log road %.y (snoc log event-interrupt))
+    =.  log  (snoc log (event-results -.u.ran +.u.ran))
+    ;<  ~  bind:m  (write-log road %.y log)
+    $
   =/  messages=(list json)  (assemble log)
   ;<  answered=(unit json)  bind:m  (call-anthropic:ck (encode model max sys schema messages))
-  ?~  answered  (pure:m ~)
+  ?~  answered
+    (write-log road %.y (snoc log event-interrupt))
   =/  resp=json  u.answered
   =/  content-arr=(list json)  (resp-content resp)
   =.  log  (snoc log (event-response content-arr (resp-stop resp) (resp-usage resp)))
-  ;<  ~  bind:m  (write-chat:ck road %.y log)
-  =/  tool-uses=(list json)
-    %+  skim  content-arr
-    |=(b=json ?&(?=([%o *] b) ?=([~ %s %'tool_use'] (~(get by p.b) 'type'))))
-  ?~  tool-uses  (pure:m ~)
-  ;<  ran=(unit [(list json) (list json)])  bind:m  (run-tools rail chat tool-uses)
-  ?~  ran  (pure:m ~)
-  =.  log  (snoc log (event-results -.u.ran +.u.ran))
-  ;<  ~  bind:m  (write-chat:ck road %.y log)
+  ;<  ~  bind:m  (write-log road %.y log)
+  ?.  =('tool_use' (resp-stop resp))  (pure:m ~)
   $
 ::  +run-tools: execute each tool_use; `spawn` is the engine's own, every
 ::  other name goes to this clanker's tools nexus. Yields the tool_result
@@ -305,7 +367,7 @@
     =.  b  (~(put bo:tarball b) [/ %'config.json'] [[/ %json] default-config])
     =.  b  (~(put bo:tarball b) [/ %'system.md'] [[/ %mime] [/text/markdown (as-octs:mimes:html sys)]])
     (make:io (nex-road:io rail [%| dir]) &+b)
-  =/  child-log=road:tarball  (nex-road:io rail [%& (weld dir /chats/main) %'log.json'])
+  =/  child-log=road:tarball  (nex-road:io rail [%& (weld dir /chats/main) log-name])
   ;<  *  bind:m  (keep:io /spawn child-log ~)
   ;<  ~  bind:m
     %-  poke:io
@@ -480,6 +542,11 @@
   |=  [content=(list json) trace=(list json)]
   ^-  json
   (pairs:enjs:format ~[['k' s+'results'] ['content' [%a content]] ['trace' [%a trace]]])
+::  the turn was stopped (by the user, or a tool/proxy interrupt): the
+::  log is at rest here, and a restart does not resume it
+++  event-interrupt
+  ^-  json
+  (pairs:enjs:format ~[['k' s+'interrupt']])
 ::  readers over this clanker's own tree
 ++  read-json
   |=  [=rail:tarball =lane:tarball]
