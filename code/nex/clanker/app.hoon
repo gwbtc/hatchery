@@ -11,28 +11,23 @@
 ::      work/                              a category
 ::        hatchery.clanker/
 ::    /http.sig, /requests/                the page and its API
-::    /ui/components.js                    the welded kit (tree, tabs, …)
+::    /viewer.js, /chats.js                the panes: a chat, a chats/ list
 ::
 ::  This nexus runs no turns. It mounts clankers, keeps the tree, and
-::  serves the page; a chat message is a poke to that clanker's own
-::  main.sig. Files are edited through the kernel's file API, so the
-::  page is the explorer's model: a tree on the left, tabs on the right.
+::  serves its API; a chat message is a poke to that clanker's own
+::  main.sig. The PAGE is the explorer's: /grubbery/clanker serves the
+::  explorer's browse shell mounted at this route and rooted at the
+::  collection, so /grubbery/clanker/<path> is the explorer at that
+::  path. The same declaration points the shell at /api/viewer, where
+::  +pick-viewer says per file which pane it opens in: a chat-log opens
+::  in the chat pane (viewer.js) in this shell, nowhere else. One shell,
+::  one tree, one tab bar.
 ::
 /<  clanker    /lib/clanker.hoon
 /<  nex-tools  /lib/tools.hoon
-/&  index-html  ./index.html
-/&  app-js      ./app.js
 /&  viewer-js   ./viewer.js
-/&  style-css   ./style.css
+/&  chats-js    ./chats.js
 /&  icon        ./icon.svg
-::  shared web components from /lib/ui, welded into one served file
-/&  sv-js       /lib/ui/split-view.js
-/&  tg-js       /lib/ui/tab-group.js
-/&  tv-js       /lib/ui/tree-view.js
-/&  dm-js       /lib/ui/drop-menu.js
-/&  md-js       /lib/ui/modal-dialog.js
-/&  fp-js       /lib/ui/file-preview.js
-/&  fv-js       /lib/ui/file-view.js
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -62,13 +57,6 @@
 ::  tree is the live, user-owned record); %over for product code.
 ++  rows
   ^-  (list row:loader)
-  =/  wrap
-    |=  =mime  ^-  @
-    (rap 3 ~[123 10 q.q.mime 10 125 10])
-  =/  kit-js=mime
-    :-  /application/javascript
-    %-  as-octs:mimes:html
-    (rap 3 ~[(wrap sv-js) (wrap tg-js) (wrap tv-js) (wrap dm-js) (wrap md-js)])
   =/  tile=json
     %-  pairs:enjs:format
     :~  title+s+'Clanker'
@@ -81,17 +69,10 @@
       [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'clanker'] ['description' s+'The grubbery chat workspace']])]]
       [%over %& [/ %'weir.json'] [[/ %json] weir-ask]]
       [%over %& [/ %'tile.json'] [[/ %json] tile]]
-      [%over %& [/ %'index.html'] [[/ %mime] index-html]]
-      [%over %& [/ %'app.js'] [[/ %mime] app-js]]
-      ::  the chat viewer the explorer opens a chat-log in (register it in
-      ::  the explorer's viewers.json as "chat-log": "/grubbery/clanker/viewer.js")
+      ::  the panes +pick-viewer hands out: a chat-log's chat, a chats/ dir's list
       [%over %& [/ %'viewer.js'] [[/ %mime] viewer-js]]
-      [%over %& [/ %'style.css'] [[/ %mime] style-css]]
+      [%over %& [/ %'chats.js'] [[/ %mime] chats-js]]
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
-      [%fall %| /ui empty-dir:loader]
-      [%over %& [/ui %'components.js'] [[/ %mime] kit-js]]
-      [%over %& [/ui %'file-preview.js'] [[/ %mime] fp-js]]
-      [%over %& [/ui %'file-view.js'] [[/ %mime] fv-js]]
       [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
       [%fall %| /requests empty-dir:loader]
       [%fall %| /projects empty-dir:loader]
@@ -202,9 +183,11 @@
 ::  HTTP: the page and its API. A request fiber lives at /requests/<id>,
 ::  one level under the nexus root, so the root is [%| 1 ...].
 ::
-::    GET  /                             the page; /app.js /style.css /icon.svg
-::    GET  /ui/<file>                    the welded kit, file-view, file-preview
+::    GET  /<anything but api>           the explorer shell, mounted here
+::    GET  /viewer.js /icon.svg          the chat pane, the icon
 ::    GET  /api/root                     this instance's absolute root
+::    GET  /api/viewer?path=&kind=&blot=&neck=   which pane a path opens in (+pick-viewer)
+::    GET  /api/chats?path=              a clanker's chats: name, events, last, busy
 ::    GET  /api/tree                     the whole collection as {dirs, files}
 ::    GET  /api/record?path=             a clanker's config + system prompt
 ::    POST /api/record {path, system, model, max_tokens}
@@ -233,17 +216,38 @@
   =/  body=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) *json)
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
-  ?:  ?&(=(%'GET' method) =(~ suffix))
-    (serve-file eyre-id / 'index.html')
-  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'app.js' i.suffix) =(%'viewer.js' i.suffix) =(%'style.css' i.suffix) =(%'icon.svg' i.suffix)))
+  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'icon.svg' i.suffix)))
     (serve-file eyre-id / i.suffix)
-  ?:  ?&(=(%'GET' method) ?=([%ui @ ~] suffix))
-    (serve-file eyre-id /ui i.t.suffix)
+  ::  the page: every GET that is not the api is the explorer shell,
+  ::  mounted at this route and rooted at the collection
+  ?:  ?&(=(%'GET' method) !?=([%api *] suffix))
+    (serve-shell eyre-id)
   ?:  ?&(=(%'GET' method) =([%api %root ~] suffix))
     ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
     ?.  ?=([~ %| *] root)
       (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'clanker is not in /sys/link')])
     (send-json eyre-id (en:json:html (pairs:enjs:format ~[['root' s+(spat p.u.root)]])))
+  ?:  ?&(=(%'GET' method) =([%api %viewer ~] suffix))
+    =/  pax=(unit path)  (parse-proj (arg 'path'))
+    =/  pick  (pick-viewer (fall pax ~) =('dir' (arg 'kind')) (arg 'blot') (arg 'neck'))
+    ?~  pick  (send-json eyre-id '')
+    (send-json eyre-id (en:json:html (pairs:enjs:format ~[['view' s+view.u.pick] ['script' s+script.u.pick] ['args' args.u.pick]])))
+  ?:  ?&(=(%'GET' method) =([%api %chats ~] suffix))
+    =/  proj=(unit path)  (parse-proj (arg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    =/  chats-dir=path  (welp /projects (snoc u.proj %chats))
+    ;<  dv=view:nexus  bind:m  (peek-shallow:io [%| 1 %| chats-dir] ~)
+    ?.  ?=([%ball *] dv)  (send-json eyre-id '[]')
+    =/  names=(list @ta)  (sort ~(tap in ~(key by dir.ball.dv)) aor)
+    ;<  rows=(list json)  bind:m
+      =/  m  (fiber:fiber:nexus ,(list json))
+      =|  acc=(list json)
+      |-  ^-  form:m
+      ?~  names  (pure:m (flop acc))
+      ;<  log=json  bind:m  (read-json [%| 1 %& (snoc chats-dir i.names) %'log.chat-log'])
+      =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
+      $(names t.names, acc [(chat-summary i.names evs) acc])
+    (send-json eyre-id (en:json:html a+rows))
   ?:  ?&(=(%'GET' method) =([%api %tree ~] suffix))
     ;<  dv=view:nexus  bind:m  (peek:io [%| 1 %| /projects] ~)
     ?.  ?=([%ball *] dv)  (send-json eyre-id '{"dirs":{},"files":[]}')
@@ -342,6 +346,35 @@
     (send-json eyre-id '{"ok":true}')
   ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
   (pure:m ~)
+::  +chat-summary: one chat as the chats pane shows it: its name, how
+::  many events its log holds, the last thing said to it, and whether a
+::  turn is running (the log ends in an input, tool results, or a
+::  response that asked for tools).
+++  chat-summary
+  |=  [name=@ta evs=(list json)]
+  ^-  json
+  =/  key
+    |=  [e=json k=@t]
+    ^-  @t
+    ?.  ?=([%o *] e)  ''
+    =/  v=(unit json)  (~(get by p.e) k)
+    ?:(?=([~ %s *] v) p.u.v '')
+  =/  inputs=(list json)  (skim evs |=(e=json =('input' (key e 'k'))))
+  =/  last=@t  ?~(inputs '' (key (rear inputs) 'body'))
+  =/  busy=?
+    ?~  evs  %.n
+    =/  l=json  (rear evs)
+    =/  k=@t  (key l 'k')
+    ?|  =('input' k)
+        =('results' k)
+        &(=('response' k) =('tool_use' (key l 'stop')))
+    ==
+  %-  pairs:enjs:format
+  :~  ['name' s+name]
+      ['events' (numb:enjs:format (lent evs))]
+      ['last' s+last]
+      ['busy' b+busy]
+  ==
 ::  +tree-json: the collection as nested {dirs, files}, the directories
 ::  as they are, one deep peek, nothing folded. The page tells clankers
 ::  from categories by name, chats by position. Each dir node also says
@@ -434,6 +467,67 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html msg)])
+::
+::  +serve-shell: the explorer's browse page, read from the explorer by
+::  name, with one declaration injected ahead of its scripts: this route
+::  and the collection's root. browse.js maps urls under the route to
+::  paths under the root, so the shell, the kit, FileView and the viewer
+::  registry are all the explorer's; nothing here is a second copy.
+++  serve-shell
+  |=  eyre-id=@ta
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
+  ;<  exp=(unit lane:tarball)  bind:m  (resolve-link:io '@explorer')
+  ?.  &(?=([~ %| *] root) ?=([~ %| *] exp))
+    (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'clanker or explorer is not in /sys/link')])
+  ;<  =view:nexus  bind:m  (peek:io [%& %& p.u.exp %'browse.html'] `[/ %mime])
+  ?.  ?=([%file *] view)
+    (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'the explorer has no browse.html')])
+  =/  page=tape  (trip q.q:!<(mime (need-vase:tarball sang.view)))
+  ::  viewers: the shell asks /api/viewer per file; +pick-viewer decides
+  =/  mount=json
+    %-  pairs:enjs:format
+    :~  ['route' s+'/grubbery/clanker']
+        ['root' s+(crip (spud (snoc p.u.root %projects)))]
+        ['title' s+'clanker']
+        ['icon' s+'/grubbery/clanker/icon.svg']
+        ['viewers' s+'/grubbery/clanker/api/viewer']
+    ==
+  =/  decl=tape
+    "<script>window.EXPLORER_MOUNT = {(trip (en:json:html mount))};</script>\0a"
+  =/  marker=tape  "<script src=\"/grubbery/ball/apps/explorer.explorer/kit.js\""
+  =/  at=(unit @ud)  (find marker page)
+  =/  out=tape
+    ?~  at  (weld decl page)
+    :(weld (scag u.at page) decl (slag u.at page))
+  %-  send-simple:srv
+  :-  eyre-id
+  [[200 ~[['content-type' 'text/html']]] `(as-octs:mimes:html (crip out))]
+::
+::  +pick-viewer: which pane a path opens in, from where it is under the
+::  collection, whether it is a file or a dir, a file's blot and a dir's
+::  neck (the nexus it runs, '' when plain). Plain code: match the path,
+::  match the blot or neck, name a view the script registers, and hand
+::  the pane its context as args so it never has to read the tree's
+::  shape out of a url. ~ means the usual view. A pane is about the path
+::  it opens on; keep it that way.
+++  pick-viewer
+  |=  [pax=path dir=? blot=@t neck=@t]
+  ^-  (unit [view=@t script=@t args=json])
+  ::  a chat log, anywhere in the collection, is a chat: the log sits at
+  ::  <clanker>/chats/<chat>/log.chat-log, so proj and chat are its path
+  ?:  &(!dir =('chat-log' blot))
+    =/  p=path  (flop pax)
+    ?.  ?=([@ @ %chats *] p)  ~
+    =/  args=json  (pairs:enjs:format ~[['proj' s+(spat (flop t.t.t.p))] ['chat' s+i.t.p]])
+    `['chat' '/grubbery/clanker/viewer.js' args]
+  ::  a clanker's chats/ directory is its list of chats
+  =/  f=path  (flop pax)
+  ?:  &(dir ?=([%chats @ *] f))
+    =/  proj=path  (flop t.f)
+    `['chats' '/grubbery/clanker/chats.js' (pairs:enjs:format ~[['proj' s+(spat proj)]])]
+  ~
 ::
 ++  serve-file
   |=  [eyre-id=@ta dir=path filename=@ta]

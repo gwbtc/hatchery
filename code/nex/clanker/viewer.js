@@ -1,10 +1,10 @@
-// clanker chat viewer: how the explorer opens a chat-log. Registered as
-// window.Viewers['chat-log'] with the FileView contract: mount(root, opts)
-// -> { destroy() }, opts.url the file's own /grubbery/ball url. The url
-// says which clanker and chat this is (…/<x>.clanker/chats/<chat>/log.chat-log);
-// the transcript is a fold over the log the collection serves, and send /
-// stop go to the collection's api, which pokes that clanker's main.sig.
-// Nothing here holds chat state.
+// clanker chat viewer: the pane a chat-log opens in. Registered as
+// window.Viewers['chat'] with the FileView contract: mount(root, opts)
+// -> { destroy() }, opts.url the file's own /grubbery/ball url and
+// opts.args what the collection's +pick-viewer handed over: {proj, chat},
+// which clanker and chat this log is. The transcript is a fold over the
+// log the collection serves, and send / stop go to the collection's api,
+// which pokes that clanker's main.sig. Nothing here holds chat state.
 (function () {
   'use strict';
   var API = '/grubbery/clanker';
@@ -56,15 +56,13 @@
     if (text != null) e.textContent = text;
     return e;
   }
-  // where this log lives: the clanker path under /projects and the chat name
-  function locate(url) {
-    var u = url.replace(/\?.*$/, '');
-    var pi = u.indexOf('/projects/');
-    var ci = u.lastIndexOf('/chats/');
-    if (pi < 0 || ci < 0 || ci < pi) return null;
-    var proj = u.slice(pi + '/projects'.length, ci);
-    var rest = u.slice(ci + '/chats/'.length).split('/');
-    return { ballRoot: u.slice(0, pi), proj: proj, chat: decodeURIComponent(rest[0] || 'main') };
+  // where this log lives, as the collection said: {proj, chat}; the log's
+  // own directory (for a spawn link) is the url's dirname
+  function locate(opts) {
+    var a = opts.args || {};
+    if (typeof a.proj !== 'string' || typeof a.chat !== 'string') return null;
+    var u = (opts.url || '').replace(/\?.*$/, '');
+    return { dir: u.slice(0, u.lastIndexOf('/')), proj: a.proj, chat: a.chat };
   }
   function busyAfter(log) {
     var last = log[log.length - 1];
@@ -72,10 +70,10 @@
   }
   function mount(root, opts) {
     injectStyle();
-    var loc = locate(opts.url);
+    var loc = locate(opts);
     root.innerHTML = '';
     root.classList.add('cv');
-    if (!loc) { root.appendChild(el('div', 'empty', 'not a chat log: ' + opts.url)); return { destroy: function () { root.innerHTML = ''; root.classList.remove('cv'); } }; }
+    if (!loc) { root.appendChild(el('div', 'empty', 'no chat here: the collection gave no {proj, chat} for ' + opts.url)); return { destroy: function () { root.innerHTML = ''; root.classList.remove('cv'); } }; }
     var logEl = el('div', 'log'), threadEl = el('div', 'thread'); logEl.appendChild(threadEl);
     var form = el('form', 'compose'), inner = el('div', 'compose-inner');
     var msgEl = el('textarea'); msgEl.rows = 1; msgEl.placeholder = 'Message ' + loc.proj.replace(/^.*\//, '').replace(/\.clanker$/, '') + ' …'; msgEl.spellcheck = false;
@@ -121,7 +119,7 @@
       // a spawn is a nested clanker beneath this chat: link to its directory
       if (use.name === 'spawn' && use.input && use.input.name) {
         var lnk = el('a', 'arg', 'open ' + use.input.name + ' →'); lnk.href = '#';
-        var dir = loc.ballRoot + '/projects' + loc.proj + '/chats/' + loc.chat + '/' + use.input.name + '.clanker';
+        var dir = loc.dir + '/' + use.input.name + '.clanker';
         lnk.onclick = function (e) { e.preventDefault(); e.stopPropagation(); if (opts.onNavigate) opts.onNavigate(dir); else location.href = dir; };
         s.appendChild(lnk);
       }
@@ -190,5 +188,5 @@
     };
   }
   window.Viewers = window.Viewers || {};
-  window.Viewers['chat-log'] = { label: 'Chat', mount: mount };
+  window.Viewers['chat'] = { label: 'Chat', mount: mount };
 })();
