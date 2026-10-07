@@ -77,11 +77,11 @@
     var logEl = el('div', 'log'), threadEl = el('div', 'thread'); logEl.appendChild(threadEl);
     var form = el('form', 'compose'), inner = el('div', 'compose-inner');
     var msgEl = el('textarea'); msgEl.rows = 1; msgEl.placeholder = 'Message ' + loc.proj.replace(/^.*\//, '').replace(/\.clanker$/, '') + ' …'; msgEl.spellcheck = false;
-    var stopBtn = el('button', 'stop', 'stop'); stopBtn.type = 'button'; stopBtn.disabled = true;
-    var sendBtn = el('button', 'send', 'send'); sendBtn.type = 'submit'; sendBtn.title = 'send (⌘↩)';
+    var stopBtn = el('button', 'stop', 'stop'); stopBtn.type = 'button'; stopBtn.disabled = true; stopBtn.title = 'stop the running turn (Esc Esc)';
+    var sendBtn = el('button', 'send', 'send'); sendBtn.type = 'submit'; sendBtn.title = 'send (Enter)';
     inner.appendChild(msgEl); inner.appendChild(stopBtn); inner.appendChild(sendBtn);
     form.appendChild(inner);
-    var hint = el('div', 'hint'); hint.appendChild(el('span', null, '⌘↩ to send')); hint.appendChild(el('span', null, 'the transcript is the stored event log'));
+    var hint = el('div', 'hint'); hint.appendChild(el('span', null, 'Enter to send, Shift+Enter for a new line, Esc Esc to stop')); hint.appendChild(el('span', null, 'the transcript is the stored event log'));
     form.appendChild(hint);
     root.appendChild(logEl); root.appendChild(form);
     var busy = false, timer = null, lastLen = -1, dead = false;
@@ -111,7 +111,17 @@
     form.addEventListener('submit', function (e) { e.preventDefault(); send(); });
     stopBtn.addEventListener('click', function () { post('/api/stop', { path: loc.proj }).then(function () { setTimeout(load, 600); }); });
     msgEl.addEventListener('input', autosize);
-    msgEl.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } });
+    // Enter sends; Shift+Enter is a newline
+    msgEl.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+    // Escape twice within half a second stops the running turn (as the
+    // claude page does); only while this pane is showing and a turn runs
+    var lastEsc = 0;
+    function onEsc(e) {
+      if (e.key !== 'Escape' || dead || !busy || !root.offsetParent) return;
+      var now = Date.now();
+      if (now - lastEsc < 500) { lastEsc = 0; stopBtn.click(); } else lastEsc = now;
+    }
+    document.addEventListener('keydown', onEsc);
     function step(use, result, trace) {
       var d = el('details', 'step'), s = el('summary');
       s.appendChild(el('span', 'tool', use.name));
@@ -183,7 +193,7 @@
     }
     load();
     return {
-      destroy: function () { dead = true; if (timer) clearInterval(timer); root.innerHTML = ''; root.classList.remove('cv'); },
+      destroy: function () { dead = true; if (timer) clearInterval(timer); document.removeEventListener('keydown', onEsc); root.innerHTML = ''; root.classList.remove('cv'); },
       setUrl: function (u) { mount(root, Object.assign({}, opts, { url: u })); }
     };
   }

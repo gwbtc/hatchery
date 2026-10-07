@@ -16,12 +16,12 @@
 ::  This nexus runs no turns. It mounts clankers, keeps the tree, and
 ::  serves its API; a chat message is a poke to that clanker's own
 ::  main.sig. The PAGE is the explorer's: /grubbery/clanker serves the
-::  explorer's browse shell mounted at this route and rooted at the
-::  collection, so /grubbery/clanker/<path> is the explorer at that
-::  path. The same declaration points the shell at /api/viewer, where
-::  +pick-viewer says per file which pane it opens in: a chat-log opens
-::  in the chat pane (viewer.js) in this shell, nowhere else. One shell,
-::  one tree, one tab bar.
+::  explorer's browse page (its <namespace-explorer> component) mounted
+::  at this route and rooted at the collection, so /grubbery/clanker/
+::  <path> is the explorer at that path. The same declaration points the
+::  explorer at /api/viewer, where +pick-viewer says per file which pane
+::  it opens in: a chat-log opens in the chat pane (viewer.js) in this
+::  explorer, nowhere else. One explorer, one tree, one tab bar.
 ::
 /<  clanker    /lib/clanker.hoon
 /<  nex-tools  /lib/tools.hoon
@@ -183,7 +183,7 @@
 ::  HTTP: the page and its API. A request fiber lives at /requests/<id>,
 ::  one level under the nexus root, so the root is [%| 1 ...].
 ::
-::    GET  /<anything but api>           the explorer shell, mounted here
+::    GET  /<anything but api>           the explorer page, mounted here
 ::    GET  /viewer.js /icon.svg          the chat pane, the icon
 ::    GET  /api/root                     this instance's absolute root
 ::    GET  /api/viewer?path=&kind=&blot=&neck=   which pane a path opens in (+pick-viewer)
@@ -218,10 +218,10 @@
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
   ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'icon.svg' i.suffix)))
     (serve-file eyre-id / i.suffix)
-  ::  the page: every GET that is not the api is the explorer shell,
+  ::  the page: every GET that is not the api is the explorer page,
   ::  mounted at this route and rooted at the collection
   ?:  ?&(=(%'GET' method) !?=([%api *] suffix))
-    (serve-shell eyre-id)
+    (serve-page eyre-id)
   ?:  ?&(=(%'GET' method) =([%api %root ~] suffix))
     ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
     ?.  ?=([~ %| *] root)
@@ -468,12 +468,12 @@
   ^-  form:m
   (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html msg)])
 ::
-::  +serve-shell: the explorer's browse page, read from the explorer by
+::  +serve-page: the explorer's browse page, read from the explorer by
 ::  name, with one declaration injected ahead of its scripts: this route
 ::  and the collection's root. browse.js maps urls under the route to
-::  paths under the root, so the shell, the kit, FileView and the viewer
-::  registry are all the explorer's; nothing here is a second copy.
-++  serve-shell
+::  paths under the root, so the page, the kit, FileView and the viewer
+::  endpoint are all the explorer's; nothing here is a second copy.
+++  serve-page
   |=  eyre-id=@ta
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
@@ -485,7 +485,7 @@
   ?.  ?=([%file *] view)
     (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'the explorer has no browse.html')])
   =/  page=tape  (trip q.q:!<(mime (need-vase:tarball sang.view)))
-  ::  viewers: the shell asks /api/viewer per file; +pick-viewer decides
+  ::  viewers: the explorer asks /api/viewer per path; +pick-viewer decides
   =/  mount=json
     %-  pairs:enjs:format
     :~  ['route' s+'/grubbery/clanker']
