@@ -28,6 +28,19 @@
     '.cv .step a.arg{color:#0969da;text-decoration:none}' +
     '.cv .step .note{color:#8b949e;flex:0 0 auto;margin-left:auto}' +
     '.cv .step .note.err{color:#cf222e}' +
+    '.cv .step .note.declined{color:#9a6700}' +
+    '.cv .ask{max-width:86%;border:1px solid #e3d4a0;background:#fffbea;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}' +
+    '.cv .ask .ask-title{font:600 12px Inter,-apple-system,sans-serif;color:#7d5a00}' +
+    '.cv .ask .ask-row{display:flex;align-items:center;gap:8px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#57606a}' +
+    '.cv .ask .ask-row .tool{color:#8250df;font-weight:700}' +
+    '.cv .ask .ask-row .arg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8b949e}' +
+    '.cv .ask .ask-row pre{margin:0 0 0 0;padding:6px 8px;max-height:140px;overflow:auto;background:#fff;border:1px solid #eee3bd;border-radius:6px;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#444;white-space:pre-wrap;word-break:break-word}' +
+    '.cv .ask button{flex:0 0 auto;height:26px;padding:0 10px;border-radius:6px;border:1px solid #d0d7de;background:#fff;color:#1f2328;cursor:pointer;font:600 11px Inter,-apple-system,sans-serif}' +
+    '.cv .ask button.run{border-color:#1a7f37;color:#1a7f37}' +
+    '.cv .ask button.run.on{background:#1a7f37;color:#fff}' +
+    '.cv .ask button.decline{border-color:#cf222e;color:#cf222e}' +
+    '.cv .ask button.decline.on{background:#cf222e;color:#fff}' +
+    '.cv .ask .ask-all{display:flex;gap:8px;justify-content:flex-end}' +
     '.cv .step pre{margin:4px 0 6px 26px;padding:8px 10px;max-height:260px;overflow:auto;background:#fbfbfd;border:1px solid #e2e7ee;border-radius:7px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:#444;white-space:pre-wrap;word-break:break-word}' +
     '.cv .step pre.args{background:#f6f8fa}' +
     '.cv .err{color:#cf222e;font-size:12.5px;background:#fff8f8;border:1px solid #ffcecb;border-radius:8px;padding:8px 11px;line-height:1.5;max-width:86%}' +
@@ -64,9 +77,16 @@
     var u = (opts.url || '').replace(/\?.*$/, '');
     return { dir: u.slice(0, u.lastIndexOf('/')), proj: a.proj, chat: a.chat };
   }
+  // a turn is running after an input, tool results, a response that asked
+  // for tools, or a resolved ask; paused on the user after an ask (no new
+  // message until it is answered, stop cancels it)
   function busyAfter(log) {
     var last = log[log.length - 1];
-    return !!last && (last.k === 'input' || last.k === 'results' || (last.k === 'response' && last.stop === 'tool_use'));
+    return !!last && (last.k === 'input' || last.k === 'results' || last.k === 'resolved' || (last.k === 'response' && last.stop === 'tool_use'));
+  }
+  function askingAfter(log) {
+    var last = log[log.length - 1];
+    return !!last && last.k === 'ask';
   }
   function mount(root, opts) {
     injectStyle();
@@ -86,8 +106,10 @@
     root.appendChild(logEl); root.appendChild(form);
     var busy = false, timer = null, lastLen = -1, dead = false;
     function post(path, body) { return fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); }
-    function setBusy(b) {
-      busy = b; sendBtn.disabled = b; stopBtn.disabled = !b;
+    // busy: a turn runs (poll the log; send off, stop on). asking: paused
+    // on the user (no poll; send off, stop on; the ask box takes the answer)
+    function setBusy(b, asking) {
+      busy = b; sendBtn.disabled = b || !!asking; stopBtn.disabled = !(b || asking);
       if (b && !timer) timer = setInterval(load, 1500);
       if (!b && timer) { clearInterval(timer); timer = null; }
     }
@@ -98,8 +120,13 @@
         .then(function (log) {
           if (dead) return;
           if (log.length !== lastLen) { lastLen = log.length; render(log); }
-          setBusy(busyAfter(log));
+          setBusy(busyAfter(log), askingAfter(log));
         }).catch(function () {});
+    }
+    // the user's answer to a pending ask: {id: true|false} for every asked
+    // use, posted once each has one
+    function resolve(decisions) {
+      post('/api/resolve', { path: loc.proj, chat: loc.chat, decisions: decisions }).then(function () { setBusy(true, false); load(); });
     }
     function send() {
       var text = msgEl.value.trim();
@@ -109,7 +136,7 @@
     }
     function autosize() { msgEl.style.height = 'auto'; msgEl.style.height = Math.min(msgEl.scrollHeight, 200) + 'px'; }
     form.addEventListener('submit', function (e) { e.preventDefault(); send(); });
-    stopBtn.addEventListener('click', function () { post('/api/stop', { path: loc.proj }).then(function () { setTimeout(load, 600); }); });
+    stopBtn.addEventListener('click', function () { post('/api/stop', { path: loc.proj, chat: loc.chat }).then(function () { setTimeout(load, 600); }); });
     msgEl.addEventListener('input', autosize);
     // Enter sends; Shift+Enter is a newline
     msgEl.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
@@ -117,7 +144,7 @@
     // claude page does); only while this pane is showing and a turn runs
     var lastEsc = 0;
     function onEsc(e) {
-      if (e.key !== 'Escape' || dead || !busy || !root.offsetParent) return;
+      if (e.key !== 'Escape' || dead || stopBtn.disabled || !root.offsetParent) return;
       var now = Date.now();
       if (now - lastEsc < 500) { lastEsc = 0; stopBtn.click(); } else lastEsc = now;
     }
@@ -133,7 +160,8 @@
         lnk.onclick = function (e) { e.preventDefault(); e.stopPropagation(); if (opts.onNavigate) opts.onNavigate(dir); else location.href = dir; };
         s.appendChild(lnk);
       }
-      s.appendChild(el('span', 'note' + (trace && trace.note === 'error' ? ' err' : ''), result ? (trace ? trace.note : 'done') : 'running'));
+      var noteCls = trace && trace.note === 'error' ? ' err' : trace && trace.note === 'declined' ? ' declined' : '';
+      s.appendChild(el('span', 'note' + noteCls, result ? (trace ? trace.note : 'done') : 'running'));
       d.appendChild(s);
       d.appendChild(el('pre', 'args', JSON.stringify(use.input || {}, null, 1)));
       if (result) {
@@ -144,6 +172,42 @@
       }
       return d;
     }
+    // the ask box: one row per asked tool use with run / decline; the
+    // answer posts once every row has one (one click when there is one).
+    // A box that is no longer live shows the uses, no buttons.
+    function askBox(uses, live) {
+      var box = el('div', 'ask');
+      box.appendChild(el('div', 'ask-title', live ? 'wants to run — allow?' : 'asked'));
+      var choice = {};
+      function maybePost() {
+        if (uses.every(function (u) { return u.id in choice; })) resolve(choice);
+      }
+      uses.forEach(function (u) {
+        var row = el('div', 'ask-row');
+        row.appendChild(el('span', 'tool', u.name));
+        var args = u.input || {};
+        var first = Object.keys(args).map(function (k) { return args[k]; }).filter(function (v) { return typeof v === 'string'; })[0];
+        row.appendChild(el('span', 'arg', first || ''));
+        if (live) {
+          var runB = el('button', 'run', 'run'), noB = el('button', 'decline', 'decline');
+          runB.onclick = function () { choice[u.id] = true; runB.classList.add('on'); noB.classList.remove('on'); maybePost(); };
+          noB.onclick = function () { choice[u.id] = false; noB.classList.add('on'); runB.classList.remove('on'); maybePost(); };
+          row.appendChild(runB); row.appendChild(noB);
+        }
+        box.appendChild(row);
+        var pre = el('pre', null, JSON.stringify(args, null, 1));
+        box.appendChild(pre);
+      });
+      if (live && uses.length > 1) {
+        var all = el('div', 'ask-all');
+        var runAll = el('button', 'run', 'run all'), noAll = el('button', 'decline', 'decline all');
+        runAll.onclick = function () { uses.forEach(function (u) { choice[u.id] = true; }); resolve(choice); };
+        noAll.onclick = function () { uses.forEach(function (u) { choice[u.id] = false; }); resolve(choice); };
+        all.appendChild(runAll); all.appendChild(noAll);
+        box.appendChild(all);
+      }
+      return box;
+    }
     function render(log) {
       threadEl.innerHTML = '';
       if (!log.length) {
@@ -151,7 +215,7 @@
         return;
       }
       var pending = null;
-      log.forEach(function (ev) {
+      log.forEach(function (ev, i) {
         if (ev.k === 'input') {
           var u = el('div', 'msg user'); u.appendChild(el('div', 'bubble', ev.body)); threadEl.appendChild(u);
         } else if (ev.k === 'response') {
@@ -182,9 +246,23 @@
           }
         } else if (ev.k === 'interrupt') {
           threadEl.appendChild(el('div', 'meta', 'stopped'));
+        } else if (ev.k === 'ask') {
+          // the turn is paused: these uses of the last response ask first.
+          // Only the LAST ask (the log's tail) is live; an earlier one was
+          // answered (a resolved event follows) or stopped.
+          var live = (i === log.length - 1);
+          var asked = (pending ? pending.uses : []).filter(function (u) { return (ev.ids || []).indexOf(u.id) >= 0; });
+          // while paused the response's own trace ("running") would mislead
+          if (live && pending) pending.el.style.display = 'none';
+          threadEl.appendChild(askBox(asked, live));
+        } else if (ev.k === 'resolved') {
+          var d = ev.decisions || {};
+          var ids = Object.keys(d);
+          var ran = ids.filter(function (k) { return d[k] !== false; }).length;
+          threadEl.appendChild(el('div', 'meta', ran === ids.length ? 'allowed' : ran === 0 ? 'declined' : ran + ' allowed · ' + (ids.length - ran) + ' declined'));
         } else threadEl.appendChild(el('div', 'err', JSON.stringify(ev)));
       });
-      if (busyAfter(log)) {
+      if (busyAfter(log) && !askingAfter(log)) {
         var t = el('div', 'msg bot'), ty = el('div', 'typing');
         ty.appendChild(el('span')); ty.appendChild(el('span')); ty.appendChild(el('span'));
         t.appendChild(ty); threadEl.appendChild(t);

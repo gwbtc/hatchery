@@ -6,20 +6,39 @@
 ::    system.md           the standing prompt
 ::    memories/*.md       what it has learned (its tools write here)
 ::    skills/*.md         standing instructions, one per file
+::    tools.json          the tool policy (optional): which tools run
+::                        freely, which ask first, which are withheld
 ::    chats/<c>/log.chat-log     one append-only event log per chat
 ::    chats/<c>/system.md        that chat's own prompt (optional): the
 ::                               clanker is one identity, a chat is one
 ::                               standing role of it (docs, build, …)
+::    chats/<c>/tools.json       that chat's own policy (optional), which
+::                               can only tighten the clanker's
 ::    chats/<c>/<sub>.clanker/   a clanker this chat spawned (nested)
 ::    tools/              its own tools nexus, seeded from a bundle
 ::
 ::  Every turn assembles the request from those files: system.md, then
 ::  the chat's own system.md if it has one, then the skills, then the
 ::  memories, then the chat's events. Tools and memories are the
-::  clanker's, never a chat's: a chat that needs different tools is a
-::  different clanker. The tools it
-::  advertises are whatever its tools nexus lists, so adding a tool is
-::  writing a file under tools/code/lib/tools, no schema anywhere.
+::  clanker's; a chat narrows the tools by policy, never widens them (a
+::  chat that needs MORE is a different clanker, with its own weir). The
+::  tools it advertises are whatever its tools nexus lists, so adding a
+::  tool is writing a file under tools/code/lib/tools, no schema anywhere.
+::
+::  The tool policy (tools.json, at the clanker and/or a chat):
+::    {"default": "ask", "allow": ["repo_read"], "deny": ["write_file"]}
+::  Per tool NAME, nothing finer (a tool whose uses deserve different
+::  answers is two tools). A matching deny wins, then a matching allow,
+::  else the default; with no file at all everything is allowed. The
+::  chat's verdict and the clanker's combine as the stricter of the two.
+::    deny   the tool is not advertised to the model at all
+::    allow  runs as it comes
+::    ask    advertised; when the model calls it the turn pauses on an
+::           %ask event, the chat pane offers run/decline per use, and a
+::           {action:'resolve'} poke appends a %resolved event and the
+::           turn goes on: accepted uses run, declined ones answer the
+::           model with a refusal. The log is the truth, so a pending ask
+::           survives a restart and a stop cancels it.
 ::
 ::  Reuse: lib/clanker's door for the metered proxy round-trip
 ::  (+call-anthropic), persistence (+write-chat) and the interrupt-aware
@@ -111,10 +130,66 @@
   ?.  ?=([%o *] jon)  $
   =/  act=(unit @t)
     (bind (~(get by p.jon) 'action') |=(j=json ?>(?=(%s -.j) p.j)))
-  ?:  ?=([~ %'interrupt'] act)  $
   =/  chat=@t  =/(c=@t (jstr:clanker jon 'chat') ?:(=('' c) 'main' c))
+  ::  an interrupt that lands idle: nothing runs, but a chat paused on an
+  ::  ask is waiting on the user, and stop means no
+  ?:  ?=([~ %'interrupt'] act)
+    ;<  ~  bind:m  (cancel-ask rail chat)
+    $
+  ::  the user's answer to a pending ask: {action:'resolve', chat,
+  ::  decisions:{<tool_use id>: true|false}}
+  ?:  ?=([~ %'resolve'] act)
+    ;<  ~  bind:m  (resolve-chat rail jon chat)
+    $
   ;<  ~  bind:m  (turn-chat rail jon chat)
   $
+::  +chat-log: a chat's log road and its events (~ when there is none).
+++  chat-log
+  |=  [=rail:tarball chat=@t]
+  =/  m  (fiber:fiber:nexus ,[road=road:tarball existed=? log=(list json)])
+  ^-  form:m
+  =/  road=road:tarball  (nex-road:io rail [%& [%chats `@ta`chat ~] log-name])
+  ;<  cur=view:nexus  bind:m  (peek:io road `[/ %json])
+  =/  log=(list json)
+    ?.  ?=([%file *] cur)  ~
+    =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.cur)))) [%a ~])
+    ?.(?=([%a *] j) ~ p.j)
+  (pure:m [road ?=([%file *] cur) log])
+::  +last-kind: the k of a log's last event ('' when empty).
+++  last-kind
+  |=  log=(list json)
+  ^-  @t
+  ?~(log '' (jstr:clanker (rear log) 'k'))
+::  +cancel-ask: a chat paused on an ask is stopped: the ask is answered
+::  by an interrupt, so the log is at rest and nothing resumes it.
+++  cancel-ask
+  |=  [=rail:tarball chat=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  [road=road:tarball existed=? log=(list json)]  bind:m  (chat-log rail chat)
+  ?.  =('ask' (last-kind log))  (pure:m ~)
+  (write-log road existed (snoc log event-interrupt))
+::  +resolve-chat: the user decided the pending ask. Append the %resolved
+::  event (ids -> yes/no) and run on from there. A resolve with no ask
+::  pending is dropped.
+++  resolve-chat
+  |=  [=rail:tarball jon=json chat=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  [road=road:tarball existed=? log=(list json)]  bind:m  (chat-log rail chat)
+  ?.  =('ask' (last-kind log))  (pure:m ~)
+  =/  decisions=json
+    ?.  ?=([%o *] jon)  [%o ~]
+    (fall (~(get by p.jon) 'decisions') [%o ~])
+  =.  log  (snoc log (event-resolved decisions))
+  ;<  ~  bind:m  (write-log road existed log)
+  ;<  cfg=json  bind:m  (read-json rail [%& / %'config.json'])
+  =/  model=@t  =/(mo=@t (jstr:clanker cfg 'model') ?:(=('' mo) 'claude-sonnet-4-6' mo))
+  =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
+  ;<  sys=@t  bind:m  (standing rail chat)
+  ;<  pol=policy  bind:m  (read-policy rail chat)
+  ;<  schema=json  bind:m  (list-tools rail pol)
+  (run rail chat road log sys model max schema pol)
 ::  +turn-chat: one turn. Append the %input event to the chat log, persist
 ::  (so a refresh shows it even if the turn stalls), assemble this
 ::  clanker's standing context from its files, ask its tools nexus what it
@@ -131,23 +206,21 @@
   =/  model=@t  =/(mo=@t (jstr:clanker cfg 'model') ?:(=('' mo) 'claude-sonnet-4-6' mo))
   =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
   ;<  sys=@t  bind:m  (standing rail chat)
-  ;<  schema=json  bind:m  (list-tools rail)
+  ;<  pol=policy  bind:m  (read-policy rail chat)
+  ;<  schema=json  bind:m  (list-tools rail pol)
   ::  the chat dir, then its log
   =/  chat-dir=path  [%chats `@ta`chat ~]
   ;<  dv=view:nexus  bind:m  (peek:io (nex-road:io rail [%| chat-dir]) ~)
   ;<  ~  bind:m
     ?:  ?=([%ball *] dv)  (pure:m ~)
     (make:io (nex-road:io rail [%| chat-dir]) &+empty-dir:loader)
-  =/  road=road:tarball  (nex-road:io rail [%& chat-dir log-name])
-  ;<  cur=view:nexus  bind:m  (peek:io road `[/ %json])
-  =/  log=(list json)
-    ?.  ?=([%file *] cur)  ~
-    =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.cur)))) [%a ~])
-    ?.(?=([%a *] j) ~ p.j)
-  =/  existed=?  ?=([%file *] cur)
+  ;<  [road=road:tarball existed=? log=(list json)]  bind:m  (chat-log rail chat)
+  ::  a chat paused on an ask takes no new message until it is answered
+  ::  (the model's pending tool uses must be answered first)
+  ?:  =('ask' (last-kind log))  (pure:m ~)
   =.  log  (snoc log (event-input u.msg))
   ;<  ~  bind:m  (write-log road existed log)
-  (run rail chat road log sys model max schema)
+  (run rail chat road log sys model max schema pol)
 ::  the chat log: one file per chat, its own mark (the explorer opens a
 ::  chat-log in the chat viewer), json inside
 ++  log-name  %'log.chat-log'
@@ -184,12 +257,14 @@
   =/  model=@t  =/(mo=@t (jstr:clanker cfg 'model') ?:(=('' mo) 'claude-sonnet-4-6' mo))
   =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
   ;<  sys=@t  bind:m  (standing rail `@t`i.chats)
-  ;<  schema=json  bind:m  (list-tools rail)
-  ;<  ~  bind:m  (run rail `@t`i.chats road log sys model max schema)
+  ;<  pol=policy  bind:m  (read-policy rail `@t`i.chats)
+  ;<  schema=json  bind:m  (list-tools rail pol)
+  ;<  ~  bind:m  (run rail `@t`i.chats road log sys model max schema pol)
   $(chats t.chats)
 ::  +open-turn: does this log end mid-turn? An input or tool results
 ::  await a response; a response that stopped for tool_use awaits its
-::  results. Anything else (a finished response, an interrupt, an empty
+::  results; a resolved ask awaits its tools. Anything else (a finished
+::  response, an interrupt, an ask still waiting on the user, an empty
 ::  log) is at rest.
 ++  open-turn
   |=  log=(list json)
@@ -199,8 +274,67 @@
   =/  k=@t  (jstr:clanker last 'k')
   ?|  =('input' k)
       =('results' k)
+      =('resolved' k)
       &(=('response' k) =('tool_use' (jstr:clanker last 'stop')))
   ==
+::  the tool policy: a verdict per tool name. See the header.
++$  policy  [default=@t allow=(set @t) ask=(set @t) deny=(set @t)]
+++  no-policy  `policy`['allow' ~ ~ ~]
+::  +parse-policy: tools.json as a policy; a missing or malformed file
+::  is no policy (everything allowed), a file with no default asks. An
+::  "ask" list is accepted too (a name the default would allow, held to
+::  asking) though the usual file needs only allow and deny.
+++  parse-policy
+  |=  jon=json
+  ^-  (unit policy)
+  ?.  ?=([%o *] jon)  ~
+  =/  strs
+    |=  k=@t
+    ^-  (set @t)
+    =/  v  (~(get by p.jon) k)
+    ?.  ?=([~ %a *] v)  ~
+    (sy (murn p.u.v |=(j=json ?:(?=([%s *] j) `p.j ~))))
+  =/  d=@t  (jstr:clanker jon 'default')
+  =/  d=@t  ?:(|(=('allow' d) =('ask' d) =('deny' d)) d 'ask')
+  `[d (strs 'allow') (strs 'ask') (strs 'deny')]
+::  +read-policy: the clanker's policy and the chat's, folded into one
+::  that yields, per tool, the stricter of the two verdicts.
+++  read-policy
+  |=  [=rail:tarball chat=@t]
+  =/  m  (fiber:fiber:nexus ,policy)
+  ^-  form:m
+  ;<  base=json  bind:m  (read-json rail [%& / %'tools.json'])
+  ;<  own=json  bind:m  (read-json rail [%& [%chats `@ta`chat ~] %'tools.json'])
+  =/  b=policy  (fall (parse-policy base) no-policy)
+  =/  c=policy  (fall (parse-policy own) no-policy)
+  =/  names=(set @t)
+    %-  ~(gas in *(set @t))
+    ;:  weld
+      ~(tap in allow.b)  ~(tap in ask.b)  ~(tap in deny.b)
+      ~(tap in allow.c)  ~(tap in ask.c)  ~(tap in deny.c)
+    ==
+  =/  out=policy  [(stricter default.b default.c) ~ ~ ~]
+  %-  pure:m
+  %+  roll  ~(tap in names)
+  |=  [n=@t acc=_out]
+  =/  v=@t  (stricter (verdict b n) (verdict c n))
+  ?:  =('deny' v)  acc(deny (~(put in deny.acc) n))
+  ?:  =('ask' v)  acc(ask (~(put in ask.acc) n))
+  acc(allow (~(put in allow.acc) n))
+++  stricter
+  |=  [x=@t y=@t]
+  ^-  @t
+  =/  rank  |=(v=@t ^-(@ud ?:(=('deny' v) 2 ?:(=('ask' v) 1 0))))
+  ?:((gte (rank x) (rank y)) x y)
+::  +verdict: one tool's verdict under a policy: deny, else ask, else
+::  allow, else the default.
+++  verdict
+  |=  [p=policy name=@t]
+  ^-  @t
+  ?:  (~(has in deny.p) name)  'deny'
+  ?:  (~(has in ask.p) name)  'ask'
+  ?:  (~(has in allow.p) name)  'allow'
+  default.p
 ::  +standing: the clanker's standing context for one chat, assembled
 ::  from its files: system.md, then the chat's own system.md if it has
 ::  one (the chat's role on top of the clanker's identity), then every
@@ -236,7 +370,7 @@
 ::  Anthropic tool schema array, plus the engine's own `spawn`. The tools
 ::  nexus answers a {cmd:'list'} poke by poking the array back to us.
 ++  list-tools
-  |=  =rail:tarball
+  |=  [=rail:tarball pol=policy]
   =/  m  (fiber:fiber:nexus ,json)
   ^-  form:m
   ;<  ~  bind:m
@@ -259,7 +393,12 @@
             ['required' (fall (~(get by p.t) 'required') [%a ~])]
         ==
     ==
-  (pure:m [%a (snoc tools spawn-schema)])
+  ::  a denied tool is not advertised: the model never sees it
+  =/  all=(list json)  (snoc tools spawn-schema)
+  %-  pure:m
+  :-  %a
+  %+  skip  all
+  |=(t=json =('deny' (verdict pol (jstr:clanker t 'name'))))
 ::  +take-list: the list reply, a json array poked to main.sig. Anything
 ::  else that lands meanwhile is skipped (re-offered to the serve loop).
 ++  take-list
@@ -301,17 +440,43 @@
 ::  proxy / tools) appends an %interrupt event and stops: the log is
 ::  intact and at rest.
 ++  run
-  |=  [=rail:tarball chat=@t road=road:tarball log=(list json) sys=@t model=@t max=@ud schema=json]
+  |=  [=rail:tarball chat=@t road=road:tarball log=(list json) sys=@t model=@t max=@ud schema=json pol=policy]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   |-  ^-  form:m
   =/  last=json  ?~(log [%o ~] (rear log))
+  =/  k=@t  (jstr:clanker last 'k')
+  ::  paused on the user: at rest until a resolve or a stop
+  ?:  =('ask' k)  (pure:m ~)
+  ::  the tool uses to run now: the last response's, straight (when it
+  ::  just landed) or as the user resolved them (when the tail is the
+  ::  resolved event; the response is the one before the ask)
+  =/  resolved=(unit json)  ?.(=('resolved' k) ~ `last)
+  =/  resp=json
+    ?^  resolved  (last-response log)
+    ?.  &(=('response' k) =('tool_use' (jstr:clanker last 'stop')))  [%o ~]
+    last
   =/  tool-uses=(list json)
-    ?.  &(=('response' (jstr:clanker last 'k')) =('tool_use' (jstr:clanker last 'stop')))  ~
-    %+  skim  (resp-content last)
+    %+  skim  (resp-content resp)
     |=(b=json ?&(?=([%o *] b) ?=([~ %s %'tool_use'] (~(get by p.b) 'type'))))
   ?^  tool-uses
-    ;<  ran=(unit [(list json) (list json)])  bind:m  (run-tools rail chat tool-uses)
+    ::  a use whose tool asks first pauses the turn, unless the user
+    ::  already answered (the resolved tail)
+    =/  asks=(list @t)
+      ?^  resolved  ~
+      %+  murn  tool-uses
+      |=(tu=json ?:(=('ask' (verdict pol (jstr:clanker tu 'name'))) `(jstr:clanker tu 'id') ~))
+    ?^  asks
+      (write-log road %.y (snoc log (event-ask asks)))
+    =/  declined=(set @t)
+      ?~  resolved  ~
+      ?.  ?=([%o *] u.resolved)  ~
+      =/  d  (~(get by p.u.resolved) 'decisions')
+      ?.  ?=([~ %o *] d)  ~
+      %-  sy
+      %+  murn  ~(tap by p.u.d)
+      |=([id=@t v=json] ?:(?=([%b %.n] v) `id ~))
+    ;<  ran=(unit [(list json) (list json)])  bind:m  (run-tools rail chat tool-uses declined)
     ?~  ran
       (write-log road %.y (snoc log event-interrupt))
     =.  log  (snoc log (event-results -.u.ran +.u.ran))
@@ -331,7 +496,7 @@
 ::  other name goes to this clanker's tools nexus. Yields the tool_result
 ::  blocks (for the model) and trace entries (for the UI). ~ on interrupt.
 ++  run-tools
-  |=  [=rail:tarball chat=@t tool-uses=(list json)]
+  |=  [=rail:tarball chat=@t tool-uses=(list json) declined=(set @t)]
   =/  m  (fiber:fiber:nexus ,(unit [(list json) (list json)]))
   ^-  form:m
   =|  results=(list json)
@@ -344,6 +509,10 @@
   =/  name=@t  (jstr:clanker tu 'name')
   =/  input=json  (fall (~(get by p.tu) 'input') [%o ~])
   ;<  outcome=(unit [json @t])  bind:m
+    ::  a use the user declined does not run; the model is told so
+    ?:  (~(has in declined) tid)
+      =/  mo  (fiber:fiber:nexus ,(unit [json @t]))
+      (pure:mo `[s+'The user declined to run this tool. Do not retry it; ask, or go on without it.' 'declined'])
     ?:  =('spawn' name)  (spawn rail chat input)
     (call-tool rail name input)
   ?~  outcome  (pure:m ~)
@@ -563,6 +732,24 @@
 ++  event-interrupt
   ^-  json
   (pairs:enjs:format ~[['k' s+'interrupt']])
+::  the turn is paused on the user: these tool_use ids (of the response
+::  just before) ask first. At rest until resolved or stopped.
+++  event-ask
+  |=  ids=(list @t)
+  ^-  json
+  (pairs:enjs:format ~[['k' s+'ask'] ['ids' [%a (turn ids |=(i=@t `json`s+i))]]])
+::  the user's answer: {id: true|false} per asked use. Only an explicit
+::  false declines; an id left out runs.
+++  event-resolved
+  |=  decisions=json
+  ^-  json
+  (pairs:enjs:format ~[['k' s+'resolved'] ['decisions' decisions]])
+::  +last-response: the newest response event in the log.
+++  last-response
+  |=  log=(list json)
+  ^-  json
+  =/  rs=(list json)  (skim log |=(e=json =('response' (jstr:clanker e 'k'))))
+  ?~(rs [%o ~] (rear rs))
 ::  readers over this clanker's own tree
 ++  read-json
   |=  [=rail:tarball =lane:tarball]

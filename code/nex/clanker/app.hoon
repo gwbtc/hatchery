@@ -325,7 +325,8 @@
 ::    POST /api/record {path, system, model, max_tokens}
 ::    GET  /api/log?path=&chat=          one chat's event log
 ::    POST /api/send {path, chat, message}      -> pokes that clanker
-::    POST /api/stop {path}                     -> interrupts that clanker
+::    POST /api/stop {path, chat}               -> interrupts that clanker
+::    POST /api/resolve {path, chat, decisions} -> answers a pending ask
 ::    POST /api/new {kind, parent, name}        category | clanker | chat
 ::    POST /api/delete {path} | {path, chat}
 ::
@@ -437,7 +438,19 @@
     ;<  ~  bind:m
       %-  poke:io
       :+  [%| 1 %& (welp /projects u.proj) %'main.sig']  [/ %json]
-      (pairs:enjs:format ~[['action' s+'interrupt']])
+      (pairs:enjs:format ~[['action' s+'interrupt'] ['chat' s+(jarg 'chat')]])
+    (send-json eyre-id '{"ok":true}')
+  ::  the user's answer to a chat paused on an ask: which tool uses run
+  ?:  ?&(=(%'POST' method) =([%api %resolve ~] suffix))
+    =/  proj=(unit path)  (parse-proj (jarg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    =/  decisions=json
+      ?.  ?=([%o *] body)  [%o ~]
+      (fall (~(get by p.body) 'decisions') [%o ~])
+    ;<  ~  bind:m
+      %-  poke:io
+      :+  [%| 1 %& (welp /projects u.proj) %'main.sig']  [/ %json]
+      (pairs:enjs:format ~[['action' s+'resolve'] ['chat' s+(jarg 'chat')] ['decisions' decisions]])
     (send-json eyre-id '{"ok":true}')
   ?:  ?&(=(%'POST' method) =([%api %new ~] suffix))
     =/  kind=@t  (jarg 'kind')
@@ -500,19 +513,20 @@
     ?:(?=([~ %s *] v) p.u.v '')
   =/  inputs=(list json)  (skim evs |=(e=json =('input' (key e 'k'))))
   =/  last=@t  ?~(inputs '' (key (rear inputs) 'body'))
+  =/  k=@t  ?~(evs '' (key (rear evs) 'k'))
   =/  busy=?
     ?~  evs  %.n
-    =/  l=json  (rear evs)
-    =/  k=@t  (key l 'k')
     ?|  =('input' k)
         =('results' k)
-        &(=('response' k) =('tool_use' (key l 'stop')))
+        =('resolved' k)
+        &(=('response' k) =('tool_use' (key (rear evs) 'stop')))
     ==
   %-  pairs:enjs:format
   :~  ['name' s+name]
       ['events' (numb:enjs:format (lent evs))]
       ['last' s+last]
       ['busy' b+busy]
+      ['asking' b+=('ask' k)]
       ['prompt' b+prompt]
   ==
 ::  +tree-json: the collection as nested {dirs, files}, the directories
