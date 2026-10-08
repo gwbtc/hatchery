@@ -42,6 +42,15 @@
       =/  m  (fiber:fiber:nexus ,~)
       ^-  process:fiber:nexus
       ?+    rail  stay:m
+          ::  main.sig: the collection's poke protocol (see +handle-poke),
+          ::  how another app makes a clanker here by name
+          [~ %'main.sig']
+        ;<  ~  bind:m  (rise-wait:io prod "%clanker main: failed")
+        |-
+        ;<  =sage:tarball  bind:m  take-poke:io
+        =/  jon=json  (fall (mole |.(!<(json q.sage))) *json)
+        ;<  ~  bind:m  (handle-poke jon)
+        $
           [~ %'http.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%clanker http: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/clanker])
@@ -74,12 +83,13 @@
       [%over %& [/ %'chats.js'] [[/ %mime] chats-js]]
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
       [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
+      [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
       [%fall %| /requests empty-dir:loader]
       [%fall %| /projects empty-dir:loader]
       ::  the grubbery clanker: the kernel self-editing tools, a wide weir.
       ::  Seeded without the proxy roads resolved (on-load cannot peek);
       ::  +sand-clanker re-sands it on every send.
-      [%fall %| [%projects %'grubbery.clanker' ~] (clanker-bole 'grubbery' 'kernel' grubbery-system (kernel-weir ~))]
+      [%fall %| [%projects %'grubbery.clanker' ~] (clanker-bole 'grubbery' 'kernel' grubbery-system (kernel-weir ~) ~)]
   ==
 ::  +weir-ask: what this nexus needs to reach. Clankers are nested here,
 ::  so their reach is bounded by ours: the proxy for every clanker, and
@@ -111,32 +121,46 @@
 ::  a weir that is its scope, and its two seed files; its own on-load lays
 ::  out the rest (memories/, skills/, chats/, tools/).
 ::
-++  clanker-bole
-  |=  [name=@t bundle=@t system=@t =weir:tarball]
-  ^-  bole:tarball
-  =/  cfg=json
-    %-  pairs:enjs:format
+::  +clanker-config: config.json for a new clanker; `extra` adds the
+::  fields a kind of clanker carries beyond the base (a repo clanker's
+::  "repo" path and its "roads").
+++  clanker-config
+  |=  [name=@t bundle=@t extra=(list [@t json])]
+  ^-  json
+  %-  pairs:enjs:format
+  %+  weld
+    ^-  (list [@t json])
     :~  ['name' s+name]
         ['model' s+'claude-sonnet-4-6']
         ['max_tokens' (numb:enjs:format 4.096)]
         ['bundle' s+bundle]
     ==
+  extra
+++  clanker-bole
+  |=  [name=@t bundle=@t system=@t =weir:tarball extra=(list [@t json])]
+  ^-  bole:tarball
+  =/  cfg=json  (clanker-config name bundle extra)
   =|  files=(map @ta [=bask:tarball gain=?])
   =.  files  (~(put by files) %'config.json' [[[/ %json] cfg] %.n])
   =.  files  (~(put by files) %'system.md' [[[/ %mime] [/text/markdown (as-octs:mimes:html system)]] %.n])
   [`[`[/clanker %agent] `weir %.n files] ~]
 ::  +default-weir: what any clanker may reach outside its own tree: time,
-::  the model proxy. (Its own tree, its tools and its nested clankers are
-::  inside it and need no grant.)
+::  the model proxy. Its own tree, its tools and its nested clankers are
+::  inside it and need no grant, with one exception: a peek at the
+::  clanker DIRECTORY itself crosses its weir (the entry belongs to the
+::  parent), and that peek is how a tool finds its clanker (+clanker-up
+::  walks up by neck). So the weir names its own directory, relatively:
+::  [%| 0 %| /] resolves against the directory the weir sits on.
 ++  default-weir
   |=  anth=(unit path)
   ^-  weir:tarball
   =/  fil  |=([p=path n=@ta] `road:tarball`[%& %& p n])
   =/  dir  |=(p=path `road:tarball`[%& %| p])
   =/  opt  |=([u=(unit path) f=$-(path road:tarball)] ^-((list road:tarball) ?~(u ~ ~[(f u.u)])))
+  =/  self=road:tarball  [%| 0 %| /]
   :*  make=~
       poke=(sy (weld ~[(fil /sys 'bowl.sig')] (opt anth |=(p=path (fil p 'main.sig')))))
-      peek=(sy (weld ~[(dir /sys/link/anthropic)] (opt anth |=(p=path (dir (snoc p %calls))))))
+      peek=(sy (weld ~[self (dir /sys/link/anthropic)] (opt anth |=(p=path (dir (snoc p %calls))))))
   ==
 ::  +kernel-weir: the grubbery clanker: the default plus the kernel
 ::  namespace its self-editing tools touch.
@@ -154,16 +178,124 @@
   ^-  form:m
   ;<  anth=(unit lane:tarball)  bind:m  (resolve-link:io '@anthropic')
   (pure:m ?.(?=([~ %| *] anth) ~ `p.u.anth))
-::  +sand-clanker: (re)set a clanker's weir with the proxy as it resolves
-::  now. Called when a clanker is made and on every send, so one born
-::  before the proxy existed, or seeded at load, still reaches it.
+::  +config-weir: a clanker's weir from its config: the kernel set for
+::  bundle "kernel", the default otherwise, plus the extra peek roads the
+::  config grants it (config.json "roads": {"peek": ["/dir/", "/dir/f"]},
+::  a trailing slash meaning the subtree), e.g. a repo clanker's working
+::  tree. Re-applied on every send, so the proxy resolves and the extras
+::  survive a config edit.
+++  config-weir
+  |=  [cfg=json anth=(unit path)]
+  ^-  weir:tarball
+  =/  base=weir:tarball
+    ?:(=('kernel' (jstr:clanker cfg 'bundle')) (kernel-weir anth) (default-weir anth))
+  =/  extra=(list road:tarball)
+    ?.  ?=([%o *] cfg)  ~
+    =/  rj  (~(get by p.cfg) 'roads')
+    ?.  ?=([~ %o *] rj)  ~
+    =/  pj  (~(get by p.u.rj) 'peek')
+    ?.  ?=([~ %a *] pj)  ~
+    %+  murn  p.u.pj
+    |=  j=json
+    ^-  (unit road:tarball)
+    ?.  ?=([%s *] j)  ~
+    =/  t=tape  (trip p.j)
+    ?~  t  ~
+    =/  dir=?  =('/' (rear t))
+    =/  pax=(unit path)  (rush (crip ?:(dir (snip `tape`t) t)) stap)
+    ?~  pax  ~
+    ?:  dir  `[%& %| u.pax]
+    ?~  u.pax  ~
+    `[%& %& (snip `path`u.pax) (rear u.pax)]
+  base(peek (~(gas in peek.base) extra))
+::  +sand-clanker: (re)set a clanker's weir from its config with the
+::  proxy as it resolves now. Called when a clanker is made and on every
+::  send, so one born before the proxy existed, or seeded at load, still
+::  reaches it.
 ++  sand-clanker
-  |=  [proj=path kernel=?]
+  |=  [proj=path cfg=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  anth=(unit path)  bind:m  anthropic-root
-  =/  w=weir:tarball  ?:(kernel (kernel-weir anth) (default-weir anth))
-  (sand:io [%| 1 %| (welp /projects proj)] `w)
+  (sand:io [%| 1 %| (welp /projects proj)] `(config-weir cfg anth))
+::  +handle-poke: the collection's poke protocol, for other apps (forge
+::  makes a repo's clanker this way) and for tools. One action for now:
+::    {action:'ensure', parent, name, bundle?, system?, repo?,
+::     roads?:{peek:[...]}, config?:{...}, chat?, chat_system?}
+::  makes the category dirs along parent, the clanker <parent>/<name>.clanker
+::  if missing (config, prompt, weir), and the named chat (its log, and
+::  its own prompt) if missing. The HOST'S config fields (bundle, repo,
+::  roads, and whatever `config` carries) are re-written into an existing
+::  clanker's config.json and its weir re-sanded, so a host that learns a
+::  new road or path passes it on; the user's fields (model, max_tokens)
+::  and the prompts are never overwritten. Runs in main.sig's own fiber,
+::  so roads are relative to the collection root (up 0).
+++  handle-poke
+  |=  jon=json
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  =('ensure' (jstr:clanker jon 'action'))  (pure:m ~)
+  =/  name=@t  (jstr:clanker jon 'name')
+  ?:  =('' name)  (pure:m ~)
+  =/  parent=path
+    (fall (rush =/(p=@t (jstr:clanker jon 'parent') ?:(=('' p) '/' p)) stap) /)
+  =/  bundle=@t  =/(b=@t (jstr:clanker jon 'bundle') ?:(=('' b) 'default' b))
+  =/  system=@t  (jstr:clanker jon 'system')
+  =/  extra=(list [@t json])
+    =/  repo=@t  (jstr:clanker jon 'repo')
+    =/  roads=(unit json)  ?.(?=([%o *] jon) ~ (~(get by p.jon) 'roads'))
+    =/  conf=(unit json)  ?.(?=([%o *] jon) ~ (~(get by p.jon) 'config'))
+    ;:  weld
+      ?:(=('' repo) ~ ~[['repo' s+repo]])
+      ?~(roads ~ ~[['roads' u.roads]])
+      ?.(?=([~ %o *] conf) ~ ~(tap by p.u.conf))
+    ==
+  ::  the category dirs along parent
+  ;<  ~  bind:m
+    =/  mu  (fiber:fiber:nexus ,~)
+    =/  at=path  /projects
+    =/  rest=path  parent
+    |-  ^-  form:mu
+    ?~  rest  (pure:mu ~)
+    =/  here=path  (snoc at i.rest)
+    ;<  v=view:nexus  bind:mu  (peek:io [%| 0 %| here] ~)
+    ;<  ~  bind:mu
+      ?:  ?=([%ball *] v)  (pure:mu ~)
+      (make:io [%| 0 %| here] &+empty-dir:loader)
+    $(at here, rest t.rest)
+  ::  the clanker: made with its config, prompt and weir; or, existing,
+  ::  its host fields folded into its config and its weir re-sanded
+  =/  proj=path  (snoc parent (crip "{(trip name)}.clanker"))
+  =/  dir=path  (welp /projects proj)
+  ;<  anth=(unit path)  bind:m  anthropic-root
+  ;<  dv=view:nexus  bind:m  (peek:io [%| 0 %| dir] ~)
+  ;<  ~  bind:m
+    ?.  ?=([%ball *] dv)
+      =/  cfg=json  (clanker-config name bundle extra)
+      (make:io [%| 0 %| dir] &+(clanker-bole name bundle system (config-weir cfg anth) extra))
+    =/  cfg-road=road:tarball  [%| 0 %& dir %'config.json']
+    ;<  cur=json  bind:m  (read-json cfg-road)
+    =/  merged=json
+      :-  %o
+      %-  ~(gas by ?:(?=([%o *] cur) p.cur *(map @t json)))
+      [['bundle' s+bundle] extra]
+    ;<  ~  bind:m  (over:io cfg-road [[/ %json] merged])
+    (sand:io [%| 0 %| dir] `(config-weir merged anth))
+  ::  the chat, with its own prompt
+  =/  chat=@t  (jstr:clanker jon 'chat')
+  ?:  =('' chat)  (pure:m ~)
+  =/  cdir=path  (welp dir [%chats `@ta`chat ~])
+  ;<  cv=view:nexus  bind:m  (peek:io [%| 0 %| cdir] ~)
+  ;<  ~  bind:m
+    ?:  ?=([%ball *] cv)  (pure:m ~)
+    (make:io [%| 0 %| cdir] &+empty-dir:loader)
+  ;<  *  bind:m
+    (make-soft:io [%| 0 %& cdir %'log.chat-log'] |+[[[/ %chat-log] [%a ~]] ~])
+  =/  csys=@t  (jstr:clanker jon 'chat_system')
+  ?:  =('' csys)  (pure:m ~)
+  ;<  *  bind:m
+    (make-soft:io [%| 0 %& cdir %'system.md'] |+[[[/ %mime] [/text/markdown (as-octs:mimes:html csys)]] ~])
+  (pure:m ~)
 ::
 ::  Paths. A clanker is addressed by its path under /projects, as the page
 ::  sends it: "/grubbery.clanker", "/work/hatchery.clanker". A category is
@@ -245,8 +377,9 @@
       |-  ^-  form:m
       ?~  names  (pure:m (flop acc))
       ;<  log=json  bind:m  (read-json [%| 1 %& (snoc chats-dir i.names) %'log.chat-log'])
+      ;<  sys=@t  bind:m  (read-text [%| 1 %& (snoc chats-dir i.names) %'system.md'])
       =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
-      $(names t.names, acc [(chat-summary i.names evs) acc])
+      $(names t.names, acc [(chat-summary i.names evs !=('' sys)) acc])
     (send-json eyre-id (en:json:html a+rows))
   ?:  ?&(=(%'GET' method) =([%api %tree ~] suffix))
     ;<  dv=view:nexus  bind:m  (peek:io [%| 1 %| /projects] ~)
@@ -292,7 +425,7 @@
     =/  proj=(unit path)  (parse-proj (jarg 'path'))
     ?~  proj  (bad eyre-id 'path required')
     ;<  cfg=json  bind:m  (read-json [%| 1 %& (welp /projects u.proj) %'config.json'])
-    ;<  ~  bind:m  (sand-clanker u.proj =('kernel' (jstr:clanker cfg 'bundle')))
+    ;<  ~  bind:m  (sand-clanker u.proj cfg)
     ;<  ~  bind:m
       %-  poke:io
       :+  [%| 1 %& (welp /projects u.proj) %'main.sig']  [/ %json]
@@ -321,16 +454,22 @@
       =/  proj=path  (snoc u.parent dir)
       ;<  anth=(unit path)  bind:m  anthropic-root
       ;<  ~  bind:m
-        (make:io [%| 1 %| (welp /projects proj)] &+(clanker-bole name 'default' '' (default-weir anth)))
+        (make:io [%| 1 %| (welp /projects proj)] &+(clanker-bole name 'default' '' (default-weir anth) ~))
       (send-json eyre-id '{"ok":true}')
     ?:  =('chat' kind)
+      ::  a chat is a dir: its log, and optionally its own prompt
+      ::  (system.md), the role this chat plays on top of the clanker's
       =/  dir=path  (welp /projects (welp u.parent [%chats `@ta`name ~]))
+      =/  sys=@t  (jarg 'system')
       ;<  dv=view:nexus  bind:m  (peek:io [%| 1 %| dir] ~)
       ;<  ~  bind:m
         ?:  ?=([%ball *] dv)  (pure:m ~)
         (make:io [%| 1 %| dir] &+empty-dir:loader)
       ;<  err=(unit tang)  bind:m
         (make-soft:io [%| 1 %& dir %'log.chat-log'] |+[[[/ %chat-log] [%a ~]] ~])
+      ;<  err=(unit tang)  bind:m
+        ?:  =('' sys)  (pure:(fiber:fiber:nexus ,(unit tang)) ~)
+        (make-soft:io [%| 1 %& dir %'system.md'] |+[[[/ %mime] [/text/markdown (as-octs:mimes:html sys)]] ~])
       (send-json eyre-id '{"ok":true}')
     (bad eyre-id 'kind must be category, clanker, or chat')
   ?:  ?&(=(%'POST' method) =([%api %delete ~] suffix))
@@ -351,7 +490,7 @@
 ::  turn is running (the log ends in an input, tool results, or a
 ::  response that asked for tools).
 ++  chat-summary
-  |=  [name=@ta evs=(list json)]
+  |=  [name=@ta evs=(list json) prompt=?]
   ^-  json
   =/  key
     |=  [e=json k=@t]
@@ -374,6 +513,7 @@
       ['events' (numb:enjs:format (lent evs))]
       ['last' s+last]
       ['busy' b+busy]
+      ['prompt' b+prompt]
   ==
 ::  +tree-json: the collection as nested {dirs, files}, the directories
 ::  as they are, one deep peek, nothing folded. The page tells clankers

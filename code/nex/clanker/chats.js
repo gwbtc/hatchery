@@ -54,7 +54,10 @@
     head.appendChild(el('span', 'title', 'chats of ' + proj.replace(/^.*\//, '').replace(/\.clanker$/, '')));
     var nameEl = el('input'); nameEl.placeholder = 'new chat name'; nameEl.spellcheck = false;
     var newBtn = el('button', null, 'new chat');
-    head.appendChild(nameEl); head.appendChild(newBtn);
+    // a chat's own prompt, optional: the role this chat plays on top of the
+    // clanker's identity (docs, build, …); stored as chats/<name>/system.md
+    var sysEl = el('input'); sysEl.placeholder = 'its prompt (optional)'; sysEl.spellcheck = false; sysEl.style.width = '320px';
+    head.appendChild(nameEl); head.appendChild(sysEl); head.appendChild(newBtn);
     var list = el('div', 'list');
     root.appendChild(head); root.appendChild(list);
     function openChat(name) {
@@ -67,9 +70,9 @@
       rows.forEach(function (c) {
         var r = el('div', 'row');
         r.appendChild(el('span', 'dot' + (c.busy ? ' busy' : '')));
-        r.appendChild(el('span', 'name', c.name));
+        r.appendChild(el('span', 'name', c.name + (c.prompt ? ' ·' : '')));
         r.appendChild(el('span', 'last' + (c.last ? '' : ' none'), c.last || 'nothing said yet'));
-        r.appendChild(el('span', 'count', c.events + (c.events === 1 ? ' event' : ' events')));
+        r.appendChild(el('span', 'count', c.events + (c.events === 1 ? ' event' : ' events') + (c.prompt ? ' · own prompt' : '')));
         r.title = c.busy ? 'a turn is running' : 'open';
         r.addEventListener('click', function () { openChat(c.name); });
         list.appendChild(r);
@@ -86,13 +89,15 @@
       var name = nameEl.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
       if (!name) { nameEl.focus(); return; }
       newBtn.disabled = true;
-      fetch(API + '/api/new', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'chat', parent: proj, name: name }) })
-        .then(function (r) { if (!r.ok) throw new Error(r.status); nameEl.value = ''; openChat(name); })
+      var sys = sysEl.value.trim();
+      fetch(API + '/api/new', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'chat', parent: proj, name: name, system: sys }) })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); nameEl.value = ''; sysEl.value = ''; openChat(name); })
         .catch(function (e) { list.insertBefore(el('div', 'err', 'could not make the chat: ' + e.message), list.firstChild); })
         .then(function () { newBtn.disabled = false; });
     }
     newBtn.addEventListener('click', create);
     nameEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); create(); } });
+    sysEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); create(); } });
     load();
     timer = setInterval(load, 4000);
     return { destroy: destroy };

@@ -6,12 +6,18 @@
 ::    system.md           the standing prompt
 ::    memories/*.md       what it has learned (its tools write here)
 ::    skills/*.md         standing instructions, one per file
-::    chats/<c>/log.json  one append-only event log per chat
+::    chats/<c>/log.chat-log     one append-only event log per chat
+::    chats/<c>/system.md        that chat's own prompt (optional): the
+::                               clanker is one identity, a chat is one
+::                               standing role of it (docs, build, …)
 ::    chats/<c>/<sub>.clanker/   a clanker this chat spawned (nested)
 ::    tools/              its own tools nexus, seeded from a bundle
 ::
 ::  Every turn assembles the request from those files: system.md, then
-::  the skills, then the memories, then the chat's events. The tools it
+::  the chat's own system.md if it has one, then the skills, then the
+::  memories, then the chat's events. Tools and memories are the
+::  clanker's, never a chat's: a chat that needs different tools is a
+::  different clanker. The tools it
 ::  advertises are whatever its tools nexus lists, so adding a tool is
 ::  writing a file under tools/code/lib/tools, no schema anywhere.
 ::
@@ -23,6 +29,7 @@
 /<  nex-tools  /lib/tools.hoon
 /&  bundle         /lib/clanker-bundle/
 /&  kernel-bundle  /lib/clanker-kernel-bundle/
+/&  repo-bundle    /lib/clanker-repo-bundle/
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -75,13 +82,18 @@
   =/  b=@t  (jstr:clanker p.res 'bundle')
   ?:(=('' b) 'default' b)
 ::  +tools-bole: the tools nexus mount, seeded from the default bundle and,
-::  for a "kernel" clanker, the grubbery self-editing tools on top.
+::  on top of it, the bundle config.json names: "kernel" = the grubbery
+::  self-editing tools; "repo" = tools that read one git checkout (the
+::  repo config.json points at, within the weir the host set).
 ++  tools-bole
   |=  which=@t
   ^-  bole:tarball
   =/  base=bole:tarball  (seed-tools:nex-tools bundle)
-  ?.  =('kernel' which)  base
-  (merge-boles:nex-tools base (seed-tools:nex-tools kernel-bundle))
+  ?:  =('kernel' which)
+    (merge-boles:nex-tools base (seed-tools:nex-tools kernel-bundle))
+  ?:  =('repo' which)
+    (merge-boles:nex-tools base (seed-tools:nex-tools repo-bundle))
+  base
 ::  +serve: the main.sig poke loop. {chat, message} runs a turn;
 ::  {action:'interrupt'} is swallowed here (it lands mid-await inside a
 ::  running turn, which cancels it). The tools nexus's list reply is a
@@ -118,7 +130,7 @@
   ;<  cfg=json  bind:m  (read-json rail [%& / %'config.json'])
   =/  model=@t  =/(mo=@t (jstr:clanker cfg 'model') ?:(=('' mo) 'claude-sonnet-4-6' mo))
   =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
-  ;<  sys=@t  bind:m  (standing rail)
+  ;<  sys=@t  bind:m  (standing rail chat)
   ;<  schema=json  bind:m  (list-tools rail)
   ::  the chat dir, then its log
   =/  chat-dir=path  [%chats `@ta`chat ~]
@@ -171,7 +183,7 @@
   ;<  cfg=json  bind:m  (read-json rail [%& / %'config.json'])
   =/  model=@t  =/(mo=@t (jstr:clanker cfg 'model') ?:(=('' mo) 'claude-sonnet-4-6' mo))
   =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
-  ;<  sys=@t  bind:m  (standing rail)
+  ;<  sys=@t  bind:m  (standing rail `@t`i.chats)
   ;<  schema=json  bind:m  (list-tools rail)
   ;<  ~  bind:m  (run rail `@t`i.chats road log sys model max schema)
   $(chats t.chats)
@@ -189,15 +201,18 @@
       =('results' k)
       &(=('response' k) =('tool_use' (jstr:clanker last 'stop')))
   ==
-::  +standing: the clanker's standing context, assembled from its files:
-::  system.md, then every skill, then every memory. Each file is a
-::  titled section so the model (and the context panel) can tell them
-::  apart. v1 inlines everything; a budget comes later and lives here.
+::  +standing: the clanker's standing context for one chat, assembled
+::  from its files: system.md, then the chat's own system.md if it has
+::  one (the chat's role on top of the clanker's identity), then every
+::  skill, then every memory. Each file is a titled section so the model
+::  (and the context panel) can tell them apart. v1 inlines everything; a
+::  budget comes later and lives here.
 ++  standing
-  |=  =rail:tarball
+  |=  [=rail:tarball chat=@t]
   =/  m  (fiber:fiber:nexus ,@t)
   ^-  form:m
   ;<  sys=@t  bind:m  (read-text rail [%& / %'system.md'])
+  ;<  chat-sys=@t  bind:m  (read-text rail [%& [%chats `@ta`chat ~] %'system.md'])
   ;<  skills=(list [@ta @t])  bind:m  (read-dir-texts rail /skills)
   ;<  memories=(list [@ta @t])  bind:m  (read-dir-texts rail /memories)
   =/  section
@@ -213,6 +228,7 @@
   %-  crip
   ;:  weld
     (trip sys)
+    ?:(=('' chat-sys) "" "\0a\0a# This chat\0a{(trip chat-sys)}\0a")
     (section "Skills" skills)
     (section "Memories" memories)
   ==
