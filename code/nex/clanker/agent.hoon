@@ -49,6 +49,7 @@
 /&  bundle         /lib/clanker-bundle/
 /&  kernel-bundle  /lib/clanker-kernel-bundle/
 /&  repo-bundle    /lib/clanker-repo-bundle/
+/&  build-bundle   /lib/clanker-build-bundle/
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -112,6 +113,13 @@
     (merge-boles:nex-tools base (seed-tools:nex-tools kernel-bundle))
   ?:  =('repo' which)
     (merge-boles:nex-tools base (seed-tools:nex-tools repo-bundle))
+  ::  "build" = the repo set plus the tools that change the checkout and
+  ::  drive its git lane (write, edit, git); which chats may use those is
+  ::  the policy's business (tools.json), the weir's what they may reach
+  ?:  =('build' which)
+    %+  merge-boles:nex-tools
+      (merge-boles:nex-tools base (seed-tools:nex-tools repo-bundle))
+    (seed-tools:nex-tools build-bundle)
   base
 ::  +serve: the main.sig poke loop. {chat, message} runs a turn;
 ::  {action:'interrupt'} is swallowed here (it lands mid-await inside a
@@ -228,9 +236,73 @@
   |=  [road=road:tarball existed=? log=(list json)]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ;<  ~  bind:m  (write-status road log)
   ?:  existed  (over:io road [[/ %chat-log] [%a log]])
   ;<  err=(unit tang)  bind:m  (make-soft:io road |+[[[/ %chat-log] [%a log]] ~])
   (pure:m ~)
+::  +write-status: the chat's state as a sibling status.json, derived from
+::  the log every time the log is written: {state, asks, last}. The log's
+::  own mark is this app's, so a reader elsewhere (a tool, another app)
+::  cannot validate it; plain json it can. state is one of idle, busy
+::  (a turn runs), asking (paused on the user: `asks` lists the pending
+::  tool uses, {id, name, input}, answered by {action:'resolve'}),
+::  stopped. last is the latest assistant text.
+++  write-status
+  |=  [road=road:tarball log=(list json)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ::  the log's road with the file name swapped, absolute or relative
+  =/  status-road=(unit road:tarball)
+    ?-  -.road
+      %&  ?.(?=(%& -.p.road) ~ `road(name.p.p %'status.json'))
+      %|  ?.(?=(%& -.q.p.road) ~ `road(name.p.q.p %'status.json'))
+    ==
+  ?~  status-road  (pure:m ~)
+  =/  status-road=road:tarball  u.status-road
+  =/  jon=json  (status-of log)
+  ;<  v=view:nexus  bind:m  (peek:io status-road ~)
+  ?:  ?=([%file *] v)  (over:io status-road [[/ %json] jon])
+  ;<  *  bind:m  (make-soft:io status-road |+[[[/ %json] jon] ~])
+  (pure:m ~)
+++  status-of
+  |=  log=(list json)
+  ^-  json
+  =/  k=@t  (last-kind log)
+  =/  resp=json  (last-response log)
+  =/  state=@t
+    ?:  =('ask' k)  'asking'
+    ?:  =('interrupt' k)  'stopped'
+    ?:  (open-turn log)  'busy'
+    'idle'
+  =/  asks=(list json)
+    ?.  =('ask' k)  ~
+    =/  ids=(set @t)
+      =/  l=json  (rear log)
+      ?.  ?=([%o *] l)  ~
+      =/  v  (~(get by p.l) 'ids')
+      ?.  ?=([~ %a *] v)  ~
+      (sy (murn p.u.v |=(j=json ?:(?=([%s *] j) `p.j ~))))
+    %+  murn  (resp-content resp)
+    |=  b=json
+    ^-  (unit json)
+    ?.  ?=([%o *] b)  ~
+    ?.  ?=([~ %s %'tool_use'] (~(get by p.b) 'type'))  ~
+    ?.  (~(has in ids) (jstr:clanker b 'id'))  ~
+    `(pairs:enjs:format ~[['id' s+(jstr:clanker b 'id')] ['name' s+(jstr:clanker b 'name')] ['input' (fall (~(get by p.b) 'input') [%o ~])]])
+  =/  last=@t
+    %-  crip
+    %-  zing
+    %+  turn  (resp-content resp)
+    |=  b=json
+    ?.  ?=([%o *] b)  ""
+    ?.  ?=([~ %s %'text'] (~(get by p.b) 'type'))  ""
+    (trip (jstr:clanker b 'text'))
+  %-  pairs:enjs:format
+  :~  ['state' s+state]
+      ['events' (numb:enjs:format (lent log))]
+      ['asks' [%a asks]]
+      ['last' s+last]
+  ==
 ::  +resume: the restart contract. This fiber may be restarted at any
 ::  moment (a deploy, a crash); the log is the truth, so a chat whose log
 ::  ends mid-turn (an input or tool results not yet answered, or a
@@ -373,9 +445,21 @@
   |=  [=rail:tarball pol=policy]
   =/  m  (fiber:fiber:nexus ,json)
   ^-  form:m
-  ;<  ~  bind:m
-    (poke:io (nex-road:io rail [%& /tools %'main.sig']) [[/ %json] (pairs:enjs:format ~[['cmd' s+'list']])])
-  ;<  listed=(list json)  bind:m  take-list
+  ::  the list comes back as a poke; one lost across a reboot of the tools
+  ::  nexus must not park this fiber forever (every later poke would be
+  ::  skipped behind it), so ask again after a deadline, a few times
+  ;<  listed=(list json)  bind:m
+    =/  mt  (fiber:fiber:nexus ,(list json))
+    =/  tries=@ud  0
+    |-  ^-  form:mt
+    ;<  ~  bind:mt
+      (poke:io (nex-road:io rail [%& /tools %'main.sig']) [[/ %json] (pairs:enjs:format ~[['cmd' s+'list']])])
+    ;<  got=(unit (list json))  bind:mt
+      %^  (with-timeout:io ,(list json))  /tool-list  ~s20
+      take-list
+    ?^  got  (pure:mt u.got)
+    ?:  (gte tries 3)  (pure:mt ~)
+    $(tries +(tries))
   =/  tools=(list json)
     %+  turn  listed
     |=  t=json
@@ -656,40 +740,96 @@
     [main-road [/ %json] (pairs:enjs:format ~[['cmd' s+'cull'] ['id' s+i.old]])]
   $(old t.old)
 ::
+::  +await-run: the run grub's %done, taken from its change notices, but
+::  never only from them: a notice lost across a reboot would park this
+::  fiber for good, so every few seconds the run is simply read, and a
+::  run that is gone (the tools nexus reseeded, its runs/ with it) is
+::  given up on as an error rather than waited on. ~ on interrupt.
 ++  await-run
   |=  [run-road=road:tarball run-name=@ta]
   =/  m  (fiber:fiber:nexus ,(unit (unit json)))
   ^-  form:m
+  =/  misses=@ud  0
   |-
-  ;<  raw=(unit wave:nexus)  bind:m  (take-news-or-interrupt:ck /tool)
-  ?~  raw  (pure:m ~)
-  =/  hit=(unit cass:clay)
-    ?~  fil.u.raw  ~
-    (~(get by file.u.fil.u.raw) run-name)
-  ?~  hit  $
-  ;<  =view:nexus  bind:m  (peek-at:io run-road ~ [%ud ud.u.hit])
-  ?.  ?=([%file *] view)  $
-  =/  st=tool-state:nex-tools  !<(tool-state:nex-tools (need-vase:tarball sang.view))
-  ?.  =(%done step.st)  $
-  (pure:m `update.st)
+  ;<  timed=(unit (unit wave:nexus))  bind:m
+    %^  (with-timeout:io ,(unit wave:nexus))  /run-poll  ~s5
+    (take-news-or-interrupt:ck /tool)
+  ?:  ?=([~ ~] timed)  (pure:m ~)
+  ;<  =view:nexus  bind:m  (peek:io run-road ~)
+  ?.  ?=([%file *] view)
+    ?:  (gte misses 6)
+      (pure:m `[~ (pairs:enjs:format ~[['type' s+'error'] ['message' s+'the tool run disappeared (the tools nexus reloaded); try again']])])
+    $(misses +(misses))
+  =/  res  (mule |.(!<(tool-state:nex-tools (need-vase:tarball sang.view))))
+  ?:  ?=(%| -.res)  $
+  ?.  =(%done step.p.res)  $
+  (pure:m `update.p.res)
 ::  +assemble: THE context policy. Fold the event log into Anthropic
-::  messages. v1 = append-all.
+::  messages. v1 = append-all, with one repair: the API requires every
+::  tool_use in an assistant turn to be answered by a tool_result in the
+::  next user turn. A turn stopped between the two (an ask the user
+::  cancelled, an interrupt mid-tools) leaves the call unanswered in the
+::  log, and every later request would be refused. So a tool_use with no
+::  results event after it is answered here with a synthetic result
+::  saying it was stopped, folded into the next user turn.
 ++  assemble
   |=  log=(list json)
   ^-  (list json)
-  %+  murn  log
-  |=  ev=json
-  ^-  (unit json)
-  ?.  ?=([%o *] ev)  ~
+  =/  stopped
+    |=  ids=(list @t)
+    ^-  (list json)
+    %+  turn  ids
+    |=  id=@t
+    %-  pairs:enjs:format
+    :~  ['type' s+'tool_result']
+        ['tool_use_id' s+id]
+        ['content' s+'This tool call was stopped by the user before it ran.']
+    ==
+  =|  out=(list json)
+  =|  pending=(list @t)
+  |-  ^-  (list json)
+  ?~  log
+    ::  a trailing tool_use is the live turn (+run answers it); leave it
+    (flop out)
+  =*  ev  i.log
+  ?.  ?=([%o *] ev)  $(log t.log)
   =/  k=@t  (jstr:clanker ev 'k')
   ?:  =('input' k)
-    `(pairs:enjs:format ~[['role' s+'user'] ['content' s+(jstr:clanker ev 'body')]])
-  ?:  |(=('response' k) =('results' k))
+    =/  text=json  (pairs:enjs:format ~[['type' s+'text'] ['text' s+(jstr:clanker ev 'body')]])
+    =/  content=json
+      ?~  pending  s+(jstr:clanker ev 'body')
+      a+(snoc (stopped pending) text)
+    %=  $
+      log      t.log
+      pending  ~
+      out      [(pairs:enjs:format ~[['role' s+'user'] ['content' content]]) out]
+    ==
+  ?:  =('results' k)
     =/  c=(unit json)  (~(get by p.ev) 'content')
-    ?.  ?=([~ %a *] c)  ~
-    =/  role=@t  ?:(=('response' k) 'assistant' 'user')
-    `(pairs:enjs:format ~[['role' s+role] ['content' u.c]])
-  ~
+    ?.  ?=([~ %a *] c)  $(log t.log)
+    %=  $
+      log      t.log
+      pending  ~
+      out      [(pairs:enjs:format ~[['role' s+'user'] ['content' u.c]]) out]
+    ==
+  ?:  =('response' k)
+    =/  c=(unit json)  (~(get by p.ev) 'content')
+    ?.  ?=([~ %a *] c)  $(log t.log)
+    ::  a response after an unanswered tool_use: answer it first
+    =?  out  ?=(^ pending)
+      [(pairs:enjs:format ~[['role' s+'user'] ['content' a+(stopped pending)]]) out]
+    =/  uses=(list @t)
+      %+  murn  p.u.c
+      |=  b=json
+      ?.  ?=([%o *] b)  ~
+      ?.  ?=([~ %s %'tool_use'] (~(get by p.b) 'type'))  ~
+      `(jstr:clanker b 'id')
+    %=  $
+      log      t.log
+      pending  uses
+      out      [(pairs:enjs:format ~[['role' s+'assistant'] ['content' u.c]]) out]
+    ==
+  $(log t.log)
 ::  +encode: the anthropic codec, request side.
 ++  encode
   |=  [model=@t max=@ud sys=@t schema=json messages=(list json)]

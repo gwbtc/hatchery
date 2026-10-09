@@ -441,6 +441,71 @@
     ^-  (list [p=path t=@t])
     (walk-texts (~(got by dir.b) n) (snoc at n))
   (weld here below)
+::  +repo-dir: the repo instance that owns the tree: the tree is the
+::  forge's <repo>.git_repo/data/tree, so the instance is two up. Its
+::  run.git-action is the git lane a build tool pokes.
+++  repo-dir
+  |=  root=path
+  ^-  path
+  ?:  (lth (lent root) 2)  root
+  (snip (snip `path`root))
+::  +mite-of: a text mime type from a file's extension.
+++  mite-of
+  |=  name=@ta
+  ^-  mite
+  =/  t=tape  (trip name)
+  =/  r=tape  (flop t)
+  =/  dot=(unit @ud)  (find "." r)
+  =/  ext=@t  ?~(dot '' (crip (flop (scag u.dot r))))
+  ?+  ext  /text/plain
+    %md    /text/markdown
+    %json  /application/json
+    %html  /text/html
+    %css   /text/css
+    %js    /text/javascript
+    %hoon  /text/x-hoon
+    %svg   ~['image' 'svg+xml']
+    %csv   /text/csv
+    %xml   /application/xml
+  ==
+::  +ensure-dirs-under: make every missing directory along `dir`, which
+::  lies under `root` (a directory known to exist, inside the weir). The
+::  walk starts AT root: walking from the namespace root would peek
+::  directories above the weir and be vetoed.
+++  ensure-dirs-under
+  |=  [root=path dir=path]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  =(root (scag (lent root) dir))  (pure:m ~)
+  =/  at=path  root
+  =/  rest=path  (slag (lent root) dir)
+  |-
+  ?~  rest  (pure:m ~)
+  =/  here=path  (snoc at i.rest)
+  ;<  v=view:nexus  bind:m  (peek:io [%& %| here] ~)
+  ;<  ~  bind:m
+    ?:  ?=([%ball *] v)  (pure:m ~)
+    (make:io [%& %| here] &+[`[~ ~ %.n ~] ~])
+  $(at here, rest t.rest)
+::  +write-text-at: write a text file at an absolute path under `root`
+::  (create or overwrite, as mime of a type from the extension), or why
+::  not.
+++  write-text-at
+  |=  [root=path pax=path txt=@t]
+  =/  m  (fiber:fiber:nexus ,(unit @t))
+  ^-  form:m
+  ?~  pax  (pure:m `'no file named')
+  =/  dir=path  (snip `path`pax)
+  =/  name=@ta  (rear pax)
+  =/  =mime  [(mite-of name) (as-octs:mimes:html txt)]
+  ;<  v=view:nexus  bind:m  (peek:io [%& %& dir name] ~)
+  ?:  ?=([%file *] v)
+    ;<  ~  bind:m  (over:io [%& %& dir name] [[/ %mime] mime])
+    (pure:m ~)
+  ;<  ~  bind:m  (ensure-dirs-under root dir)
+  ;<  err=(unit tang)  bind:m  (make-soft:io [%& %& dir name] |+[[[/ %mime] mime] ~])
+  ?~  err  (pure:m ~)
+  (pure:m `(of-wain:format (turn (flop u.err) |=(t=tank (crip (zing (wash [0 120] t)))))))
 ::  +lines: a text split on newlines.
 ++  lines
   |=  t=@t

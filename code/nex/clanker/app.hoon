@@ -25,6 +25,9 @@
 ::
 /<  clanker    /lib/clanker.hoon
 /<  nex-tools  /lib/tools.hoon
+::  the collection's own tools nexus: clankers, chat_status, send,
+::  resolve, stop, ensure (what the page's api does, for a tool caller)
+/&  coll-tools  /lib/clanker-collection-bundle/
 /&  viewer-js   ./viewer.js
 /&  chats-js    ./chats.js
 /&  icon        ./icon.svg
@@ -84,6 +87,7 @@
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
       [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
       [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
+      [%over %| /tools (seed-tools:nex-tools coll-tools)]
       [%fall %| /requests empty-dir:loader]
       [%fall %| /projects empty-dir:loader]
       ::  the grubbery clanker: the kernel self-editing tools, a wide weir.
@@ -91,30 +95,19 @@
       ::  +sand-clanker re-sands it on every send.
       [%fall %| [%projects %'grubbery.clanker' ~] (clanker-bole 'grubbery' 'kernel' grubbery-system (kernel-weir ~) ~)]
   ==
-::  +weir-ask: what this nexus needs to reach. Clankers are nested here,
-::  so their reach is bounded by ours: the proxy for every clanker, and
-::  the kernel namespace for the grubbery one.
+::  +weir-ask: what this nexus needs to reach: everything. The collection
+::  is the container, not the sandbox: each clanker inside it sits under
+::  its OWN weir (set when it is made, from its config), and that weir is
+::  the bound that matters. Asking for the root once means a clanker's
+::  reach can be widened by its host (forge granting a repo clanker its
+::  working tree and git lane) without a new permit round every time.
 ++  weir-ask
   ^-  json
   =/  road  |=([r=@t why=@t] (pairs:enjs:format ~[['road' s+r] ['why' s+why]]))
   %-  pairs:enjs:format
-  :~  :-  'make'
-      :-  %a
-      :~  (road '/code/' 'the grubbery clanker edits kernel source')
-      ==
-      :-  'poke'
-      :-  %a
-      :~  (road '/sys/bowl.sig' 'time, identity, entropy')
-          (road '/sys/eyre/' 'serve its page over HTTP')
-          (road '/sys/' 'the grubbery clanker commits (hood) and reads clay')
-          (road '@anthropic/main.sig' 'every clanker makes metered model calls')
-      ==
-      :-  'peek'
-      :-  %a
-      :~  (road '/sys/link/' 'find the proxy by name')
-          (road '@anthropic/calls/' 'read a model call result')
-          (road '/' 'the grubbery clanker reads kernel source and build results')
-      ==
+  :~  ['make' a+~[(road '/' 'clankers write where their own weirs allow: kernel source, repo working trees')]]
+      ['poke' a+~[(road '/' 'clankers poke where their own weirs allow: the model proxy, git lanes, the kernel')]]
+      ['peek' a+~[(road '/' 'clankers read where their own weirs allow')]]
   ==
 ::
 ::  Clanker mounts. A clanker dir is an agent nexus: neck [/clanker %agent],
@@ -158,8 +151,11 @@
   =/  dir  |=(p=path `road:tarball`[%& %| p])
   =/  opt  |=([u=(unit path) f=$-(path road:tarball)] ^-((list road:tarball) ?~(u ~ ~[(f u.u)])))
   =/  self=road:tarball  [%| 0 %| /]
+  ::  time (bowl) and TIMERS (behn): a deadline or a sleep in the agent or
+  ::  in a tool is a poke to behn; without this road the first timer is
+  ::  vetoed and the fiber is parked
   :*  make=~
-      poke=(sy (weld ~[(fil /sys 'bowl.sig')] (opt anth |=(p=path (fil p 'main.sig')))))
+      poke=(sy (weld ~[(fil /sys 'bowl.sig') (fil /sys/behn 'main.behn-state')] (opt anth |=(p=path (fil p 'main.sig')))))
       peek=(sy (weld ~[self (dir /sys/link/anthropic)] (opt anth |=(p=path (dir (snoc p %calls))))))
   ==
 ::  +kernel-weir: the grubbery clanker: the default plus the kernel
@@ -179,21 +175,24 @@
   ;<  anth=(unit lane:tarball)  bind:m  (resolve-link:io '@anthropic')
   (pure:m ?.(?=([~ %| *] anth) ~ `p.u.anth))
 ::  +config-weir: a clanker's weir from its config: the kernel set for
-::  bundle "kernel", the default otherwise, plus the extra peek roads the
-::  config grants it (config.json "roads": {"peek": ["/dir/", "/dir/f"]},
-::  a trailing slash meaning the subtree), e.g. a repo clanker's working
-::  tree. Re-applied on every send, so the proxy resolves and the extras
-::  survive a config edit.
+::  bundle "kernel", the default otherwise, plus the extra roads the
+::  config grants it (config.json "roads": {"peek": [...], "make": [...],
+::  "poke": [...]}, each a list of "/dir/" (the subtree) or "/dir/file"),
+::  e.g. a repo clanker's working tree to read, and for a build clanker to
+::  write, and its git lane to poke. Re-applied on every send, so the
+::  proxy resolves and the extras survive a config edit.
 ++  config-weir
   |=  [cfg=json anth=(unit path)]
   ^-  weir:tarball
   =/  base=weir:tarball
     ?:(=('kernel' (jstr:clanker cfg 'bundle')) (kernel-weir anth) (default-weir anth))
-  =/  extra=(list road:tarball)
+  =/  roads
+    |=  key=@t
+    ^-  (list road:tarball)
     ?.  ?=([%o *] cfg)  ~
     =/  rj  (~(get by p.cfg) 'roads')
     ?.  ?=([~ %o *] rj)  ~
-    =/  pj  (~(get by p.u.rj) 'peek')
+    =/  pj  (~(get by p.u.rj) key)
     ?.  ?=([~ %a *] pj)  ~
     %+  murn  p.u.pj
     |=  j=json
@@ -207,7 +206,11 @@
     ?:  dir  `[%& %| u.pax]
     ?~  u.pax  ~
     `[%& %& (snip `path`u.pax) (rear u.pax)]
-  base(peek (~(gas in peek.base) extra))
+  %=  base
+    peek  (~(gas in peek.base) (roads 'peek'))
+    make  (~(gas in make.base) (roads 'make'))
+    poke  (~(gas in poke.base) (roads 'poke'))
+  ==
 ::  +sand-clanker: (re)set a clanker's weir from its config with the
 ::  proxy as it resolves now. Called when a clanker is made and on every
 ::  send, so one born before the proxy existed, or seeded at load, still
@@ -281,21 +284,40 @@
       [['bundle' s+bundle] extra]
     ;<  ~  bind:m  (over:io cfg-road [[/ %json] merged])
     (sand:io [%| 0 %| dir] `(config-weir merged anth))
-  ::  the chat, with its own prompt
-  =/  chat=@t  (jstr:clanker jon 'chat')
-  ?:  =('' chat)  (pure:m ~)
-  =/  cdir=path  (welp dir [%chats `@ta`chat ~])
+  ::  the chats, each with its own prompt and policy, made if missing
+  ::  (never overwritten): `chats: [{name, system, policy}]`, or the older
+  ::  single `chat` + `chat_system`
+  =/  chats=(list [name=@t system=@t policy=(unit json)])
+    =/  one=@t  (jstr:clanker jon 'chat')
+    =/  listed=(list [name=@t system=@t policy=(unit json)])
+      ?.  ?=([%o *] jon)  ~
+      =/  cj  (~(get by p.jon) 'chats')
+      ?.  ?=([~ %a *] cj)  ~
+      %+  murn  p.u.cj
+      |=  c=json
+      ^-  (unit [name=@t system=@t policy=(unit json)])
+      ?.  ?=([%o *] c)  ~
+      =/  n=@t  (jstr:clanker c 'name')
+      ?:  =('' n)  ~
+      `[n (jstr:clanker c 'system') (~(get by p.c) 'policy')]
+    ?:  =('' one)  listed
+    [[one (jstr:clanker jon 'chat_system') ~] listed]
+  |-  ^-  form:m
+  ?~  chats  (pure:m ~)
+  =/  cdir=path  (welp dir [%chats `@ta`name.i.chats ~])
   ;<  cv=view:nexus  bind:m  (peek:io [%| 0 %| cdir] ~)
   ;<  ~  bind:m
     ?:  ?=([%ball *] cv)  (pure:m ~)
     (make:io [%| 0 %| cdir] &+empty-dir:loader)
   ;<  *  bind:m
     (make-soft:io [%| 0 %& cdir %'log.chat-log'] |+[[[/ %chat-log] [%a ~]] ~])
-  =/  csys=@t  (jstr:clanker jon 'chat_system')
-  ?:  =('' csys)  (pure:m ~)
   ;<  *  bind:m
-    (make-soft:io [%| 0 %& cdir %'system.md'] |+[[[/ %mime] [/text/markdown (as-octs:mimes:html csys)]] ~])
-  (pure:m ~)
+    ?:  =('' system.i.chats)  (pure:(fiber:fiber:nexus ,(unit tang)) ~)
+    (make-soft:io [%| 0 %& cdir %'system.md'] |+[[[/ %mime] [/text/markdown (as-octs:mimes:html system.i.chats)]] ~])
+  ;<  *  bind:m
+    ?~  policy.i.chats  (pure:(fiber:fiber:nexus ,(unit tang)) ~)
+    (make-soft:io [%| 0 %& cdir %'tools.json'] |+[[[/ %json] u.policy.i.chats] ~])
+  $(chats t.chats)
 ::
 ::  Paths. A clanker is addressed by its path under /projects, as the page
 ::  sends it: "/grubbery.clanker", "/work/hatchery.clanker". A category is
