@@ -90,10 +90,23 @@
       [%over %| /tools (seed-tools:nex-tools coll-tools)]
       [%fall %| /requests empty-dir:loader]
       [%fall %| /projects empty-dir:loader]
+      ::  the collection declares its views: an explorer rooted at or under
+      ::  /projects finds this and asks /api/viewer per path (+pick-viewer)
+      [%over %& [/projects %'view.json'] [[/ %json] view-decl]]
       ::  the grubbery clanker: the kernel self-editing tools, a wide weir.
       ::  Seeded without the proxy roads resolved (on-load cannot peek);
       ::  +sand-clanker re-sands it on every send.
       [%fall %| [%projects %'grubbery.clanker' ~] (clanker-bole 'grubbery' 'kernel' grubbery-system (kernel-weir ~) ~)]
+  ==
+::  +view-decl: /projects/view.json, what the explorer reads (see
+::  explorer.hoon +find-view): where to ask which pane a path opens in,
+::  and the chrome of an explorer rooted here.
+++  view-decl
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['viewers' s+'/grubbery/clanker/api/viewer']
+      ['title' s+'clanker']
+      ['icon' s+'/grubbery/clanker/icon.svg']
   ==
 ::  +weir-ask: what this nexus needs to reach: everything. The collection
 ::  is the container, not the sandbox: each clanker inside it sits under
@@ -373,10 +386,22 @@
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
   ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'icon.svg' i.suffix)))
     (serve-file eyre-id / i.suffix)
-  ::  the page: every GET that is not the api is the explorer page,
-  ::  mounted at this route and rooted at the collection
+  ::  the page: the explorer, rooted at the collection. The explorer
+  ::  finds this collection's views by itself (/projects/view.json), so
+  ::  /grubbery/clanker/<path> is simply the explorer's own url for that
+  ::  path under the collection
   ?:  ?&(=(%'GET' method) !?=([%api *] suffix))
-    (serve-page eyre-id)
+    ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
+    ?.  ?=([~ %| *] root)
+      (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'clanker is not in /sys/link')])
+    =/  coll=path  (snoc p.u.root %projects)
+    =/  to=@t
+      %-  crip
+      ;:  weld
+        "/grubbery/ball"  (spud coll)  ?~(suffix "" (spud suffix))
+        "?scope="  (spud coll)
+      ==
+    (send-simple:srv eyre-id [[302 ~[['location' to]]] ~])
   ?:  ?&(=(%'GET' method) =([%api %root ~] suffix))
     ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
     ?.  ?=([~ %| *] root)
@@ -644,43 +669,6 @@
   ^-  form:m
   (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html msg)])
 ::
-::  +serve-page: the explorer's browse page, read from the explorer by
-::  name, with one declaration injected ahead of its scripts: this route
-::  and the collection's root. browse.js maps urls under the route to
-::  paths under the root, so the page, the kit, FileView and the viewer
-::  endpoint are all the explorer's; nothing here is a second copy.
-++  serve-page
-  |=  eyre-id=@ta
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
-  ;<  exp=(unit lane:tarball)  bind:m  (resolve-link:io '@explorer')
-  ?.  &(?=([~ %| *] root) ?=([~ %| *] exp))
-    (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'clanker or explorer is not in /sys/link')])
-  ;<  =view:nexus  bind:m  (peek:io [%& %& p.u.exp %'browse.html'] `[/ %mime])
-  ?.  ?=([%file *] view)
-    (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'the explorer has no browse.html')])
-  =/  page=tape  (trip q.q:!<(mime (need-vase:tarball sang.view)))
-  ::  viewers: the explorer asks /api/viewer per path; +pick-viewer decides
-  =/  mount=json
-    %-  pairs:enjs:format
-    :~  ['route' s+'/grubbery/clanker']
-        ['root' s+(crip (spud (snoc p.u.root %projects)))]
-        ['title' s+'clanker']
-        ['icon' s+'/grubbery/clanker/icon.svg']
-        ['viewers' s+'/grubbery/clanker/api/viewer']
-    ==
-  =/  decl=tape
-    "<script>window.EXPLORER_MOUNT = {(trip (en:json:html mount))};</script>\0a"
-  =/  marker=tape  "<script src=\"/grubbery/ball/apps/explorer.explorer/kit.js\""
-  =/  at=(unit @ud)  (find marker page)
-  =/  out=tape
-    ?~  at  (weld decl page)
-    :(weld (scag u.at page) decl (slag u.at page))
-  %-  send-simple:srv
-  :-  eyre-id
-  [[200 ~[['content-type' 'text/html']]] `(as-octs:mimes:html (crip out))]
-::
 ::  +pick-viewer: which pane a path opens in, from where it is under the
 ::  collection, whether it is a file or a dir, a file's blot and a dir's
 ::  neck (the nexus it runs, '' when plain). Plain code: match the path,
@@ -698,12 +686,18 @@
     ?.  ?=([@ @ %chats *] p)  ~
     =/  args=json  (pairs:enjs:format ~[['proj' s+(spat (flop t.t.t.p))] ['chat' s+i.t.p]])
     `['chat' '/grubbery/clanker/viewer.js' args]
-  ::  a clanker's chats/ directory is its list of chats
+  ?.  dir  ~
   =/  f=path  (flop pax)
-  ?:  &(dir ?=([%chats @ *] f))
+  ::  a clanker's chats/ directory is its list of chats
+  ?:  ?=([%chats @ *] f)
     =/  proj=path  (flop t.f)
     `['chats' '/grubbery/clanker/chats.js' (pairs:enjs:format ~[['proj' s+(spat proj)]])]
-  ~
+  ::  the collection root, or a category in it (a plain dir that is not
+  ::  inside a clanker): the clankers under it with their chats, so the
+  ::  collection is navigable from its own top. A clanker dir and what is
+  ::  inside one keep the usual view.
+  ?:  (lien pax is-clanker)  ~
+  `['collection' '/grubbery/clanker/chats.js' (pairs:enjs:format ~[['parent' s+(spat pax)]])]
 ::
 ++  serve-file
   |=  [eyre-id=@ta dir=path filename=@ta]
