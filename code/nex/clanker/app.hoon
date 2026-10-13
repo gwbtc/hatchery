@@ -712,9 +712,6 @@
       ['asking' b+=('ask' k)]
       ['prompt' b+prompt]
   ==
-::  TODO(perf): the explorer's files tab asks ?tree=1 on a clanker dir, which
-::  descends into tools/runs/ (up to +keep-runs run grubs). Either the tree
-::  stops at a depth, or the tree viewer fetches children on expand.
 ::  +tree-json: the collection as nested {dirs, files}, the directories
 ::  as they are, one deep peek, nothing folded. The page tells clankers
 ::  from categories by name, chats by position. Each dir node also says
