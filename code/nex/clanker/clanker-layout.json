@@ -1,0 +1,15 @@
+{"bar":true,"nav":false,"activeTab":0,"tabs":[
+ {"label":"chats","entries":[{"div":{"dir":"horizontal","ratio":0.24,
+   "a":{"openTo":{"to":"../b","mode":"tab"},"tabs":[{"entries":[{"path":"./chats"}],"cursor":0}]},
+   "b":{"bar":true,"nav":false,"openTo":{"to":".","mode":"tab"},"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
+ {"label":"memories","entries":[{"div":{"dir":"horizontal","ratio":0.24,
+   "a":{"openTo":{"to":"../b","mode":"tab"},"tabs":[{"entries":[{"path":"./memories?view=tree"}],"cursor":0}]},
+   "b":{"bar":true,"nav":false,"openTo":{"to":".","mode":"tab"},"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
+ {"label":"skills","entries":[{"div":{"dir":"horizontal","ratio":0.24,
+   "a":{"openTo":{"to":"../b","mode":"tab"},"tabs":[{"entries":[{"path":"./skills?view=tree"}],"cursor":0}]},
+   "b":{"bar":true,"nav":false,"openTo":{"to":".","mode":"tab"},"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
+ {"label":"prompt","entries":[{"path":"./config.json?view=record"}],"cursor":0},
+ {"label":"tools","entries":[{"path":"./config.json?view=tools"}],"cursor":0},
+ {"label":"files","entries":[{"div":{"dir":"horizontal","ratio":0.24,
+   "a":{"openTo":{"to":"../b","mode":"tab"},"tabs":[{"entries":[{"path":"./?view=tree"}],"cursor":0}]},
+   "b":{"bar":true,"nav":false,"openTo":{"to":".","mode":"tab"},"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0}]}

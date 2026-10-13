@@ -31,6 +31,12 @@
 /&  viewer-js   ./viewer.js
 /&  chats-js    ./chats.js
 /&  icon        ./icon.svg
+::  the layouts the explorer opens the collection's dirs as ('./' paths
+::  resolve against the dir opened): the collection root or a category
+::  (selector | a tab per clanker) and a clanker (its tree | chats, record)
+/&  coll-layout     ./collection-layout.json
+/&  clanker-layout  ./clanker-layout.json
+/&  chat-layout     ./chat-layout.json
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -85,6 +91,9 @@
       [%over %& [/ %'viewer.js'] [[/ %mime] viewer-js]]
       [%over %& [/ %'chats.js'] [[/ %mime] chats-js]]
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
+      [%over %& [/ %'collection-layout.json'] [[/ %mime] coll-layout]]
+      [%over %& [/ %'clanker-layout.json'] [[/ %mime] clanker-layout]]
+      [%over %& [/ %'chat-layout.json'] [[/ %mime] chat-layout]]
       [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
       [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
       [%over %| /tools (seed-tools:nex-tools coll-tools)]
@@ -384,7 +393,7 @@
   =/  body=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) *json)
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
-  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'icon.svg' i.suffix)))
+  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix)))
     (serve-file eyre-id / i.suffix)
   ::  the page: the explorer, rooted at the collection. The explorer
   ::  finds this collection's views by itself (/projects/view.json), so
@@ -408,34 +417,42 @@
       (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'clanker is not in /sys/link')])
     (send-json eyre-id (en:json:html (pairs:enjs:format ~[['root' s+(spat p.u.root)]])))
   ?:  ?&(=(%'GET' method) =([%api %viewer ~] suffix))
+    ::  follows are absolute roads, so the answer needs the collection's
+    ::  absolute path: this instance, by name
+    ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
+    =/  coll=path  ?.(?=([~ %| *] root) /projects (snoc p.u.root %projects))
     =/  pax=(unit path)  (parse-proj (arg 'path'))
-    =/  pick  (pick-viewer (fall pax ~) =('dir' (arg 'kind')) (arg 'blot') (arg 'neck'))
+    =/  pick  (pick-viewer coll (fall pax ~) =('dir' (arg 'kind')) (arg 'blot') (arg 'neck') (arg 'view'))
     ?~  pick  (send-json eyre-id '')
-    (send-json eyre-id (en:json:html (pairs:enjs:format ~[['view' s+view.u.pick] ['script' s+script.u.pick] ['args' args.u.pick]])))
+    (send-json eyre-id (en:json:html u.pick))
   ?:  ?&(=(%'GET' method) =([%api %chats ~] suffix))
     =/  proj=(unit path)  (parse-proj (arg 'path'))
     ?~  proj  (bad eyre-id 'path required')
-    =/  chats-dir=path  (welp /projects (snoc u.proj %chats))
-    ;<  dv=view:nexus  bind:m  (peek-shallow:io [%| 1 %| chats-dir] ~)
-    ?.  ?=([%ball *] dv)  (send-json eyre-id '[]')
-    =/  names=(list @ta)  (sort ~(tap in ~(key by dir.ball.dv)) aor)
-    ;<  rows=(list json)  bind:m
-      =/  m  (fiber:fiber:nexus ,(list json))
-      =|  acc=(list json)
-      |-  ^-  form:m
-      ?~  names  (pure:m (flop acc))
-      ;<  log=json  bind:m  (read-json [%| 1 %& (snoc chats-dir i.names) %'log.chat-log'])
-      ;<  sys=@t  bind:m  (read-text [%| 1 %& (snoc chats-dir i.names) %'system.md'])
-      =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
-      $(names t.names, acc [(chat-summary i.names evs !=('' sys)) acc])
+    ;<  rows=(list json)  bind:m  (chats-of (welp /projects (snoc u.proj %chats)))
     (send-json eyre-id (en:json:html a+rows))
+  ::  the collection root or a category, as its selector draws it: its
+  ::  categories, and its clankers each with their chats' state, in one
+  ::  answer
+  ?:  ?&(=(%'GET' method) =([%api %collection ~] suffix))
+    =/  parent=(unit path)  (parse-proj =/(p=@t (arg 'path') ?:(=('' p) '/' p)))
+    ?~  parent  (bad eyre-id 'bad path')
+    ;<  node=(unit json)  bind:m  (collection-of u.parent)
+    ?~  node  (bad eyre-id 'no such category')
+    (send-json eyre-id (en:json:html u.node))
   ?:  ?&(=(%'GET' method) =([%api %tree ~] suffix))
     ;<  dv=view:nexus  bind:m  (peek:io [%| 1 %| /projects] ~)
     ?.  ?=([%ball *] dv)  (send-json eyre-id '{"dirs":{},"files":[]}')
     (send-json eyre-id (en:json:html (tree-json ball.dv)))
+  ::  with chat=, the record is that chat's own prompt (chats/<chat>/
+  ::  system.md, the role it plays on top of the clanker's), nothing else
   ?:  ?&(=(%'GET' method) =([%api %record ~] suffix))
     =/  proj=(unit path)  (parse-proj (arg 'path'))
     ?~  proj  (bad eyre-id 'path required')
+    =/  chat=@t  (arg 'chat')
+    ?.  =('' chat)
+      ;<  sys=@t  bind:m  (read-text [%| 1 %& (welp /projects (welp u.proj [%chats `@ta`chat ~])) %'system.md'])
+      %+  send-json  eyre-id
+      (en:json:html (pairs:enjs:format ~[['path' s+(spat u.proj)] ['chat' s+chat] ['record' [%o ~]] ['system' s+sys]]))
     ;<  cfg=json  bind:m  (read-json [%| 1 %& (welp /projects u.proj) %'config.json'])
     ;<  sys=@t  bind:m  (read-text [%| 1 %& (welp /projects u.proj) %'system.md'])
     %+  send-json  eyre-id
@@ -443,6 +460,17 @@
   ?:  ?&(=(%'POST' method) =([%api %record ~] suffix))
     =/  proj=(unit path)  (parse-proj (jarg 'path'))
     ?~  proj  (bad eyre-id 'path required')
+    =/  chat=@t  (jarg 'chat')
+    ?.  =('' chat)
+      =/  cdir=path  (welp /projects (welp u.proj [%chats `@ta`chat ~]))
+      ;<  cv=view:nexus  bind:m  (peek:io [%| 1 %| cdir] ~)
+      ?.  ?=([%ball *] cv)  (bad eyre-id 'no such chat')
+      =/  s=(unit json)  ?.(?=([%o *] body) ~ (~(get by p.body) 'system'))
+      ?.  ?=([~ %s *] s)  (bad eyre-id 'system required')
+      =/  bask=bask:tarball  [[/ %mime] [/text/markdown (as-octs:mimes:html p.u.s)]]
+      ;<  *  bind:m  (make-soft:io [%| 1 %& cdir %'system.md'] |+[bask ~])
+      ;<  ~  bind:m  (over:io [%| 1 %& cdir %'system.md'] bask)
+      (send-json eyre-id '{"ok":true}')
     =/  cfg-road=road:tarball  [%| 1 %& (welp /projects u.proj) %'config.json']
     ;<  cv=view:nexus  bind:m  (peek:io cfg-road `[/ %json])
     ?.  ?=([%file *] cv)  (bad eyre-id 'no such clanker')
@@ -461,6 +489,47 @@
       %-  over:io
       :-  [%| 1 %& (welp /projects u.proj) %'system.md']
       [[/ %mime] [/text/markdown (as-octs:mimes:html p.u.s)]]
+    (send-json eyre-id '{"ok":true}')
+  ::  the tool policy editor's data: the tool names this clanker's tools
+  ::  nexus holds, its tools.json (null when none) and, with chat=, that
+  ::  chat's own tools.json (null when none)
+  ?:  ?&(=(%'GET' method) =([%api %tools ~] suffix))
+    =/  proj=(unit path)  (parse-proj (arg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    =/  chat=@t  (arg 'chat')
+    =/  pdir=path  (welp /projects u.proj)
+    ;<  names=(list @t)  bind:m  (tool-names u.proj)
+    ;<  base=(unit json)  bind:m  (read-json-maybe [%| 1 %& pdir %'tools.json'])
+    ;<  own=(unit json)  bind:m
+      ?:  =('' chat)  (pure:(fiber:fiber:nexus ,(unit json)) ~)
+      (read-json-maybe [%| 1 %& (welp pdir [%chats `@ta`chat ~]) %'tools.json'])
+    =/  bj=json  ?~(base ~ u.base)
+    =/  oj=json  ?~(own ~ u.own)
+    %+  send-json  eyre-id
+    %-  en:json:html
+    %-  pairs:enjs:format
+    :~  ['path' s+(spat u.proj)]
+        ['chat' s+chat]
+        ['tools' a+(turn names |=(n=@t `json`s+n))]
+        ['clanker' bj]
+        ['own' oj]
+    ==
+  ::  write a policy: {path, chat?, policy: {default, allow, ask, deny}}
+  ::  to the clanker's tools.json, or the chat's
+  ?:  ?&(=(%'POST' method) =([%api %tools ~] suffix))
+    =/  proj=(unit path)  (parse-proj (jarg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    =/  chat=@t  (jarg 'chat')
+    =/  dir=path
+      ?:  =('' chat)  (welp /projects u.proj)
+      (welp /projects (welp u.proj [%chats `@ta`chat ~]))
+    =/  pol=(unit json)  ?.(?=([%o *] body) ~ (~(get by p.body) 'policy'))
+    ?.  ?=([~ %o *] pol)  (bad eyre-id 'policy required')
+    ;<  dv=view:nexus  bind:m  (peek:io [%| 1 %| dir] ~)
+    ?.  ?=([%ball *] dv)  (bad eyre-id 'no such clanker or chat')
+    =/  road=road:tarball  [%| 1 %& dir %'tools.json']
+    ;<  *  bind:m  (make-soft:io road |+[[[/ %json] u.pol] ~])
+    ;<  ~  bind:m  (over:io road [[/ %json] u.pol])
     (send-json eyre-id '{"ok":true}')
   ?:  ?&(=(%'GET' method) =([%api %log ~] suffix))
     =/  proj=(unit path)  (parse-proj (arg 'path'))
@@ -545,6 +614,68 @@
     (send-json eyre-id '{"ok":true}')
   ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
   (pure:m ~)
+::  +collection-of: a category (the root included) as the selector's tree
+::  draws it: {path, categories: [the same shape, each with its name],
+::  clankers: [{name, bundle, model, chats}]}, the whole subtree in one
+::  answer. ~ when there is no such directory.
+++  collection-of
+  |=  parent=path
+  =/  m  (fiber:fiber:nexus ,(unit json))
+  ^-  form:m
+  =/  pdir=path  (welp /projects parent)
+  ;<  dv=view:nexus  bind:m  (peek-shallow:io [%| 1 %| pdir] ~)
+  ?.  ?=([%ball *] dv)  (pure:m ~)
+  =/  names=(list @ta)  (sort ~(tap in ~(key by dir.ball.dv)) aor)
+  ;<  clankers=(list json)  bind:m
+    =/  mc  (fiber:fiber:nexus ,(list json))
+    =/  todo=(list @ta)  (skim names is-clanker)
+    =|  acc=(list json)
+    |-  ^-  form:mc
+    ?~  todo  (pure:mc (flop acc))
+    =/  cdir=path  (snoc pdir i.todo)
+    ;<  cfg=json  bind:mc  (read-json [%| 1 %& cdir %'config.json'])
+    ;<  chats=(list json)  bind:mc  (chats-of (snoc cdir %chats))
+    =/  row=json
+      %-  pairs:enjs:format
+      :~  ['name' s+i.todo]
+          ['bundle' s+(jstr:clanker cfg 'bundle')]
+          ['model' s+(jstr:clanker cfg 'model')]
+          ['chats' a+chats]
+      ==
+    $(todo t.todo, acc [row acc])
+  ;<  cats=(list json)  bind:m
+    =/  mc  (fiber:fiber:nexus ,(list json))
+    =/  todo=(list @ta)  (skip names is-clanker)
+    =|  acc=(list json)
+    |-  ^-  form:mc
+    ?~  todo  (pure:mc (flop acc))
+    ;<  sub=(unit json)  bind:mc  (collection-of (snoc parent i.todo))
+    =/  row=json
+      ?.  ?=([~ %o *] sub)  (pairs:enjs:format ~[['name' s+i.todo]])
+      o+(~(put by p.u.sub) 'name' s+i.todo)
+    $(todo t.todo, acc [row acc])
+  %-  pure:m
+  %-  some
+  %-  pairs:enjs:format
+  :~  ['path' s+(spat parent)]
+      ['categories' a+cats]
+      ['clankers' a+clankers]
+  ==
+::  +chats-of: the chats in a chats/ directory, each as +chat-summary
+++  chats-of
+  |=  chats-dir=path
+  =/  m  (fiber:fiber:nexus ,(list json))
+  ^-  form:m
+  ;<  dv=view:nexus  bind:m  (peek-shallow:io [%| 1 %| chats-dir] ~)
+  ?.  ?=([%ball *] dv)  (pure:m ~)
+  =/  names=(list @ta)  (sort ~(tap in ~(key by dir.ball.dv)) aor)
+  =|  acc=(list json)
+  |-  ^-  form:m
+  ?~  names  (pure:m (flop acc))
+  ;<  log=json  bind:m  (read-json [%| 1 %& (snoc chats-dir i.names) %'log.chat-log'])
+  ;<  sys=@t  bind:m  (read-text [%| 1 %& (snoc chats-dir i.names) %'system.md'])
+  =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
+  $(names t.names, acc [(chat-summary i.names evs !=('' sys)) acc])
 ::  +chat-summary: one chat as the chats pane shows it: its name, how
 ::  many events its log holds, the last thing said to it, and whether a
 ::  turn is running (the log ends in an input, tool results, or a
@@ -646,6 +777,40 @@
       ['step' s+?:(failed 'error' step.st)]
       ['arg' s+arg]
   ==
+::  +tool-names: what a clanker's tools nexus holds, by name: the files
+::  under tools/code/lib/tools as lib/tools derives their names (stem,
+::  hyphens to underscores, subdirs joined with __), plus the engine's
+::  own spawn. Sorted.
+++  tool-names
+  |=  proj=path
+  =/  m  (fiber:fiber:nexus ,(list @t))
+  ^-  form:m
+  =/  root=path  (welp /projects (welp proj /tools/code/lib/tools))
+  ;<  names=(list @t)  bind:m  (tool-names-in root /)
+  (pure:m (snoc (sort names aor) 'spawn'))
+++  tool-names-in
+  |=  [root=path sub=path]
+  =/  m  (fiber:fiber:nexus ,(list @t))
+  ^-  form:m
+  ;<  dv=view:nexus  bind:m  (peek-shallow:io [%| 1 %| (welp root sub)] ~)
+  ?.  ?=([%ball *] dv)  (pure:m ~)
+  =/  files=(list @t)
+    ?~  fil.ball.dv  ~
+    %+  turn  ~(tap in ~(key by contents.u.fil.ball.dv))
+    |=(n=@ta (derive-name:nex-tools sub n))
+  =/  dirs=(list @ta)  ~(tap in ~(key by dir.ball.dv))
+  |-  ^-  form:m
+  ?~  dirs  (pure:m files)
+  ;<  more=(list @t)  bind:m  (tool-names-in root (snoc sub i.dirs))
+  $(dirs t.dirs, files (weld files more))
+::  +read-json-maybe: a json grub, or ~ when there is none
+++  read-json-maybe
+  |=  road=road:tarball
+  =/  m  (fiber:fiber:nexus ,(unit json))
+  ^-  form:m
+  ;<  v=view:nexus  bind:m  (peek:io road `[/ %json])
+  ?.  ?=([%file *] v)  (pure:m ~)
+  (pure:m (mole |.(!<(json (need-vase:tarball sang.v)))))
 ::
 ++  read-json
   |=  road=road:tarball
@@ -676,28 +841,94 @@
 ::  the pane its context as args so it never has to read the tree's
 ::  shape out of a url. ~ means the usual view. A pane is about the path
 ::  it opens on; keep it that way.
+::  The answer is the explorer's viewers json: {view, script, args, follow}
+::  for a pane, or {layout} for a dir that opens as a layout. `view` is
+::  the moment's own ?view= (the explorer's rows/grid/tree never reach
+::  here): '' is the bare path, 'collection' and 'record' are ours.
+::  `follow` names the roads the pane depends on, absolute, so the
+::  explorer's stream tells it when they move (a log's body rides along).
 ++  pick-viewer
-  |=  [pax=path dir=? blot=@t neck=@t]
-  ^-  (unit [view=@t script=@t args=json])
-  ::  a chat log, anywhere in the collection, is a chat: the log sits at
-  ::  <clanker>/chats/<chat>/log.chat-log, so proj and chat are its path
-  ?:  &(!dir =('chat-log' blot))
-    =/  p=path  (flop pax)
-    ?.  ?=([@ @ %chats *] p)  ~
-    =/  args=json  (pairs:enjs:format ~[['proj' s+(spat (flop t.t.t.p))] ['chat' s+i.t.p]])
-    `['chat' '/grubbery/clanker/viewer.js' args]
-  ?.  dir  ~
+  |=  [coll=path pax=path dir=? blot=@t neck=@t view=@t]
+  ^-  (unit json)
+  =/  fol
+    |=  [p=path body=? fold=?]
+    ^-  json
+    (pairs:enjs:format ~[['road' s+(cat 3 (spat p) ?:(fold '/' ''))] ['body' b+body] ['fold' b+fold]])
+  =/  ans
+    |=  [v=@t script=@t a=json f=(list json)]
+    ^-  (unit json)
+    `(pairs:enjs:format ~[['view' s+v] ['script' s+script] ['args' a] ['follow' a+f]])
+  =/  lay  |=(u=@t ^-((unit json) `(pairs:enjs:format ~[['layout' s+u]])))
+  =/  panes=@t  '/grubbery/clanker/chats.js'
   =/  f=path  (flop pax)
-  ::  a clanker's chats/ directory is its list of chats
+  ::  a chat: its log file, or its directory. The pane follows the log
+  ::  with its body (the mark grows to json) and the status beside it.
+  =/  chat-ans
+    |=  [proj=path chat=@ta]
+    ^-  (unit json)
+    =/  cdir=path  (welp coll (welp proj [%chats chat ~]))
+    %-  ans
+    :^  'chat'  '/grubbery/clanker/viewer.js'
+      (pairs:enjs:format ~[['proj' s+(spat proj)] ['chat' s+chat]])
+    ~[(fol (snoc cdir %'log.chat-log') & |) (fol (snoc cdir %'status.json') | |)]
+  ::  (each ?= is the test of its own ?: so it narrows the path it matched)
+  ?.  dir
+    ?:  =('chat-log' blot)
+      ?.  ?=([@ @ %chats *] f)  ~
+      ::  ?view=prompt on a chat's log: the chat's own prompt, as the
+      ::  record form (its system.md may not exist yet, so the log is the
+      ::  path the form opens on)
+      ?.  |(=('prompt' view) =('tools' view))  (chat-ans (flop t.t.t.f) i.t.f)
+      =/  proj=path  (flop t.t.t.f)
+      =/  pdir=path  (welp coll proj)
+      =/  cdir=path  (welp pdir [%chats i.t.f ~])
+      =/  a=json  (pairs:enjs:format ~[['proj' s+(spat proj)] ['chat' s+i.t.f]])
+      ::  ?view=tools: the chat's own tool policy, over the clanker's
+      ?:  =('tools' view)
+        (ans 'tools' panes a ~[(fol (snoc cdir %'tools.json') | |) (fol (snoc pdir %'tools.json') | |)])
+      (ans 'record' panes a ~[(fol (snoc cdir %'system.md') | |)])
+    ::  a clanker's record (config and standing prompt) or its tool
+    ::  policy, as forms, both opened on its config.json
+    ?.  |(=('record' view) =('tools' view))  ~
+    ?.  ?=([%'config.json' @ *] f)  ~
+    ?.  (is-clanker i.t.f)  ~
+    =/  proj=path  (flop t.f)
+    =/  pdir=path  (welp coll proj)
+    ?:  =('tools' view)
+      %-  ans
+      :^  'tools'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
+      ~[(fol (snoc pdir %'tools.json') | |) (fol (welp pdir /tools/code/lib/tools) | &)]
+    %-  ans
+    :^  'record'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
+    ~[(fol (snoc pdir %'config.json') & |) (fol (snoc pdir %'system.md') | |)]
+  ::  a clanker's chats/ directory is its list of chats, live on the dir
   ?:  ?=([%chats @ *] f)
     =/  proj=path  (flop t.f)
-    `['chats' '/grubbery/clanker/chats.js' (pairs:enjs:format ~[['proj' s+(spat proj)]])]
-  ::  the collection root, or a category in it (a plain dir that is not
-  ::  inside a clanker): the clankers under it with their chats, so the
-  ::  collection is navigable from its own top. A clanker dir and what is
-  ::  inside one keep the usual view.
-  ?:  (lien pax is-clanker)  ~
-  `['collection' '/grubbery/clanker/chats.js' (pairs:enjs:format ~[['parent' s+(spat pax)]])]
+    (ans 'chats' panes (pairs:enjs:format ~[['proj' s+(spat proj)]]) ~[(fol (welp coll (snoc proj %chats)) | &)])
+  ::  a chat's own directory opens as the chat layout (the chat | its
+  ::  prompt), rooted at it
+  ?:  ?=([@ %chats @ *] f)
+    ?.  (lien pax is-clanker)  ~
+    ?.  =('' view)  ~
+    (lay '/grubbery/clanker/chat-layout.json')
+  ::  a clanker dir opens as the clanker layout, rooted at it; inside a
+  ::  clanker everything else keeps the usual view. (The test narrows pax to
+  ::  a cell, which the wet gates below cannot mull; p is the plain path.)
+  ?:  ?=(^ pax)
+    =/  p=path  pax
+    ?:  &((is-clanker (rear p)) =('' view))
+      (lay '/grubbery/clanker/clanker-layout.json')
+    ?:  (lien p is-clanker)  ~
+    ?:  =('collection' view)
+      (ans 'collection' panes (pairs:enjs:format ~[['parent' s+(spat p)]]) ~[(fol (welp coll p) | &)])
+    ?:  =('' view)  (lay '/grubbery/clanker/collection-layout.json')
+    ~
+  ::  the collection root, or a category: the selector pane when asked
+  ::  for it (the layout's left side), the layout otherwise
+  ?:  =('collection' view)
+    (ans 'collection' panes (pairs:enjs:format ~[['parent' s+(spat pax)]]) ~[(fol (welp coll pax) | &)])
+  ?:  =('' view)  (lay '/grubbery/clanker/collection-layout.json')
+  ~
 ::
 ++  serve-file
   |=  [eyre-id=@ta dir=path filename=@ta]
