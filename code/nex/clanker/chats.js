@@ -203,8 +203,11 @@
         var chats = k.chats || [];
         var r = row('', dotOf(chats), short(k.name), k.bundle || '', chats.length ? plural(chats.length, 'chat') : 'no chats');
         r.style.paddingLeft = (pad + 20) + 'px';   // its dot under the category's (past caret + gap)
+        // relative to the dir this pane opened on (the collection root or
+        // the category), however that dir is spelled: under @clanker the
+        // link stays under @clanker
+        var u = '.' + sub(path).slice(sub(parent).length).split('/').map(encodeURIComponent).join('/') + '/' + encodeURIComponent(k.name);
         r.__ck = { kind: 'clanker', path: sub(path) + '/' + k.name, url: u };
-        var u = dir + sub(path).split('/').map(encodeURIComponent).join('/') + '/' + encodeURIComponent(k.name);
         r.addEventListener('click', function () { sb.go(u, 'dir', short(k.name)); });
         list.appendChild(r);
       });
@@ -244,8 +247,8 @@
         if (!rows.length) { list.appendChild(el('div', 'ck-empty', 'No chats yet. Name one above.')); return; }
         rows.forEach(function (c) {
           var r = row('', chatDot(c), c.name, c.asking ? 'waiting for you: a tool asks to run' : c.last, c.events ? c.events + (c.events === 1 ? ' event' : ' events') : '');
-          r.__ck = { kind: 'chat', proj: proj, name: c.name, url: dir + '/' + encodeURIComponent(c.name) };
-          r.addEventListener('click', function () { sb.go(dir + '/' + encodeURIComponent(c.name), 'dir', c.name); });
+          r.__ck = { kind: 'chat', proj: proj, name: c.name, url: './' + encodeURIComponent(c.name) };   // relative to this chats/ dir, as spelled
+          r.addEventListener('click', function () { sb.go('./' + encodeURIComponent(c.name), 'dir', c.name); });
           list.appendChild(r);
         });
       });
@@ -256,7 +259,7 @@
       var n = slug(name.value); if (!n || !proj) { name.focus(); return; }
       name.disabled = true;
       post('/api/new', { kind: 'chat', parent: proj, name: n })
-        .then(function () { name.value = ''; sb.go(dir + '/' + encodeURIComponent(n), 'dir', n); }, function (e) { sb.list.insertBefore(el('div', 'ck-err', 'could not make the chat: ' + e.message), sb.list.firstChild); })
+        .then(function () { name.value = ''; sb.go('./' + encodeURIComponent(n), 'dir', n); }, function (e) { sb.list.insertBefore(el('div', 'ck-err', 'could not make the chat: ' + e.message), sb.list.firstChild); })
         .then(function () { name.disabled = false; });
     }
     name.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); make(); } });

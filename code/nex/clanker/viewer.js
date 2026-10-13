@@ -77,7 +77,6 @@
     var a = opts.args || {};
     var proj = typeof a.proj === 'string' ? a.proj : null, chat = typeof a.chat === 'string' ? a.chat : null;
     var who = proj ? proj.replace(/^.*\//, '').replace(/\.clanker$/, '') : 'clanker';
-    var dirUrl = (opts.url || '').replace(/\?.*$/, '').replace(/\/[^/]*$/, '');
     root.innerHTML = ''; root.classList.add('cv');
     var dead = false;
     var handle = { destroy: function () { dead = true; document.removeEventListener('keydown', onEsc); root.innerHTML = ''; root.classList.remove('cv'); }, onUpdate: function (ev) { if (ev && Array.isArray(ev.body)) apply(ev.body); else load(); } };
@@ -132,7 +131,7 @@
       s.appendChild(el('span', 'arg', (trace && trace.arg) || firstString(use.input)));
       if (use.name === 'spawn' && use.input && use.input.name) {
         var lnk = el('a', 'arg', 'open ' + use.input.name + ' →'); lnk.href = '#';
-        var dir = dirUrl + '/' + use.input.name + '.clanker';
+        var dir = './' + use.input.name + '.clanker';   // the sub-clanker beneath this chat, relative to it as spelled
         lnk.onclick = function (e) { e.preventDefault(); e.stopPropagation(); if (opts.onNavigate) opts.onNavigate(dir, 'dir', { name: use.input.name }); };
         s.appendChild(lnk);
       }

@@ -37,6 +37,9 @@
 /&  coll-layout     ./collection-layout.json
 /&  clanker-layout  ./clanker-layout.json
 /&  chat-layout     ./chat-layout.json
+::  the nexus root itself (@clanker) opens as the collection, the way
+::  @forge opens as the forge: the same selector | tabs, over ./projects
+/&  root-layout     ./root-layout.json
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -94,6 +97,12 @@
       [%over %& [/ %'collection-layout.json'] [[/ %mime] coll-layout]]
       [%over %& [/ %'clanker-layout.json'] [[/ %mime] clanker-layout]]
       [%over %& [/ %'chat-layout.json'] [[/ %mime] chat-layout]]
+      [%over %& [/ %'root-layout.json'] [[/ %mime] root-layout]]
+      ::  the root declares its own view: the explorer landing ON the nexus
+      ::  (by name, @clanker) asks /api/root-viewer and opens the root
+      ::  layout; everything under /projects is governed by the
+      ::  collection's view.json below, nearest one winning
+      [%over %& [/ %'view.json'] [[/ %json] root-view-decl]]
       [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
       [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
       [%over %| /tools (seed-tools:nex-tools coll-tools)]
@@ -114,6 +123,16 @@
   ^-  json
   %-  pairs:enjs:format
   :~  ['viewers' s+'/grubbery/clanker/api/viewer']
+      ['title' s+'clanker']
+      ['icon' s+'/grubbery/clanker/icon.svg']
+  ==
+::  +root-view-decl: /view.json, the root's own declaration. Its viewers
+::  endpoint answers for the root alone (the root layout); the paths under
+::  /projects never reach it, the collection's own view.json is nearer.
+++  root-view-decl
+  ^-  json
+  %-  pairs:enjs:format
+  :~  ['viewers' s+'/grubbery/clanker/api/root-viewer']
       ['title' s+'clanker']
       ['icon' s+'/grubbery/clanker/icon.svg']
   ==
@@ -393,8 +412,15 @@
   =/  body=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) *json)
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
-  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix)))
+  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix) =(%'root-layout.json' i.suffix)))
     (serve-file eyre-id / i.suffix)
+  ::  the root's view: the nexus root itself opens as the root layout
+  ::  (the collection over ./projects); anything else at the root keeps
+  ::  the usual view
+  ?:  ?&(=(%'GET' method) =([%api %root-viewer ~] suffix))
+    =/  at=@t  (arg 'path')
+    ?.  &(|(=('' at) =('/' at)) =('' (arg 'view')))  (send-json eyre-id '')
+    (send-json eyre-id (en:json:html (pairs:enjs:format ~[['layout' s+'/grubbery/clanker/root-layout.json']])))
   ::  the page: the explorer, rooted at the collection. The explorer
   ::  finds this collection's views by itself (/projects/view.json), so
   ::  /grubbery/clanker/<path> is simply the explorer's own url for that

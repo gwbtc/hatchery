@@ -1,0 +1,4 @@
+{"div":{"dir":"horizontal","ratio":0.24,
+ "open":{"a":{"to":"b","mode":"tab"}},
+ "a":{"tabs":[{"label":"clankers","entries":[{"path":"./projects?view=collection"}],"cursor":0}]},
+ "b":{"bar":true,"nav":false,"tabs":[{"entries":[],"cursor":-1}]}}}
