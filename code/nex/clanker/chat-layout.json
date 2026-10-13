@@ -1,4 +1,6 @@
-{"bar":true,"nav":false,"openTo":{"to":".","mode":"tab"},"activeTab":0,"tabs":[
+{"bar":true,"nav":false,"activeTab":0,
+ "open":{".":{"to":".","mode":"tab"}},
+ "tabs":[
   {"label":"chat","entries":[{"path":"./log.chat-log"}],"cursor":0},
   {"label":"prompt","entries":[{"path":"./log.chat-log?view=prompt"}],"cursor":0},
   {"label":"tools","entries":[{"path":"./log.chat-log?view=tools"}],"cursor":0}]}

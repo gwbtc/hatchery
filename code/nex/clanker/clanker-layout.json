@@ -1,15 +1,21 @@
-{"bar":true,"nav":false,"activeTab":0,"tabs":[
+{"bar":true,"nav":false,"activeTab":0,
+ "open":{
+   "0/a":{"to":"0/b","mode":"tab"},"0/b":{"to":"0/b","mode":"tab"},
+   "1/a":{"to":"1/b","mode":"tab"},"1/b":{"to":"1/b","mode":"tab"},
+   "2/a":{"to":"2/b","mode":"tab"},"2/b":{"to":"2/b","mode":"tab"},
+   "5/a":{"to":"5/b","mode":"tab"},"5/b":{"to":"5/b","mode":"tab"}},
+ "tabs":[
  {"label":"chats","entries":[{"div":{"dir":"horizontal","ratio":0.24,
-   "a":{"openTo":{"to":"../b","mode":"tab"},"tabs":[{"entries":[{"path":"./chats"}],"cursor":0}]},
-   "b":{"bar":true,"nav":false,"openTo":{"to":".","mode":"tab"},"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
+   "a":{"tabs":[{"entries":[{"path":"./chats"}],"cursor":0}]},
+   "b":{"bar":true,"nav":false,"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
  {"label":"memories","entries":[{"div":{"dir":"horizontal","ratio":0.24,
-   "a":{"openTo":{"to":"../b","mode":"tab"},"tabs":[{"entries":[{"path":"./memories?view=tree"}],"cursor":0}]},
-   "b":{"bar":true,"nav":false,"openTo":{"to":".","mode":"tab"},"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
+   "a":{"tabs":[{"entries":[{"path":"./memories?view=tree"}],"cursor":0}]},
+   "b":{"bar":true,"nav":false,"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
  {"label":"skills","entries":[{"div":{"dir":"horizontal","ratio":0.24,
-   "a":{"openTo":{"to":"../b","mode":"tab"},"tabs":[{"entries":[{"path":"./skills?view=tree"}],"cursor":0}]},
-   "b":{"bar":true,"nav":false,"openTo":{"to":".","mode":"tab"},"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
+   "a":{"tabs":[{"entries":[{"path":"./skills?view=tree"}],"cursor":0}]},
+   "b":{"bar":true,"nav":false,"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
  {"label":"prompt","entries":[{"path":"./config.json?view=record"}],"cursor":0},
  {"label":"tools","entries":[{"path":"./config.json?view=tools"}],"cursor":0},
  {"label":"files","entries":[{"div":{"dir":"horizontal","ratio":0.24,
-   "a":{"openTo":{"to":"../b","mode":"tab"},"tabs":[{"entries":[{"path":"./?view=tree"}],"cursor":0}]},
-   "b":{"bar":true,"nav":false,"openTo":{"to":".","mode":"tab"},"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0}]}
+   "a":{"tabs":[{"entries":[{"path":"./?view=tree"}],"cursor":0}]},
+   "b":{"bar":true,"nav":false,"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0}]}

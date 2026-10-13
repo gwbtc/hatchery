@@ -40,6 +40,11 @@
       '.ck-row.cat.in .name{color:#24292f;font-weight:600}' +
       '.ck-row .caret{flex:none;width:12px;color:#57606a;font-size:14px;line-height:1;text-align:center}' +
       '.ck-empty{padding:14px 12px;color:#8b949e}.ck-err{padding:10px 12px;color:#cf222e}' +
+      '.ck-confirm{margin:14px 12px;padding:14px 16px;border:1px solid #d0d7de;border-radius:8px;background:#fff;box-shadow:0 1px 3px rgba(31,35,40,.06)}' +
+      '.ck-confirm .t{font-weight:600;font-size:14px;margin-bottom:6px;overflow-wrap:anywhere}.ck-confirm .n{color:#57606a;line-height:1.5;margin-bottom:12px}' +
+      '.ck-confirm .acts{display:flex;gap:8px;flex-wrap:wrap}.ck-confirm .acts button{flex:1 1 auto;font:inherit;padding:5px 12px;border:1px solid #d0d7de;border-radius:6px;background:#fff;color:#24292f;cursor:pointer}' +
+      '.ck-confirm .acts button.danger{border-color:#cf222e;background:#cf222e;color:#fff}.ck-confirm .acts button:focus{outline:none;box-shadow:0 0 0 2px rgba(9,105,218,.25)}.ck-confirm .acts button:disabled{opacity:.5;cursor:default}' +
+      '.ck-confirm .ck-err{padding:8px 0 0}' +
       '.ck-rec{flex:1;min-height:0;display:flex;flex-direction:column;padding:14px 18px;max-width:820px;box-sizing:border-box;width:100%}' +
       '.ck-rec h2{font-size:14px;font-weight:600;margin:0 0 2px}' +
       '.ck-rec .extra{color:#57606a;margin-bottom:12px;white-space:pre-wrap}' +
@@ -82,12 +87,17 @@
     root.appendChild(head); root.appendChild(list);
     var dead = false;
     function fail(msg) { list.innerHTML = ''; list.appendChild(el('div', 'ck-err', msg)); }
-    function go(u, kind, name) { if (opts.onNavigate) opts.onNavigate(u, kind, name ? { name: name } : undefined); else location.href = u; }
+    // open / close over moments: the host routes them; a host without them
+    // (the plain page) just follows the link
+    function go(u, kind, name) { if (opts.open) opts.open(u, name ? { name: name } : undefined); else if (opts.onNavigate) opts.onNavigate(u, kind, name ? { name: name } : undefined); else location.href = u; }
+    function close(u) { if (opts.close) opts.close(u); }
     function reload() { if (!dead) load(list, fail).catch(function (e) { if (!dead) fail('failed to load: ' + e.message); }); }
-    return {
-      head: head, list: list, go: go, reload: reload,
+    var sb = {
+      head: head, list: list, go: go, close: close, reload: reload,
       handle: { destroy: function () { dead = true; root.innerHTML = ''; root.classList.remove('ck'); }, onUpdate: reload }
     };
+    sb.handle.contextMenu = function (e) { return rowMenu(sb, e); };
+    return sb;
   }
   // one row: a status dot, a name over a subline, something small at the right
   function row(cls, dot, name, sub, right) {
@@ -100,6 +110,53 @@
     return r;
   }
   function chatDot(c) { return c.asking ? 'asking' : c.busy ? 'busy' : ''; }
+  // a confirmation that takes over the sidebar's list: what is about to
+  // happen, cancel / the verb. Enter is the verb, Escape cancels (only while
+  // focus is on the card, so a chat being typed in is never caught). The
+  // list is redrawn either way; a done deed is also announced by the stream.
+  function takeover(sb, title, note, verb, act) {
+    var list = sb.list; list.innerHTML = '';
+    var card = el('div', 'ck-confirm');
+    card.appendChild(el('div', 't', title));
+    card.appendChild(el('div', 'n', note));
+    var acts = el('div', 'acts'), no = el('button', null, 'cancel'), yes = el('button', 'danger', verb);
+    acts.appendChild(no); acts.appendChild(yes); card.appendChild(acts);
+    var err = el('div', 'ck-err'); err.hidden = true; card.appendChild(err);
+    list.appendChild(card);
+    var done = false;
+    function end(go) {
+      if (done) return; done = true;
+      document.removeEventListener('keydown', key, true);
+      if (!go) { sb.reload(); return; }
+      yes.disabled = true; yes.textContent = verb + '…';
+      act().then(function () { sb.reload(); }, function (e) { done = false; yes.disabled = false; yes.textContent = verb; err.hidden = false; err.textContent = 'failed: ' + e.message; document.addEventListener('keydown', key, true); });
+    }
+    function key(e) {
+      if (!card.isConnected) { document.removeEventListener('keydown', key, true); return; }
+      if (!(card.contains(document.activeElement) || document.activeElement === document.body)) return;
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); end(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); }
+    }
+    document.addEventListener('keydown', key, true);
+    no.addEventListener('click', function () { end(false); });
+    yes.addEventListener('click', function () { end(true); });
+    yes.focus();
+  }
+  // the rows' right-click menu: what the row is (row.__ck) decides
+  function rowMenu(sb, e) {
+    var r = e.target && e.target.closest ? e.target.closest('.ck-row') : null;
+    var it = r && r.__ck; if (!it) return null;
+    var what = it.kind === 'chat' ? 'chat ' + it.name : it.kind === 'clanker' ? 'clanker ' + short(it.path) : 'category ' + it.path.replace(/^\//, '') + '/';
+    var note = it.kind === 'chat' ? 'Its log and its own prompt go with it. Open tabs showing it stay, marked deleted, until you close them.'
+      : it.kind === 'clanker' ? 'Everything in it goes: its chats, memories, skills, tools and prompt. Open tabs showing it stay, marked deleted, until you close them.'
+      : 'Every clanker and category inside it goes with it. Open tabs showing any of them stay, marked deleted, until you close them.';
+    return [{ label: 'Delete…', danger: true, run: function () {
+      takeover(sb, 'Delete ' + what + '?', note, 'delete', function () {
+        return post('/api/delete', it.kind === 'chat' ? { path: it.proj, chat: it.name } : { path: it.path })
+          .then(function (r) { if (it.url && sb.close) sb.close(it.url); return r; });   // the moment is gone: say so, where it was shown
+      });
+    } }];
+  }
 
   // ---- collection: the whole collection as a tree ----
   // categories fold (closed ones remembered per browser), clankers are the
@@ -133,6 +190,7 @@
         r.appendChild(el('span', 'dot' + (st ? ' ' + st : '')));
         var main = el('div', 'main'); main.appendChild(el('div', 'name', c.name)); r.appendChild(main);
         var n = count(c); if (n) r.appendChild(el('span', 'right', plural(n, 'clanker')));
+        r.__ck = { kind: 'category', path: p };
         r.addEventListener('click', function () {
           if (into === p) { if (open) closed[p] = true; else delete closed[p]; remember(); }
           into = p; name.placeholder = 'new in ' + p.replace(/^\//, '') + '/…';
@@ -145,6 +203,7 @@
         var chats = k.chats || [];
         var r = row('', dotOf(chats), short(k.name), k.bundle || '', chats.length ? plural(chats.length, 'chat') : 'no chats');
         r.style.paddingLeft = (pad + 20) + 'px';   // its dot under the category's (past caret + gap)
+        r.__ck = { kind: 'clanker', path: sub(path) + '/' + k.name, url: u };
         var u = dir + sub(path).split('/').map(encodeURIComponent).join('/') + '/' + encodeURIComponent(k.name);
         r.addEventListener('click', function () { sb.go(u, 'dir', short(k.name)); });
         list.appendChild(r);
@@ -185,6 +244,7 @@
         if (!rows.length) { list.appendChild(el('div', 'ck-empty', 'No chats yet. Name one above.')); return; }
         rows.forEach(function (c) {
           var r = row('', chatDot(c), c.name, c.asking ? 'waiting for you: a tool asks to run' : c.last, c.events ? c.events + (c.events === 1 ? ' event' : ' events') : '');
+          r.__ck = { kind: 'chat', proj: proj, name: c.name, url: dir + '/' + encodeURIComponent(c.name) };
           r.addEventListener('click', function () { sb.go(dir + '/' + encodeURIComponent(c.name), 'dir', c.name); });
           list.appendChild(r);
         });
@@ -287,7 +347,7 @@
       ? 'What this chat may do with ' + short(proj) + '’s tools. It can only tighten the clanker’s policy: the stricter verdict wins.'
       : 'deny: the model never sees the tool · ask: the turn pauses for you before it runs · allow: it runs as called.'));
     var defRow = el('div', 'ck-def');
-    defRow.appendChild(el('span', null, 'tools not listed below'));
+    defRow.appendChild(el('span', null, 'default verdict (rows set to “default”, and any tool added later)'));
     var defSel = el('select'); VERDICTS.forEach(function (v) { var o = el('option', null, v); o.value = v; defSel.appendChild(o); });
     defRow.appendChild(defSel); box.appendChild(defRow);
     var table = el('div', 'ck-tools'); box.appendChild(table);
