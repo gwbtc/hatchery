@@ -52,11 +52,12 @@
             ?=(^ (find (trip who) (trip (str c 'authorEmail'))))
         ==
     ==
-  ?~  kept  (pure:m [%text 'No commits match.'])
+  ?:  =(~ kept)  (pure:m [%text 'No commits match.'])
   =/  shown=(list json)  (scag limit kept)
   =/  head=tape
     "{(a-co:co (lent all))} commits in the repository, {(a-co:co (lent kept))} match, showing {(a-co:co (lent shown))}\0a"
-  (pure:m [%text (crip (weld head (zing (turn shown render))))])
+  =/  body=tape  (roll (turn shown render) |=([a=tape b=tape] (weld b a)))
+  (pure:m [%text (crip (weld head body))])
 --
 |%
 ::  a commit's field as text ('' when absent or not a string)
@@ -100,11 +101,11 @@
     ?~  nl  ""
     =/  tail=tape  (slag u.nl body)
     =/  tail=tape  |-(?:(?&(?=(^ tail) =('\0a' i.tail)) $(tail t.tail) tail))
-    ?~  tail  ""
+    ?:  =("" tail)  ""
     "\0a    {(indent tail)}"
   =/  first=tape
     =/  nl=(unit @ud)  (find "\0a" body)
-    ?~  body  subject
+    ?:  =("" body)  subject
     ?~  nl  body
     (scag u.nl body)
   "\0a{(trip (str c 'short'))}  {stamp}  {(trip (str c 'author'))}  {first}{rest}\0a"
