@@ -50,6 +50,7 @@
 /&  kernel-bundle  /lib/clanker-kernel-bundle/
 /&  repo-bundle    /lib/clanker-repo-bundle/
 /&  build-bundle   /lib/clanker-build-bundle/
+/&  trip-bundle    /lib/clanker-trip-bundle/
 =<  ^-  nexus:nexus
     |%
     ++  on-load
@@ -120,6 +121,10 @@
     %+  merge-boles:nex-tools
       (merge-boles:nex-tools base (seed-tools:nex-tools repo-bundle))
     (seed-tools:nex-tools build-bundle)
+  ::  "trip" = the itinerary tools: the document by field, the attachments,
+  ::  geocoding; the trip dir is the config's "repo"
+  ?:  =('trip' which)
+    (merge-boles:nex-tools base (seed-tools:nex-tools trip-bundle))
   base
 ::  +serve: the main.sig poke loop. {chat, message} runs a turn;
 ::  {action:'interrupt'} is swallowed here (it lands mid-await inside a
