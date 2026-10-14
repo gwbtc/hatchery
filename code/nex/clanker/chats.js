@@ -89,14 +89,30 @@
     function fail(msg) { list.innerHTML = ''; list.appendChild(el('div', 'ck-err', msg)); }
     // open / close over moments: the host routes them; a host without them
     // (the plain page) just follows the link
-    function go(u, kind, name) { if (opts.open) opts.open(u, name ? { name: name } : undefined); else if (opts.onNavigate) opts.onNavigate(u, kind, name ? { name: name } : undefined); else location.href = u; }
+    // beside: the keyboard's ⇧Enter, a new pane beside (the host's ⌘-click)
+    function go(u, kind, name, beside) { var o = (name || beside) ? { name: name, beside: !!beside } : undefined; if (opts.open) opts.open(u, o); else if (opts.onNavigate) opts.onNavigate(u, kind, o); else location.href = u; }
     function close(u) { if (opts.close) opts.close(u); }
     function reload() { if (!dead) load(list, fail).catch(function (e) { if (!dead) fail('failed to load: ' + e.message); }); }
+    // the stream says something under us moved: one reload per burst, not
+    // one per event (a turn step writes a status and a log, every chat of
+    // every clanker does; each reload is a request the ship serves in turn)
+    var timer = null;
+    function later() { if (timer) return; timer = setTimeout(function () { timer = null; reload(); }, 300); }
     var sb = {
       head: head, list: list, go: go, close: close, reload: reload,
-      handle: { destroy: function () { dead = true; root.innerHTML = ''; root.classList.remove('ck'); }, onUpdate: reload }
+      handle: { destroy: function () { dead = true; clearTimeout(timer); root.innerHTML = ''; root.classList.remove('ck'); }, onUpdate: later }
     };
     sb.handle.contextMenu = function (e) { return rowMenu(sb, e); };
+    // the keys every navigator has (nav-keys.js): a row says what it is in
+    // row._nk = {open(beside), folded(), fold(open), parent()}; Enter on a
+    // row without one just clicks it
+    sb.nk = window.navKeys ? window.navKeys(list, {
+      rows: function () { return Array.prototype.slice.call(list.querySelectorAll('.ck-row')); },
+      open: function (row, m) { if (row._nk && row._nk.open) row._nk.open(m && m.beside); else row.click(); },
+      folded: function (row) { return (row._nk && row._nk.folded) ? row._nk.folded() : null; },
+      fold: function (row, open) { if (row._nk && row._nk.fold) row._nk.fold(open); },
+      parent: function (row) { return (row._nk && row._nk.parent) ? row._nk.parent() : null; }
+    }) : null;
     return sb;
   }
   // one row: a status dot, a name over a subline, something small at the right
@@ -196,6 +212,13 @@
           into = p; name.placeholder = 'new in ' + p.replace(/^\//, '') + '/…';
           render();
         });
+        // keys: Enter / → ← fold and unfold the category; ← at a top category does nothing
+        r._nk = {
+          open: function () { if (open) closed[p] = true; else delete closed[p]; remember(); into = p; render(); },
+          folded: function () { return !!closed[p]; },
+          fold: function (want) { if (want) delete closed[p]; else closed[p] = true; remember(); render(); },
+          parent: function () { return rowFor(sub(path)); }
+        };
         list.appendChild(r);
         if (open) draw(c, p, depth + 1, list);
       });
@@ -209,14 +232,20 @@
         var u = '.' + sub(path).slice(sub(parent).length).split('/').map(encodeURIComponent).join('/') + '/' + encodeURIComponent(k.name);
         r.__ck = { kind: 'clanker', path: sub(path) + '/' + k.name, url: u };
         r.addEventListener('click', function () { sb.go(u, 'dir', short(k.name)); });
+        r._nk = { open: function (beside) { sb.go(u, 'dir', short(k.name), beside); }, parent: function () { return rowFor(sub(path)); } };
         list.appendChild(r);
       });
     }
+    // the row showing a category path, for ← (parent); '' is the root: none
+    function rowFor(p) { if (!p) return null; var rs = sb.list.querySelectorAll('.ck-row'); for (var i = 0; i < rs.length; i++) if (rs[i].__ck && rs[i].__ck.kind === 'category' && rs[i].__ck.path === p) return rs[i]; return null; }
     function render() {
       var list = sb.list; list.innerHTML = '';
       if (!tree) return;
       if (!count(tree) && !(tree.categories || []).length) { list.appendChild(el('div', 'ck-empty', 'No clankers yet. Name one above.')); return; }
+      // the keyboard cursor survives a redraw: the row at the same path
+      var was = sb.nk && sb.nk.cursor() && sb.nk.cursor().__ck ? sb.nk.cursor().__ck.path : null;
       draw(tree, parent, 0, list);
+      if (was && sb.nk) { var rs = list.querySelectorAll('.ck-row'); for (var i = 0; i < rs.length; i++) if (rs[i].__ck && rs[i].__ck.path === was) { sb.nk.setCursor(rs[i]); break; } }
     }
     var sb = sidebar(root, opts, function () {
       return get(API + '/api/collection?path=' + encodeURIComponent(parent)).then(function (c) { tree = c; render(); });
@@ -249,6 +278,7 @@
           var r = row('', chatDot(c), c.name, c.asking ? 'waiting for you: a tool asks to run' : c.last, c.events ? c.events + (c.events === 1 ? ' event' : ' events') : '');
           r.__ck = { kind: 'chat', proj: proj, name: c.name, url: './' + encodeURIComponent(c.name) };   // relative to this chats/ dir, as spelled
           r.addEventListener('click', function () { sb.go('./' + encodeURIComponent(c.name), 'dir', c.name); });
+          r._nk = { open: function (beside) { sb.go('./' + encodeURIComponent(c.name), 'dir', c.name, beside); } };
           list.appendChild(r);
         });
       });

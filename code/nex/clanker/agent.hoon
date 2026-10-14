@@ -210,13 +210,11 @@
   =/  msg=(unit @t)
     (bind (~(get by p.jon) 'message') |=(j=json ?>(?=(%s -.j) p.j)))
   ?~  msg  (pure:m ~)
-  ;<  cfg=json  bind:m  (read-json rail [%& / %'config.json'])
-  =/  model=@t  =/(mo=@t (jstr:clanker cfg 'model') ?:(=('' mo) 'claude-sonnet-4-6' mo))
-  =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
-  ;<  sys=@t  bind:m  (standing rail chat)
-  ;<  pol=policy  bind:m  (read-policy rail chat)
-  ;<  schema=json  bind:m  (list-tools rail pol)
-  ::  the chat dir, then its log
+  ::  the chat dir, then its log. The input is appended and persisted
+  ::  FIRST: the page shows the message the moment the log is written
+  ::  (its stream carries the log), not after the standing context is
+  ::  assembled and the tools nexus has answered its list (a poke round
+  ::  trip), which come next and only the model needs
   =/  chat-dir=path  [%chats `@ta`chat ~]
   ;<  dv=view:nexus  bind:m  (peek:io (nex-road:io rail [%| chat-dir]) ~)
   ;<  ~  bind:m
@@ -228,18 +226,27 @@
   ?:  =('ask' (last-kind log))  (pure:m ~)
   =.  log  (snoc log (event-input u.msg))
   ;<  ~  bind:m  (write-log road existed log)
+  ;<  cfg=json  bind:m  (read-json rail [%& / %'config.json'])
+  =/  model=@t  =/(mo=@t (jstr:clanker cfg 'model') ?:(=('' mo) 'claude-sonnet-4-6' mo))
+  =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
+  ;<  sys=@t  bind:m  (standing rail chat)
+  ;<  pol=policy  bind:m  (read-policy rail chat)
+  ;<  schema=json  bind:m  (list-tools rail pol)
   (run rail chat road log sys model max schema pol)
 ::  the chat log: one file per chat, its own mark (the explorer opens a
 ::  chat-log in the chat viewer), json inside
 ++  log-name  %'log.chat-log'
+::  the log first (the chat pane follows it with its body: the event
+::  carries the transcript), the status after (the lists follow that)
 ++  write-log
   |=  [road=road:tarball existed=? log=(list json)]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  ~  bind:m  (write-status road log)
-  ?:  existed  (over:io road [[/ %chat-log] [%a log]])
-  ;<  err=(unit tang)  bind:m  (make-soft:io road |+[[[/ %chat-log] [%a log]] ~])
-  (pure:m ~)
+  ;<  ~  bind:m
+    ?:  existed  (over:io road [[/ %chat-log] [%a log]])
+    ;<  err=(unit tang)  bind:m  (make-soft:io road |+[[[/ %chat-log] [%a log]] ~])
+    (pure:m ~)
+  (write-status road log)
 ::  +write-status: the chat's state as a sibling status.json, derived from
 ::  the log every time the log is written: {state, asks, last}. The log's
 ::  own mark is this app's, so a reader elsewhere (a tool, another app)
@@ -297,11 +304,16 @@
     ?.  ?=([%o *] b)  ""
     ?.  ?=([~ %s %'text'] (~(get by p.b) 'type'))  ""
     (trip (jstr:clanker b 'text'))
+  ::  input: the last thing the user said (what a chat list shows)
+  =/  input=@t
+    =/  ins=(list json)  (skim log |=(e=json =('input' (jstr:clanker e 'k'))))
+    ?~(ins '' (jstr:clanker (rear ins) 'body'))
   %-  pairs:enjs:format
   :~  ['state' s+state]
       ['events' (numb:enjs:format (lent log))]
       ['asks' [%a asks]]
       ['last' s+last]
+      ['input' s+input]
   ==
 ::  +resume: the restart contract. This fiber may be restarted at any
 ::  moment (a deploy, a crash); the log is the truth, so a chat whose log

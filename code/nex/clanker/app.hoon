@@ -67,6 +67,8 @@
         ;<  ~  bind:m  (rise-wait:io prod "%clanker http: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/clanker])
         (http-dispatch:io %clanker)
+          [~ %'sand.sig']
+        (sand-watch prod)
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%clanker request: failed")
         (handle-request name.rail)
@@ -105,6 +107,9 @@
       [%over %& [/ %'view.json'] [[/ %json] root-view-decl]]
       [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
       [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
+      ::  the weir keeper: sands every clanker once on rise and again
+      ::  whenever the proxy's name moves (+sand-watch); never per message
+      [%fall %& [/ %'sand.sig'] [[/ %sig] ~]]
       [%over %| /tools (seed-tools:nex-tools coll-tools)]
       [%fall %| /requests empty-dir:loader]
       [%fall %| /projects empty-dir:loader]
@@ -252,10 +257,54 @@
     make  (~(gas in make.base) (roads 'make'))
     poke  (~(gas in poke.base) (roads 'poke'))
   ==
-::  +sand-clanker: (re)set a clanker's weir from its config with the
-::  proxy as it resolves now. Called when a clanker is made and on every
-::  send, so one born before the proxy existed, or seeded at load, still
-::  reaches it.
+::  +sand-watch: the weirs are set once per CAUSE, never per message. On
+::  every rise, one pass over the collection (+sand-all): a clanker seeded
+::  at load was born before the proxy could be resolved (on-load cannot
+::  peek), one made before the proxy was installed has no road to it.
+::  Then the proxy's registry grub (/sys/link/anthropic/dest.lanes) is
+::  kept, and every move of it is another pass. Making a clanker
+::  (+handle-poke, /api/new) sands it then. A proxy not yet linked: the
+::  keep finds nothing within the lull, so try again later.
+++  sand-watch
+  |=  =prod:fiber:nexus
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  ~  bind:m  (rise-wait:io prod "%clanker sand: failed")
+  ;<  ~  bind:m  sand-all
+  |-
+  ;<  got=(unit wave:nexus)  bind:m  (keep-soft:io /proxy (link-road:io '@anthropic') ~ ~s30)
+  ?~  got
+    ;<  ~  bind:m  (sleep:io ~m5)
+    $
+  |-
+  ;<  *  bind:m  (take-news:io /proxy)
+  ;<  ~  bind:m  sand-all
+  $
+::  +sand-all: every clanker in the collection, at any depth, re-sanded
+::  from its config with the proxy as it resolves now. Runs in sand.sig's
+::  fiber, at the collection root (up 0).
+++  sand-all
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  anth=(unit path)  bind:m  anthropic-root
+  =/  todo=(list path)  ~[/]
+  |-  ^-  form:m
+  ?~  todo  (pure:m ~)
+  =/  here=path  i.todo
+  ;<  dv=view:nexus  bind:m  (peek-shallow:io [%| 0 %| (welp /projects here)] ~)
+  ?.  ?=([%ball *] dv)  $(todo t.todo)
+  =/  names=(list @ta)  ~(tap in ~(key by dir.ball.dv))
+  =/  kids=(list path)  (turn (skip names is-clanker) |=(n=@ta (snoc here n)))
+  =/  clankers=(list path)  (turn (skim names is-clanker) |=(n=@ta (snoc here n)))
+  ;<  ~  bind:m
+    |-  ^-  form:m
+    ?~  clankers  (pure:m ~)
+    ;<  cfg=json  bind:m  (read-json [%| 0 %& (welp /projects i.clankers) %'config.json'])
+    ;<  ~  bind:m  (sand:io [%| 0 %| (welp /projects i.clankers)] `(config-weir cfg anth))
+    $(clankers t.clankers)
+  $(todo (weld t.todo kids))
+::  +sand-clanker: (re)set one clanker's weir from its config with the
+::  proxy as it resolves now, when it is made.
 ++  sand-clanker
   |=  [proj=path cfg=json]
   =/  m  (fiber:fiber:nexus ,~)
@@ -564,11 +613,11 @@
     ;<  log=json  bind:m
       (read-json [%| 1 %& (welp /projects (welp u.proj [%chats `@ta`chat ~])) %'log.chat-log'])
     (send-json eyre-id (en:json:html ?:(?=([%a *] log) log [%a ~])))
+  ::  send is a poke and nothing else: the clanker's weir was set when it
+  ::  was made and is kept current by +sand-watch, not here
   ?:  ?&(=(%'POST' method) =([%api %send ~] suffix))
     =/  proj=(unit path)  (parse-proj (jarg 'path'))
     ?~  proj  (bad eyre-id 'path required')
-    ;<  cfg=json  bind:m  (read-json [%| 1 %& (welp /projects u.proj) %'config.json'])
-    ;<  ~  bind:m  (sand-clanker u.proj cfg)
     ;<  ~  bind:m
       %-  poke:io
       :+  [%| 1 %& (welp /projects u.proj) %'main.sig']  [/ %json]
@@ -687,12 +736,11 @@
       ['categories' a+cats]
       ['clankers' a+clankers]
   ==
-::  +chats-of: the chats in a chats/ directory, each as +chat-summary
-::  TODO(perf): this reads every chat's whole log to count events and find
-::  the last input. The agent already writes {state, events, last} beside
-::  each log as status.json on every write (+write-status); read that
-::  instead and this (and +collection-of, which calls it per clanker and
-::  refetches on every fold event) becomes small and constant-time.
+::  +chats-of: the chats in a chats/ directory, each as the chat list
+::  shows it. Read from the chat's status.json, the small record the
+::  agent derives from the log on every write ({state, events, last,
+::  input, asks}): the list never reads a transcript. A chat with no
+::  status yet (never written since it was made) falls back to its log.
 ++  chats-of
   |=  chats-dir=path
   =/  m  (fiber:fiber:nexus ,(list json))
@@ -703,10 +751,27 @@
   =|  acc=(list json)
   |-  ^-  form:m
   ?~  names  (pure:m (flop acc))
-  ;<  log=json  bind:m  (read-json [%| 1 %& (snoc chats-dir i.names) %'log.chat-log'])
-  ;<  sys=@t  bind:m  (read-text [%| 1 %& (snoc chats-dir i.names) %'system.md'])
-  =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
-  $(names t.names, acc [(chat-summary i.names evs !=('' sys)) acc])
+  =/  cdir=path  (snoc chats-dir i.names)
+  ;<  st=(unit json)  bind:m  (read-json-maybe [%| 1 %& cdir %'status.json'])
+  ;<  sys=@t  bind:m  (read-text [%| 1 %& cdir %'system.md'])
+  ;<  row=json  bind:m
+    =/  mj  (fiber:fiber:nexus ,json)
+    ^-  form:mj
+    ?:  ?=([~ %o *] st)
+      =/  state=@t  (jstr:clanker u.st 'state')
+      %-  pure:mj
+      %-  pairs:enjs:format
+      :~  ['name' s+i.names]
+          ['events' (fall (~(get by p.u.st) 'events') (numb:enjs:format 0))]
+          ['last' s+(jstr:clanker u.st 'input')]
+          ['busy' b+=('busy' state)]
+          ['asking' b+=('asking' state)]
+          ['prompt' b+!=('' sys)]
+      ==
+    ;<  log=json  bind:mj  (read-json [%| 1 %& cdir %'log.chat-log'])
+    =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
+    (pure:mj (chat-summary i.names evs !=('' sys)))
+  $(names t.names, acc [row acc])
 ::  +chat-summary: one chat as the chats pane shows it: its name, how
 ::  many events its log holds, the last thing said to it, and whether a
 ::  turn is running (the log ends in an input, tool results, or a
@@ -901,7 +966,7 @@
     %-  ans
     :^  'chat'  '/grubbery/clanker/viewer.js'
       (pairs:enjs:format ~[['proj' s+(spat proj)] ['chat' s+chat]])
-    ~[(fol (snoc cdir %'log.chat-log') & |) (fol (snoc cdir %'status.json') | |)]
+    ~[(fol (snoc cdir %'log.chat-log') & |)]
   ::  (each ?= is the test of its own ?: so it narrows the path it matched)
   ?.  dir
     ?:  =('chat-log' blot)

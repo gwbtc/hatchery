@@ -26,6 +26,7 @@
       '.cv-msg.user{align-items:flex-end}' +
       '.cv-msg .body{font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;max-width:90%}' +
       '.cv-msg.user .body{background:#ddf4ff;border-radius:10px;padding:8px 12px;max-width:80%}' +
+      '.cv-msg.user.pending .body{opacity:.55}' +
       '.cv-meta{font-size:11px;color:#8b949e}' +
       '.cv-trace{display:flex;flex-direction:column;gap:2px;max-width:90%}' +
       '.cv-step summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:6px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#57606a}' +
@@ -79,24 +80,30 @@
     var who = proj ? proj.replace(/^.*\//, '').replace(/\.clanker$/, '') : 'clanker';
     root.innerHTML = ''; root.classList.add('cv');
     var dead = false;
-    var handle = { destroy: function () { dead = true; document.removeEventListener('keydown', onEsc); root.innerHTML = ''; root.classList.remove('cv'); }, onUpdate: function (ev) { if (ev && Array.isArray(ev.body)) apply(ev.body); else load(); } };
+    var handle = { destroy: function () { dead = true; document.removeEventListener('keydown', onEsc); root.innerHTML = ''; root.classList.remove('cv'); }, onUpdate: function (ev) { if (ev && Array.isArray(ev.body)) apply(ev.body); else if (!ev || /log\.chat-log$/.test(ev.path || '')) load(); } };   // the log's body, or a bodiless event for the log itself; nothing else is ours
     if (!proj || !chat) { root.appendChild(el('div', 'cv-empty', 'no chat here: the collection gave no {proj, chat}')); return handle; }
 
     var logEl = el('div', 'cv-log'), thread = el('div', 'cv-thread'); logEl.appendChild(thread);
     var form = el('form', 'cv-compose'), inner = el('div', 'inner');
     var input = el('textarea'); input.rows = 1; input.placeholder = 'Message ' + who + '…'; input.spellcheck = false;
+    input.setAttribute('data-focus', '');   // where the keyboard lands when it chooses this pane (the host's focusContent)
     var stopBtn = el('button', 'stop', 'stop'); stopBtn.type = 'button'; stopBtn.disabled = true; stopBtn.title = 'stop the running turn (Esc Esc)';
     var sendBtn = el('button', 'send', 'send'); sendBtn.type = 'submit';
     inner.appendChild(input); inner.appendChild(stopBtn); inner.appendChild(sendBtn); form.appendChild(inner);
     form.appendChild(el('div', 'hint', 'Enter sends · Shift+Enter newline · Esc Esc stops'));
     root.appendChild(logEl); root.appendChild(form);
 
-    var state = { busy: false, asking: false, len: -1 };
+    // pending: a message sent but not yet in the log, shown at once (faded)
+    // and replaced by the log's own copy when the next write arrives
+    var state = { busy: false, asking: false, len: -1, log: [], pending: null };
     function setState(busy, asking) { state.busy = busy; state.asking = asking; sendBtn.disabled = busy || asking; stopBtn.disabled = !(busy || asking); }
     function apply(log) {
       if (dead || !Array.isArray(log)) return;
-      if (log.length !== state.len) { state.len = log.length; render(log); }
-      setState(busyAfter(log), askingAfter(log));
+      var grew = log.length !== state.len;
+      if (grew && state.pending != null) state.pending = null;   // the log moved on: our message is in it (or the turn was refused)
+      state.log = log;
+      if (grew) { state.len = log.length; render(log); }
+      setState(busyAfter(log) || state.pending != null, askingAfter(log));
     }
     function load() {
       if (dead) return;
@@ -108,7 +115,8 @@
       var text = input.value.trim();
       if (!text || state.busy || state.asking) return;
       input.value = ''; autosize(); setState(true, false);
-      post('/api/send', { path: proj, chat: chat, message: text }).catch(function () { setState(false, false); });
+      state.pending = text; render(state.log);                     // echo it now; the log confirms
+      post('/api/send', { path: proj, chat: chat, message: text }).catch(function () { state.pending = null; render(state.log); setState(false, false); });
     }
     function resolve(decisions) { setState(true, false); post('/api/resolve', { path: proj, chat: chat, decisions: decisions }); }
     function autosize() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 200) + 'px'; }
@@ -214,7 +222,8 @@
         } else if (ev.k === 'interrupt') thread.appendChild(el('div', 'cv-meta', 'stopped'));
         else thread.appendChild(el('div', 'cv-err', JSON.stringify(ev)));
       });
-      if (busyAfter(log) && !askingAfter(log)) {
+      if (state.pending != null) thread.appendChild(msg('user pending', 'you', state.pending));
+      if ((busyAfter(log) || state.pending != null) && !askingAfter(log)) {
         var t = el('div', 'cv-msg bot'), ty = el('div', 'cv-typing');
         ty.appendChild(el('span')); ty.appendChild(el('span')); ty.appendChild(el('span'));
         t.appendChild(ty); thread.appendChild(t);
