@@ -649,6 +649,20 @@
     =/  name=@t  (jarg 'name')
     ?~  parent  (bad eyre-id 'bad parent')
     ?:  =('' name)  (bad eyre-id 'name required')
+    ::  the category dirs along parent, made if missing: a path typed as
+    ::  work/x/y makes work/ and work/x/ on the way to y
+    ;<  ~  bind:m
+      =/  mu  (fiber:fiber:nexus ,~)
+      =/  at=path  /projects
+      =/  rest=path  u.parent
+      |-  ^-  form:mu
+      ?~  rest  (pure:mu ~)
+      =/  here=path  (snoc at i.rest)
+      ;<  v=view:nexus  bind:mu  (peek:io [%| 1 %| here] ~)
+      ;<  ~  bind:mu
+        ?:  ?=([%ball *] v)  (pure:mu ~)
+        (make:io [%| 1 %| here] &+empty-dir:loader)
+      $(at here, rest t.rest)
     ?:  =('category' kind)
       ;<  ~  bind:m
         (make:io [%| 1 %| (welp /projects (snoc u.parent `@ta`name))] &+empty-dir:loader)

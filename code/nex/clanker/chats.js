@@ -38,6 +38,8 @@
       '.ck-row .right{flex:none;color:#8b949e;font-size:11px;white-space:nowrap}' +
       '.ck-row.cat{padding-top:5px;padding-bottom:5px;border-bottom:none}.ck-row.cat .name{color:#57606a;font-weight:500}.ck-row.cat .name:after{content:"/"}' +
       '.ck-row.cat.in .name{color:#24292f;font-weight:600}' +
+      '.ck-row.empty{cursor:default;border-bottom:none;padding-top:4px;padding-bottom:4px}.ck-row.empty:hover{background:none}' +
+      '.ck-row.empty .name{color:#8b949e;font-style:italic;font-weight:400;opacity:.8}' +
       '.ck-row .caret{flex:none;width:12px;color:#57606a;font-size:14px;line-height:1;text-align:center}' +
       '.ck-empty{padding:14px 12px;color:#8b949e}.ck-err{padding:10px 12px;color:#cf222e}' +
       '.ck-confirm{margin:14px 12px;padding:14px 16px;border:1px solid #d0d7de;border-radius:8px;background:#fff;box-shadow:0 1px 3px rgba(31,35,40,.06)}' +
@@ -107,7 +109,7 @@
     // row._nk = {open(beside), folded(), fold(open), parent()}; Enter on a
     // row without one just clicks it
     sb.nk = window.navKeys ? window.navKeys(list, {
-      rows: function () { return Array.prototype.slice.call(list.querySelectorAll('.ck-row')); },
+      rows: function () { return Array.prototype.slice.call(list.querySelectorAll('.ck-row:not(.empty)')); },
       open: function (row, m) { if (row._nk && row._nk.open) row._nk.open(m && m.beside); else row.click(); },
       folded: function (row) { return (row._nk && row._nk.folded) ? row._nk.folded() : null; },
       fold: function (row, open) { if (row._nk && row._nk.fold) row._nk.fold(open); },
@@ -184,7 +186,7 @@
     var key = 'clanker-tree:' + dir, closed = {};
     try { closed = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (_) { closed = {}; }
     function remember() { try { localStorage.setItem(key, JSON.stringify(closed)); } catch (_) {} }
-    var into = parent, tree = null;
+    var tree = null;
     function sub(p) { return p === '/' ? '' : p; }
     function count(node) { return (node.clankers || []).length + (node.categories || []).reduce(function (n, c) { return n + count(c); }, 0); }
     function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
@@ -199,7 +201,7 @@
       var pad = 12 + depth * 14;
       (node.categories || []).forEach(function (c) {
         var p = sub(path) + '/' + c.name, open = !closed[p];
-        var r = el('div', 'ck-row cat' + (p === into ? ' in' : ''));
+        var r = el('div', 'ck-row cat');
         r.style.paddingLeft = pad + 'px';
         var st = status(c);
         r.appendChild(el('span', 'caret', open ? '▾' : '▸'));
@@ -207,20 +209,30 @@
         var main = el('div', 'main'); main.appendChild(el('div', 'name', c.name)); r.appendChild(main);
         var n = count(c); if (n) r.appendChild(el('span', 'right', plural(n, 'clanker')));
         r.__ck = { kind: 'category', path: p };
-        r.addEventListener('click', function () {
-          if (into === p) { if (open) closed[p] = true; else delete closed[p]; remember(); }
-          into = p; name.placeholder = 'new in ' + p.replace(/^\//, '') + '/…';
-          render();
-        });
+        // a click folds or unfolds the category, nothing else: the new box
+        // is a path from the root, never relative to what was clicked
+        function toggle() { if (open) closed[p] = true; else delete closed[p]; remember(); render(); }
+        r.addEventListener('click', toggle);
         // keys: Enter / → ← fold and unfold the category; ← at a top category does nothing
         r._nk = {
-          open: function () { if (open) closed[p] = true; else delete closed[p]; remember(); into = p; render(); },
+          open: toggle,
           folded: function () { return !!closed[p]; },
           fold: function (want) { if (want) delete closed[p]; else closed[p] = true; remember(); render(); },
           parent: function () { return rowFor(sub(path)); }
         };
         list.appendChild(r);
-        if (open) draw(c, p, depth + 1, list);
+        if (open) {
+          draw(c, p, depth + 1, list);
+          // an open category with nothing in it says so, quietly (the
+          // explorer's tree does the same): an open caret over blank space
+          // reads as the list having failed
+          if (!(c.categories || []).length && !(c.clankers || []).length) {
+            var e = el('div', 'ck-row empty');
+            e.style.paddingLeft = (pad + 20) + 'px';
+            e.appendChild(el('div', 'main')).appendChild(el('div', 'name', 'empty'));
+            list.appendChild(e);
+          }
+        }
       });
       (node.clankers || []).forEach(function (k) {
         var chats = k.chats || [];
@@ -250,13 +262,20 @@
     var sb = sidebar(root, opts, function () {
       return get(API + '/api/collection?path=' + encodeURIComponent(parent)).then(function (c) { tree = c; render(); });
     });
-    var kind = el('select'); ['clanker', 'category'].forEach(function (k) { var o = el('option', null, k); o.value = k; kind.appendChild(o); });
-    var name = el('input'); name.placeholder = 'new…'; name.spellcheck = false;
-    sb.head.appendChild(kind); sb.head.appendChild(name);
+    // one box, a path from the root: `work/hatchery` makes the categories
+    // on the way and a clanker at the end; `work/` (trailing slash) makes
+    // just the category
+    var name = el('input'); name.placeholder = 'new…  (a/b/name, or a/b/ for a category)'; name.spellcheck = false;
+    sb.head.appendChild(name);
     function make() {
-      var n = slug(name.value); if (!n) { name.focus(); return; }
+      var raw = name.value.trim(); if (!raw) { name.focus(); return; }
+      var isCat = /\/$/.test(raw);
+      var segs = raw.split('/').map(slug).filter(Boolean);
+      if (!segs.length) { name.focus(); return; }
+      var leaf = segs.pop();
+      var parent = segs.length ? '/' + segs.join('/') : '/';
       name.disabled = true;
-      post('/api/new', { kind: kind.value, parent: into, name: n })
+      post('/api/new', { kind: isCat ? 'category' : 'clanker', parent: parent, name: leaf })
         .then(function () { name.value = ''; sb.reload(); }, function (e) { sb.list.insertBefore(el('div', 'ck-err', 'could not make it: ' + e.message), sb.list.firstChild); })
         .then(function () { name.disabled = false; });
     }
