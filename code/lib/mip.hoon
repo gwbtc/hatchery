@@ -1,4 +1,5 @@
 |%
+::  self-edit test: touched by the hatchery clanker, via the forge
 ++  mip                                                 ::  map of maps
   |$  [kex key value]
   (map kex (map key value))
