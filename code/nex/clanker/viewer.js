@@ -86,6 +86,48 @@
   }
   function firstString(args) { var ks = Object.keys(args || {}); for (var i = 0; i < ks.length; i++) if (typeof args[ks[i]] === 'string') return args[ks[i]]; return ''; }
 
+  // fenced code in a rendered message gets syntax colour from shiki, the
+  // highlighter the explorer's file view uses: loaded on demand from esm.sh
+  // the first time a fence appears, one instance for the page (kept on
+  // window so other renderers can share it), the hoon grammar fetched from
+  // the explorer. A block renders plain first and is repainted when the
+  // highlighter is ready; an unknown language, or no network, leaves it
+  // plain. Tokenised html is cached by text, since the thread re-renders on
+  // every log event.
+  var LANG = { js: 'javascript', mjs: 'javascript', ts: 'typescript', sh: 'bash', shell: 'bash', zsh: 'bash', yml: 'yaml', py: 'python', md: 'markdown' };
+  var hlCache = {};
+  function getShiki(lang) {
+    if (!window.__shikiP) {
+      window.__shikiP = (async function () {
+        var mod = await import('https://esm.sh/shiki@1.24.0');
+        return mod.createHighlighter({ themes: ['github-light'], langs: [] });
+      })();
+    }
+    return window.__shikiP.then(async function (hl) {
+      if (!hl.getLoadedLanguages().includes(lang)) {
+        if (lang === 'hoon') await hl.loadLanguage(await (await fetch('/grubbery/ball/apps/explorer.explorer/hoon-grammar.json')).json());
+        else await hl.loadLanguage(lang);
+      }
+      return hl;
+    });
+  }
+  function highlight(body) {
+    var blocks = body.querySelectorAll('pre > code[class*="language-"]');
+    Array.prototype.forEach.call(blocks, function (code) {
+      var m = /language-([\w+-]+)/.exec(code.className); if (!m) return;
+      var lang = LANG[m[1].toLowerCase()] || m[1].toLowerCase(), text = code.textContent;
+      var key = lang + '\n' + text;
+      if (hlCache[key]) { code.innerHTML = hlCache[key]; return; }
+      getShiki(lang).then(function (hl) {
+        var html = hl.codeToHtml(text, { lang: lang, theme: 'github-light' });
+        var tmp = document.createElement('div'); tmp.innerHTML = html;
+        var inner = tmp.querySelector('code'); if (!inner) return;
+        hlCache[key] = inner.innerHTML;
+        if (code.isConnected) code.innerHTML = inner.innerHTML;
+      }).catch(function () { /* unknown language or no network: plain stays */ });
+    });
+  }
+
   function mount(root, opts) {
     css();
     var a = opts.args || {};
@@ -244,7 +286,7 @@
       if (text) {
         var body = el('div', 'body');
         var html = cls === 'bot' ? renderMarkdown(text) : null;
-        if (html != null) body.innerHTML = html; else body.textContent = text;
+        if (html != null) { body.innerHTML = html; highlight(body); } else body.textContent = text;
         m.appendChild(body);
       }
       return m;
