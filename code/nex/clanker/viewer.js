@@ -36,6 +36,7 @@
       '.cv-step a.arg{color:#0969da;text-decoration:none;flex:none}' +
       '.cv-step .state{flex:none;color:#8b949e}.cv-step .state.err{color:#cf222e}.cv-step .state.declined{color:#9a6700}' +
       '.cv-step pre{margin:3px 0 6px 20px;padding:8px 10px;max-height:260px;overflow:auto;background:#f6f8fa;border:1px solid #eaeef2;border-radius:6px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:#24292f;white-space:pre-wrap;word-break:break-word}' +
+      '.cv-step img{display:block;max-width:100%;max-height:360px;margin:3px 0 6px 20px;border:1px solid #eaeef2;border-radius:6px;background:#fff}' +
       '.cv-ask{max-width:90%;border:1px solid #d4a72c;background:#fff8c5;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}' +
       '.cv-ask .title{font-weight:600;font-size:12px;color:#7d4e00}' +
       '.cv-ask .row{display:flex;align-items:center;gap:8px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#57606a;min-width:0}' +
@@ -80,7 +81,7 @@
     var who = proj ? proj.replace(/^.*\//, '').replace(/\.clanker$/, '') : 'clanker';
     root.innerHTML = ''; root.classList.add('cv');
     var dead = false;
-    var handle = { destroy: function () { dead = true; document.removeEventListener('keydown', onEsc); root.innerHTML = ''; root.classList.remove('cv'); }, onUpdate: function (ev) { if (ev && Array.isArray(ev.body)) apply(ev.body); else if (!ev || /log\.chat-log$/.test(ev.path || '')) load(); } };   // the log's body, or a bodiless event for the log itself; nothing else is ours
+    var handle = { destroy: function () { dead = true; document.removeEventListener('keydown', onEsc); root.innerHTML = ''; root.classList.remove('cv'); }, onUpdate: function (ev) { if (!ev || /log\.chat-log$/.test(ev.path || '')) more(); } };   // the log changed (a bodiless event): fetch what is past our window; nothing else is ours
     if (!proj || !chat) { root.appendChild(el('div', 'cv-empty', 'no chat here: the collection gave no {proj, chat}')); return handle; }
 
     var logEl = el('div', 'cv-log'), thread = el('div', 'cv-thread'); logEl.appendChild(thread);
@@ -95,21 +96,56 @@
 
     // pending: a message sent but not yet in the log, shown at once (faded)
     // and replaced by the log's own copy when the next write arrives
-    var state = { busy: false, asking: false, len: -1, log: [], pending: null };
+    // the log is read in RANGES, never whole: the last PAGE events on mount
+    // (state.first is where that window starts), what lies past the window
+    // on every change, and the page before on a scroll to the top. A log of
+    // any length costs the pane the same.
+    var PAGE = 60;
+    var state = { busy: false, asking: false, len: -1, log: [], pending: null, first: 0, total: 0, loading: false, again: false };
     function setState(busy, asking) { state.busy = busy; state.asking = asking; sendBtn.disabled = busy || asking; stopBtn.disabled = !(busy || asking); }
-    function apply(log) {
-      if (dead || !Array.isArray(log)) return;
-      var grew = log.length !== state.len;
+    function logUrl(q) { return API + '/api/log?path=' + encodeURIComponent(proj) + '&chat=' + encodeURIComponent(chat) + '&' + q; }
+    function getJson(u) { return fetch(u, { cache: 'no-store' }).then(function (r) { return r.json(); }); }
+    function settle() {
+      var log = state.log, grew = log.length !== state.len;
       if (grew && state.pending != null) state.pending = null;   // the log moved on: our message is in it (or the turn was refused)
-      state.log = log;
       if (grew) { state.len = log.length; render(log); }
       setState(busyAfter(log) || state.pending != null, askingAfter(log));
     }
-    function load() {
+    function load() {                                                  // fresh: the tail
       if (dead) return;
-      fetch(API + '/api/log?path=' + encodeURIComponent(proj) + '&chat=' + encodeURIComponent(chat), { cache: 'no-store' })
-        .then(function (r) { return r.json(); }).then(apply).catch(function () {});
+      getJson(logUrl('tail=' + PAGE)).then(function (r) {
+        if (dead || !r || !Array.isArray(r.events)) return;
+        state.first = r.from; state.total = r.total; state.log = r.events; state.len = -1; settle();
+      }).catch(function () {});
     }
+    function more() {                                                  // changed: what is past our window
+      if (dead) return;
+      if (state.loading) { state.again = true; return; }
+      state.loading = true;
+      var have = state.first + state.log.length;
+      getJson(logUrl('from=' + have)).then(function (r) {
+        state.loading = false;
+        if (dead || !r || !Array.isArray(r.events)) return;
+        if (r.total < have) { load(); return; }                        // shorter than our window: rewritten, start over
+        if (r.events.length) state.log = state.log.concat(r.events);
+        state.total = r.total; settle();
+        if (state.again) { state.again = false; more(); }
+      }).catch(function () { state.loading = false; });
+    }
+    function earlier() {                                               // at the top: the page before
+      if (dead || state.loading || state.first === 0) return;
+      state.loading = true;
+      var to = state.first, from = Math.max(0, to - PAGE), keep = logEl.scrollHeight - logEl.scrollTop;
+      getJson(logUrl('from=' + from + '&to=' + to)).then(function (r) {
+        state.loading = false;
+        if (dead || !r || !Array.isArray(r.events)) return;
+        state.first = from; state.log = r.events.concat(state.log); state.len = state.log.length;
+        render(state.log, true); logEl.scrollTop = logEl.scrollHeight - keep;
+      }).catch(function () { state.loading = false; });
+    }
+    logEl.addEventListener('scroll', function () { if (logEl.scrollTop < 40) earlier(); });
+    // an attachment the log refers to: a file under this clanker's files/blobs
+    function blobUrl(name) { return String(opts.url || '').replace(/\/chats\/[^/]+\/log\.chat-log(\?.*)?$/, '') + '/files/blobs/' + encodeURIComponent(name); }
     var me = { path: proj, chat: chat };
     function send() {
       var text = input.value.trim();
@@ -147,7 +183,16 @@
       s.appendChild(el('span', 'state' + (note === 'error' ? ' err' : note === 'declined' ? ' declined' : ''), res ? (note || 'done') : 'running'));
       d.appendChild(s);
       d.appendChild(el('pre', null, JSON.stringify(use.input || {}, null, 1)));
-      if (res) d.appendChild(el('pre', null, resultText(res)));
+      if (res) {
+        // an attachment (a snap, a document) is a file the log refers to
+        var blobs = Array.isArray(res.content) ? res.content.filter(function (b) { return b && typeof b.blob === 'string'; }) : [];
+        blobs.forEach(function (b) {
+          if (/^image\//.test(b.media_type || '')) { var im = el('img'); im.src = blobUrl(b.blob); im.alt = b.blob; im.loading = 'lazy'; d.appendChild(im); }
+          else { var a = el('a', 'arg', b.blob); a.href = blobUrl(b.blob); a.target = '_blank'; d.appendChild(a); }
+        });
+        var txt = resultText(res);
+        if (txt && !/^(\[(image|document)\]\n?)+$/.test(txt)) d.appendChild(el('pre', null, txt));
+      }
       return d;
     }
     // the ask box: run / decline per asked use; posts once every use has an answer
@@ -181,9 +226,10 @@
       if (text) m.appendChild(el('div', 'body', text));
       return m;
     }
-    function render(log) {
+    function render(log, keepScroll) {
       thread.innerHTML = '';
       if (!log.length) { thread.appendChild(el('div', 'cv-empty', 'A new chat with ' + who + '. Every turn is appended to its event log.')); return; }
+      if (state.first > 0) thread.appendChild(el('div', 'cv-meta', state.first + ' earlier · scroll up for more'));
       var pending = null;
       log.forEach(function (ev, i) {
         if (ev.k === 'input') thread.appendChild(msg('user', 'you', ev.body));
@@ -228,7 +274,7 @@
         ty.appendChild(el('span')); ty.appendChild(el('span')); ty.appendChild(el('span'));
         t.appendChild(ty); thread.appendChild(t);
       }
-      logEl.scrollTop = logEl.scrollHeight;
+      if (!keepScroll) logEl.scrollTop = logEl.scrollHeight;
     }
     load();
     return handle;

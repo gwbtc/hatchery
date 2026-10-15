@@ -68,7 +68,18 @@
           [%fall %| /memories empty-dir:loader]
           [%fall %| /skills empty-dir:loader]
           [%fall %| /chats empty-dir:loader]
-          [%over %| /tools (tools-bole (bundle-of ball))]
+          ::  files/: what the clanker writes for the owner (write_file) and
+          ::  its attachments (files/blobs, content-addressed). The loader
+          ::  drops any directory its rows do not cover, so this row is what
+          ::  lets a clanker's files survive a reload
+          [%fall %| /files empty-dir:loader]
+          ::  the tools nexus: its directory (the neck) seeded once, so
+          ::  its runs/ (the record of every tool call, what +call-tool
+          ::  resumes from after a reload) survive a reload; its CODE
+          ::  overwritten from the bundle every load, so a bundle change
+          ::  reaches it
+          [%fall %| /tools (tools-dir (bundle-of ball))]
+          [%over %| /tools/code (tools-code (bundle-of ball))]
       ==
     ::
     ++  on-file
@@ -126,6 +137,16 @@
   ?:  =('trip' which)
     (merge-boles:nex-tools base (seed-tools:nex-tools trip-bundle))
   base
+::  +tools-dir: the tools nexus directory alone (its neck, no contents);
+::  +tools-code: its code nexus, the bundle's tools.
+++  tools-dir
+  |=  which=@t
+  ^-  bole:tarball
+  [fil:(tools-bole which) ~]
+++  tools-code
+  |=  which=@t
+  ^-  bole:tarball
+  (~(got by dir:(tools-bole which)) %code)
 ::  +serve: the main.sig poke loop. {chat, message} runs a turn;
 ::  {action:'interrupt'} is swallowed here (it lands mid-await inside a
 ::  running turn, which cancels it). The tools nexus's list reply is a
@@ -377,6 +398,10 @@
   |=  jon=json
   ^-  (unit policy)
   ?.  ?=([%o *] jon)  ~
+  ::  an EMPTY object is no policy: a missing tools.json reads back as {}
+  ::  (+read-json), and "no file" must mean everything allowed, not "a file
+  ::  with no default", which asks
+  ?:  =(~ p.jon)  ~
   =/  strs
     |=  k=@t
     ^-  (set @t)
@@ -583,7 +608,7 @@
     =.  log  (snoc log (event-results -.u.ran +.u.ran))
     ;<  ~  bind:m  (write-log road %.y log)
     $
-  =/  messages=(list json)  (assemble log)
+  ;<  messages=(list json)  bind:m  (inline-blobs rail (assemble log))
   ;<  answered=(unit json)  bind:m  (call-anthropic:ck (encode model max sys schema messages))
   ?~  answered
     (write-log road %.y (snoc log event-interrupt))
@@ -615,7 +640,7 @@
       =/  mo  (fiber:fiber:nexus ,(unit [json @t]))
       (pure:mo `[s+'The user declined to run this tool. Do not retry it; ask, or go on without it.' 'declined'])
     ?:  =('spawn' name)  (spawn rail chat input)
-    (call-tool rail name input)
+    (call-tool rail name input tid)
   ?~  outcome  (pure:m ~)
   =/  result=json
     %-  pairs:enjs:format
@@ -689,34 +714,189 @@
   (pure:m `(crip text))
 ::  +call-tool: one run through this clanker's tools nexus (the calls
 ::  protocol: poke main.sig, await the run grub, read the result). The
-::  run grub is KEPT, keyed by the time it was made, so a run can be
-::  inspected after the fact; +prune-runs bounds the history.
+::  run grub is KEPT, named by the time it was made and the tool_use id
+::  (<time>..<id>), so a run can be inspected after the fact; +prune-runs
+::  bounds the history. The id makes the call idempotent across a restart
+::  of this fiber (a deploy, a crash: +resume re-runs the open turn): a
+::  run already made for this use is picked up, never made again. Done,
+::  its result is read; still running (runs restart with their nexus),
+::  it is awaited.
 ++  call-tool
-  |=  [=rail:tarball name=@t args=json]
+  |=  [=rail:tarball name=@t args=json tid=@t]
   =/  m  (fiber:fiber:nexus ,(unit [json @t]))
   ^-  form:m
-  ;<  now=@da  bind:m  get-time:io
-  =/  id=@t         (scot %da now)
-  =/  run-name=@ta  `@ta`id
+  ;<  prior=(unit [name=@ta st=(unit tool-state:nex-tools)])  bind:m  (find-run rail tid)
   =/  main-road=road:tarball  (nex-road:io rail [%& /tools %'main.sig'])
+  ?:  ?&(?=(^ prior) ?=(^ st.u.prior) =(%done step.u.st.u.prior))
+    (outcome-of rail main-road name.u.prior update.u.st.u.prior)
+  ;<  now=@da  bind:m  get-time:io
+  =/  run-name=@ta
+    ?^  prior  name.u.prior
+    (crip "{(trip (scot %da now))}..{(trip tid)}")
   =/  run-road=road:tarball   (nex-road:io rail [%& /tools/runs run-name])
   ;<  *  bind:m  (keep:io /tool run-road ~)
   ;<  ~  bind:m
+    =/  mu  (fiber:fiber:nexus ,~)
+    ?^  prior  (pure:mu ~)
     %-  poke:io
     :+  main-road  [/ %json]
     %-  pairs:enjs:format
-    :~  ['cmd' s+'call']  ['id' s+id]  ['name' s+name]  ['arguments' args]
+    :~  ['cmd' s+'call']  ['id' s+run-name]  ['name' s+name]  ['arguments' args]
     ==
   ;<  timed=(unit (unit json))  bind:m  (await-run run-road run-name)
   ;<  ~  bind:m  (drop:io /tool run-road)
   ;<  ~  bind:m  (prune-runs rail)
   ?~  timed  (pure:m ~)
-  =/  res=(unit json)  u.timed
-  ?~  res  (pure:m `[s+'(no result)' 'error'])
-  ?.  ?=([%o *] u.res)  (pure:m `[s+'(bad result)' 'error'])
+  (outcome-of rail main-road run-name u.timed)
+::  +outcome-of: a run's result as the model's tool_result content and the
+::  trace note. Bytes (a picture, a document) never enter the log: they go
+::  to files/blobs/<sha256>.<ext> under this clanker, content-addressed,
+::  and the log keeps a reference ({type, blob, media_type}) that +inline-
+::  blobs expands into the request at call time. The run grub, which still
+::  holds the bytes, is culled: the blob is the record.
+++  outcome-of
+  |=  [=rail:tarball main-road=road:tarball run-name=@ta res=(unit json)]
+  =/  m  (fiber:fiber:nexus ,(unit [json @t]))
+  ^-  form:m
+  ?.  ?&(?=([~ %o *] res) ?=([~ %s %'mime'] (~(get by p.u.res) 'type')))
+    (pure:m `(tool-outcome res))
+  =/  mt=@t   (jstr:clanker u.res 'media_type')
+  =/  b64=@t  (jstr:clanker u.res 'data')
+  ;<  blob=(unit @ta)  bind:m  (stash-blob rail mt b64)
+  ;<  ~  bind:m
+    %-  poke:io
+    [main-road [/ %json] (pairs:enjs:format ~[['cmd' s+'cull'] ['id' s+run-name]])]
+  ?~  blob  (pure:m `[s+'(the bytes did not decode)' 'error'])
+  =/  kind=@t  ?:(=('application/pdf' mt) 'document' 'image')
+  =/  block=json
+    (pairs:enjs:format ~[['type' s+kind] ['blob' s+u.blob] ['media_type' s+mt]])
+  =/  size=@ud  (div (mul 3 (met 3 b64)) 4)
+  (pure:m `[[%a ~[block]] (crip "{(trip mt)}, {(a-co:co size)} bytes, files/blobs/{(trip u.blob)}")])
+::  +stash-blob: bytes (base64, as the tools nexus hands them) into
+::  files/blobs/<sha256>.<ext> under this clanker; the name, or ~ when
+::  they do not decode. The same bytes land once.
+++  stash-blob
+  |=  [=rail:tarball mt=@t b64=@t]
+  =/  m  (fiber:fiber:nexus ,(unit @ta))
+  ^-  form:m
+  =/  bytes=(unit octs)  (de:base64:mimes:html b64)
+  ?~  bytes  (pure:m ~)
+  =/  ext=tape
+    ?:  =('image/png' mt)  "png"
+    ?:  =('image/jpeg' mt)  "jpg"
+    ?:  =('image/gif' mt)  "gif"
+    ?:  =('image/webp' mt)  "webp"
+    ?:  =('application/pdf' mt)  "pdf"
+    "bin"
+  =/  name=@ta  (crip "{((x-co:co 64) (shay p.u.bytes q.u.bytes))}.{ext}")
+  ;<  ~  bind:m  (ensure-dir rail /files)
+  ;<  ~  bind:m  (ensure-dir rail /files/blobs)
+  ;<  *  bind:m
+    (make-soft:io (nex-road:io rail [%& /files/blobs name]) |+[[[/ %mime] [(mite-of mt) u.bytes]] ~])
+  (pure:m `name)
+++  ensure-dir
+  |=  [=rail:tarball dir=path]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  v=view:nexus  bind:m  (peek:io (nex-road:io rail [%| dir]) ~)
+  ?:  ?=([%ball *] v)  (pure:m ~)
+  (make:io (nex-road:io rail [%| dir]) &+empty-dir:loader)
+::  +mite-of: "image/png" as a mite
+++  mite-of
+  |=  mt=@t
+  ^-  mite
+  =/  t=tape  (trip mt)
+  ?~  sl=(find "/" t)  ~[mt]
+  ~[(crip (scag u.sl t)) (crip (slag +(u.sl) t))]
+::  +inline-blobs: the request's attachment references, read from
+::  files/blobs and inlined as base64 source blocks. Only the request
+::  carries bytes; the log never does.
+++  inline-blobs
+  |=  [=rail:tarball messages=(list json)]
+  =/  m  (fiber:fiber:nexus ,(list json))
+  ^-  form:m
+  =|  out=(list json)
+  |-  ^-  form:m
+  ?~  messages  (pure:m (flop out))
+  ;<  msg=json  bind:m  (inline-message rail i.messages)
+  $(messages t.messages, out [msg out])
+++  inline-message
+  |=  [=rail:tarball msg=json]
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  ?.  ?=([%o *] msg)  (pure:m msg)
+  =/  c  (~(get by p.msg) 'content')
+  ?.  ?=([~ %a *] c)  (pure:m msg)
+  ;<  blocks=(list json)  bind:m  (inline-blocks rail p.u.c)
+  (pure:m [%o (~(put by p.msg) 'content' [%a blocks])])
+++  inline-blocks
+  |=  [=rail:tarball blocks=(list json)]
+  =/  m  (fiber:fiber:nexus ,(list json))
+  ^-  form:m
+  =|  out=(list json)
+  |-  ^-  form:m
+  ?~  blocks  (pure:m (flop out))
+  ;<  b=json  bind:m  (inline-block rail i.blocks)
+  $(blocks t.blocks, out [b out])
+::  a tool_result's content is itself a block list: recurse; a block with
+::  a blob becomes a base64 source block; anything else passes as is
+++  inline-block
+  |=  [=rail:tarball b=json]
+  =/  m  (fiber:fiber:nexus ,json)
+  ^-  form:m
+  ?.  ?=([%o *] b)  (pure:m b)
+  =/  c  (~(get by p.b) 'content')
+  ?:  ?=([~ %a *] c)
+    ;<  inner=(list json)  bind:m  (inline-blocks rail p.u.c)
+    (pure:m [%o (~(put by p.b) 'content' [%a inner])])
+  =/  blob  (~(get by p.b) 'blob')
+  ?.  ?=([~ %s *] blob)  (pure:m b)
+  ;<  v=view:nexus  bind:m  (peek:io (nex-road:io rail [%& /files/blobs `@ta`p.u.blob]) `[/ %mime])
+  ?.  &(?=([%file *] v) !(is-boom:tarball sang.v))
+    (pure:m (pairs:enjs:format ~[['type' s+'text'] ['text' s+(crip "[attachment missing: files/blobs/{(trip p.u.blob)}]")]]))
+  =/  mim=mime  !<(mime (need-vase:tarball sang.v))
+  %-  pure:m
+  %-  pairs:enjs:format
+  :~  ['type' (fall (~(get by p.b) 'type') s+'image')]
+      :-  'source'
+      %-  pairs:enjs:format
+      :~  ['type' s+'base64']
+          ['media_type' s+(jstr:clanker b 'media_type')]
+          ['data' s+(en:base64:mimes:html q.mim)]
+      ==
+  ==
+::  +find-run: the run already made for a tool_use id, if any: its name
+::  (<time>..<id>) and its state (~ when the grub does not read).
+++  find-run
+  |=  [=rail:tarball tid=@t]
+  =/  m  (fiber:fiber:nexus ,(unit [name=@ta st=(unit tool-state:nex-tools)]))
+  ^-  form:m
+  ;<  dv=view:nexus  bind:m  (peek-shallow:io (nex-road:io rail [%| /tools/runs]) ~)
+  ?.  ?=([%ball *] dv)  (pure:m ~)
+  ?~  fil.ball.dv  (pure:m ~)
+  =/  tail=tape  "..{(trip tid)}"
+  =/  tl=@ud  (lent tail)
+  =/  hit=(unit [@ta sang:tarball])
+    =/  all=(list [n=@ta =sang:tarball *])  ~(tap by contents.u.fil.ball.dv)
+    |-  ^-  (unit [@ta sang:tarball])
+    ?~  all  ~
+    =/  t=tape  (trip n.i.all)
+    =/  l=@ud  (lent t)
+    ?:  &((gte l tl) =(tail (slag (sub l tl) t)))  `[n.i.all sang.i.all]
+    $(all t.all)
+  ?~  hit  (pure:m ~)
+  =/  res  (mule |.(!<(tool-state:nex-tools (need-vase:tarball +.u.hit))))
+  (pure:m `[-.u.hit ?:(?=(%& -.res) `p.res ~)])
+::  +tool-outcome: a run's result as the model's tool_result content and
+::  the trace note.
+++  tool-outcome
+  |=  res=(unit json)
+  ^-  [json @t]
+  ?~  res  [s+'(no result)' 'error']
+  ?.  ?=([%o *] u.res)  [s+'(bad result)' 'error']
   ?:  ?=([~ %s %'error'] (~(get by p.u.res) 'type'))
     =/  msg  (fall (bind (~(get by p.u.res) 'message') |=(j=json ?>(?=(%s -.j) p.j))) 'error')
-    (pure:m `[s+msg 'error'])
+    [s+msg 'error']
   ?:  ?=([~ %s %'mime'] (~(get by p.u.res) 'type'))
     =/  mt=@t   (jstr:clanker u.res 'media_type')
     =/  b64=@t  (jstr:clanker u.res 'data')
@@ -731,9 +911,9 @@
               ['data' s+b64]
           ==
       ==
-    (pure:m `[[%a ~[block]] (crip "{(trip mt)}, {(a-co:co (div (mul 3 (met 3 b64)) 4))} bytes")])
+    [[%a ~[block]] (crip "{(trip mt)}, {(a-co:co (div (mul 3 (met 3 b64)) 4))} bytes")]
   =/  txt=@t  (fall (bind (~(get by p.u.res) 'text') |=(j=json ?>(?=(%s -.j) p.j))) '')
-  (pure:m `[s+txt (crip "{(a-co:co (met 3 txt))} bytes")])
+  [s+txt (crip "{(a-co:co (met 3 txt))} bytes")]
 ::  +prune-runs: keep the newest `keep-runs` runs; cull the rest. Run
 ::  names are @da, so name order is time order. The culls are %cull
 ::  pokes to the tools nexus (its runs are its grubs).

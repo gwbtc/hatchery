@@ -14,6 +14,12 @@
 /<  chat-css    ./chat.css
 /<  files-js    ./files.js
 /<  marked-js   ./marked.min.js
+::  the explorer's panes for a trip, and the layouts its dirs open as
+::  ('./' paths resolve against the dir opened): the collection (trips |
+::  a tab per trip) and a trip (map | its tabs)
+/&  panes-js     ./panes.js
+/&  coll-layout  ./collection-layout.json
+/&  trip-layout  ./trip-layout.json
 ::  shared web components from /lib/ui (see web-test.hoon for the pattern)
 /&  sv-js       /lib/ui/split-view.js
 /&  tg-js       /lib/ui/tab-group.js
@@ -52,8 +58,15 @@
       %+  spin:loader  ball
       :~  (manifest:loader 0)
           [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'itinerary'] ['description' s+'Travel maps with pins']])]]
-          [%over %& [/ %'weir.json'] [[/ %json] (pairs:enjs:format ~[['poke' a+~[(pairs:enjs:format ~[['road' s+'/sys/bowl.sig'] ['why' s+'time, identity, entropy — every fiber op']]) (pairs:enjs:format ~[['road' s+'/sys/eyre/'] ['why' s+'serve its page over HTTP']]) (pairs:enjs:format ~[['road' s+'@geocode/main.sig'] ['why' s+'map search box geocoding']]) (pairs:enjs:format ~[['road' s+'@anthropic/main.sig'] ['why' s+'each trip agent makes metered model calls; the agent is nested here, so its reach is ours']])]] ['peek' a+~[(pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the geocode and anthropic proxies by name']]) (pairs:enjs:format ~[['road' s+'@geocode/calls/'] ['why' s+'read a geocode result']]) (pairs:enjs:format ~[['road' s+'@anthropic/calls/'] ['why' s+'the trip agents read their call results']])]]])]]
+          [%over %& [/ %'weir.json'] [[/ %json] (pairs:enjs:format ~[['poke' a+~[(pairs:enjs:format ~[['road' s+'/sys/bowl.sig'] ['why' s+'time, identity, entropy — every fiber op']]) (pairs:enjs:format ~[['road' s+'/sys/eyre/'] ['why' s+'serve its page over HTTP']]) (pairs:enjs:format ~[['road' s+'@geocode/main.sig'] ['why' s+'map search box geocoding']]) (pairs:enjs:format ~[['road' s+'@anthropic/main.sig'] ['why' s+'each trip agent makes metered model calls; the agent is nested here, so its reach is ours']]) (pairs:enjs:format ~[['road' s+'@clanker/main.sig'] ['why' s+'make each trip its clanker in the clanker collection (the trip workspace chat)']])]] ['peek' a+~[(pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find the geocode and anthropic proxies by name']]) (pairs:enjs:format ~[['road' s+'@geocode/calls/'] ['why' s+'read a geocode result']]) (pairs:enjs:format ~[['road' s+'@anthropic/calls/'] ['why' s+'the trip agents read their call results']])]]])]]
           [%over %& [/ %'tile.json'] [[/ %json] tile]]
+          ::  the explorer reads view.json: where to ask which pane a path
+          ::  under this root opens in (+pick-viewer), and the chrome of an
+          ::  explorer rooted here
+          [%over %& [/ %'view.json'] [[/ %json] (pairs:enjs:format ~[['viewers' s+'/grubbery/itinerary/api/viewer'] ['title' s+'itinerary'] ['icon' s+'/grubbery/itinerary/icon.svg']])]]
+          [%over %& [/ %'panes.js'] [[/ %mime] panes-js]]
+          [%over %& [/ %'collection-layout.json'] [[/ %mime] coll-layout]]
+          [%over %& [/ %'trip-layout.json'] [[/ %mime] trip-layout]]
           [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
           [%over %& [/ %'index.html'] [[/ %mime] index-html]]
           [%over %& [/ %'home.html'] [[/ %mime] home-html]]
@@ -115,6 +128,39 @@
             ?:  =([%app ~] suffix)  'index.html'
             i.suffix
           (serve-file eyre-id / filename)
+        ::  the explorer's panes and layouts
+        ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'panes.js' i.suffix) =(%'collection-layout.json' i.suffix)))
+          (serve-file eyre-id / i.suffix)
+        ::  /trip/<id>/layout.json → this trip's workspace layout: the template
+        ::  with the trip's id filled in, so its chat tab can name the trip's
+        ::  own clanker (@clanker/projects/itinerary/<id>.clanker/chats/plan)
+        ::  as a pane. Asking for the layout is what makes that clanker and
+        ::  its chat exist; forge does the same for a repo.
+        ?:  ?&(=(%'GET' method) ?=([%trip @ %'layout.json' ~] suffix))
+          =/  id=@ta  i.t.suffix
+          ::  only a trip that exists (has its doc) gets a workspace: asking
+          ::  for an unknown id must not conjure a trip dir
+          ;<  doc=(unit json)  bind:m  (load-itinerary id)
+          ?~  doc
+            ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'no such trip')])
+            (pure:m ~)
+          ;<  ~  bind:m  (ensure-trip id)
+          ;<  *  bind:m  (ensure-trip-clanker id)
+          ;<  tv=view:nexus  bind:m  (peek:io [%| 1 %& / %'trip-layout.json'] `[/ %mime])
+          ?.  ?=([%file *] tv)  (send-json eyre-id '{}')
+          =/  tpl=@t  `@t`q.q:!<(mime (need-vase:tarball sang.tv))
+          ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils [/application/json (as-octs:mimes:html (fill-trip tpl id))]))
+          (pure:m ~)
+        ::  GET /api/viewer?path=&kind=&view= — the explorer asks, per path
+        ::  under this root, how it opens (+pick-viewer)
+        ?:  ?&(=(%'GET' method) =([%api %viewer ~] suffix))
+          =/  gq  |=(k=@t ^-(@t (fall (~(get by (malt args)) k) '')))
+          ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@itinerary')
+          =/  abs=path  ?.(?=([~ %| *] root) / p.u.root)
+          =/  segs=path  =/(p=@t (gq 'path') ?:(=('' p) / (fall (mole |.((stab p))) /)))
+          =/  pick=(unit json)  (pick-viewer abs segs =('dir' (gq 'kind')) (gq 'view'))
+          ?~  pick  (send-json eyre-id '')
+          (send-json eyre-id (en:json:html u.pick))
         ::
         ::  GET /ui/components.js — welded web-component bundle
         ::
@@ -333,6 +379,11 @@
   |=  itin-id=@ta
   ^-  road:tarball
   [%| 1 %& (snoc `path`/itineraries itin-id) %'itinerary.json']
+::  the trip's attachments
+++  files-dir
+  |=  itin-id=@ta
+  ^-  road:tarball
+  [%| 1 %| (weld (snoc `path`/itineraries itin-id) `path`/files)]
 ::  the trip's own agent lives at /itineraries/<id>/agent
 ++  agent-path
   |=  itin-id=@ta
@@ -371,7 +422,13 @@
   ?.  ?=([%ball *] dv)
     ;<  roots=[anth=(unit path) geo=(unit path)]  bind:m  proxy-roots
     %+  make:io  (itin-dir itin-id)
-    &+[`[~ ~ %.n ~] (malt ~[[%agent (agent-bole roots)]])]
+    &+[`[~ ~ %.n ~] (malt `(list [@ta bole:tarball])`~[[%agent (agent-bole roots)] [%files empty-dir:loader]])]
+  ::  a trip is its doc, its files/ and its agent: an older trip missing
+  ::  one gets it here, so no tab of its workspace reads as absent
+  ;<  fv=view:nexus  bind:m  (peek:io (files-dir itin-id) ~)
+  ;<  ~  bind:m
+    ?:  ?=([%ball *] fv)  (pure:m ~)
+    (make:io (files-dir itin-id) &+empty-dir:loader)
   ;<  av=view:nexus  bind:m  (peek:io (agent-road itin-id [%| /]) ~)
   ?:  ?=([%ball *] av)  (pure:m ~)
   ;<  roots=[anth=(unit path) geo=(unit path)]  bind:m  proxy-roots
@@ -674,6 +731,145 @@
     ~              [%wait ~]
     [~ %news * *]  ?:(=(wire wire.u.in) [%done ~] [%skip ~])
   ==
+::  +pick-viewer: which pane a path under this root opens in, from where
+::  it is, whether it is a dir, and the moment's own ?view=. The answer
+::  is the explorer's viewers json: {layout} for a dir that opens as a
+::  layout, {view, script, args, follow} for a pane. `follow` names the
+::  roads the pane depends on, absolute (abs is this root), with the
+::  doc's body riding along so a pane redraws from the stream.
+::    /                                  the collection layout
+::    /itineraries  ?view=trips          the trips navigator (follows the dir)
+::    /itineraries/<id>                  the trip layout
+::    /itineraries/<id>/itinerary.json  ?view=map|trip|todos|places|events|schedule
+++  pick-viewer
+  |=  [abs=path segs=path dir=? view=@t]
+  ^-  (unit json)
+  =/  lay  |=(u=@t ^-((unit json) `(pairs:enjs:format ~[['layout' s+u]])))
+  =/  pane
+    |=  [v=@t road=@t body=? fold=?]
+    ^-  (unit json)
+    %-  some
+    %-  pairs:enjs:format
+    :~  ['view' s+v]
+        ['script' s+'/grubbery/itinerary/panes.js']
+        ['args' [%o ~]]
+        ['follow' a+~[(pairs:enjs:format ~[['road' s+road] ['body' b+body] ['fold' b+fold]])]]
+    ==
+  ?~  segs  ?:(=('' view) (lay '/grubbery/itinerary/collection-layout.json') ~)
+  ?:  ?=([%itineraries ~] segs)
+    ?.  =('trips' view)  ~
+    (pane 'itin-trips' (cat 3 (spat (weld abs /itineraries)) '/') %.n %.y)
+  ?:  ?=([%itineraries @ ~] segs)
+    ?:  &(dir =('' view))  (lay (crip "/grubbery/itinerary/trip/{(trip i.t.segs)}/layout.json"))
+    ~
+  ?:  ?=([%itineraries @ %'itinerary.json' ~] segs)
+    ::  (the test narrows segs to a cell, which weld's wet gate cannot
+    ::  mull; p is the plain path)
+    =/  p=path  segs
+    =/  road=@t  (spat (weld abs p))
+    ?:  =('map' view)       (pane 'itin-map' road %.y %.n)
+    ?:  =('trip' view)      (pane 'itin-trip' road %.y %.n)
+    ?:  =('todos' view)     (pane 'itin-todos' road %.y %.n)
+    ?:  =('places' view)    (pane 'itin-places' road %.y %.n)
+    ?:  =('events' view)    (pane 'itin-events' road %.y %.n)
+    ?:  =('schedule' view)  (pane 'itin-schedule' road %.y %.n)
+    ~
+  ~
+::  +ensure-trip-clanker: the trip's clanker in the clanker collection
+::  (itinerary/<id>.clanker): bundle "build" with the trip dir as its
+::  "repo", so its repo_read/repo_write/repo_edit tools reach the doc and
+::  the attachments, and a `plan` chat with the trip prompt. Made if
+::  missing by a poke to @clanker's main.sig; a host field that changed
+::  (the roads, the prompt) is folded in. ~ when no clanker app is
+::  linked or the poke never packs: the chat tab then reads as absent.
+++  ensure-trip-clanker
+  |=  id=@ta
+  =/  m  (fiber:fiber:nexus ,(unit ~))
+  ^-  form:m
+  ;<  cl=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
+  ?.  ?=([~ %| *] cl)  (pure:m ~)
+  ;<  it=(unit lane:tarball)  bind:m  (resolve-link:io '@itinerary')
+  ?.  ?=([~ %| *] it)  (pure:m ~)
+  ::  the geocode proxy, by name: the trip's geocode tool pokes it and
+  ::  reads its calls; absent, the roads are left out and the tool says so
+  ;<  geo=(unit lane:tarball)  bind:m  (resolve-link:io '@geocode')
+  =/  geo-roads=[poke=(list @t) peek=(list @t)]
+    ?.  ?=([~ %| *] geo)  [~ ~]
+    :-  ~[(crip "{(spud p.u.geo)}/main.sig")]
+    ~[(crip "{(spud p.u.geo)}/calls/")]
+  =/  trip=@t  (spat (weld p.u.it (snoc `path`/itineraries id)))
+  =/  strs  |=(l=(list @t) ^-(json a+(turn l |=(s=@t `json`s+s))))
+  =/  ensure=json
+    %-  pairs:enjs:format
+    :~  ['action' s+'ensure']
+        ['parent' s+'/itinerary']
+        ['name' s+id]
+        ['bundle' s+'trip']
+        ['system' s+(trip-clanker-prompt id trip)]
+        ['repo' s+trip]
+        :-  'roads'
+        %-  pairs:enjs:format
+        :~  ['peek' (strs (weld ~[(cat 3 trip '/')] peek.geo-roads))]
+            ['make' (strs ~[(cat 3 trip '/')])]
+            ['poke' (strs poke.geo-roads)]
+        ==
+        :-  'chats'
+        :-  %a
+        :~  %-  pairs:enjs:format
+            :~  ['name' s+'plan']
+                ['system' s+'You are planning this trip with its owner. Keep the itinerary document current as plans firm up: add pins, schedule entries and todos as they are decided, and say what you changed.']
+                ['policy' (pairs:enjs:format ~[['default' s+'allow']])]
+            ==
+        ==
+    ==
+  ::  one soft poke, no peek first and no deadline: our weir grants the
+  ::  POKE on the collection's main.sig and nothing else (a peek of it,
+  ::  or the behn timer a deadline needs, would be vetoed and crash this
+  ::  request). A veto or a nack answers `~ tang; a pack answers ~.
+  =/  sig=road:tarball  [%& %& p.u.cl %'main.sig']
+  ;<  res=(unit tang)  bind:m  (poke-soft:io sig [/ %json] ensure)
+  ?^  res  (pure:m ~)
+  (pure:m `~)
+::  +trip-clanker-prompt: the trip clanker's standing prompt: what the
+::  trip dir holds and how the document is shaped.
+++  trip-clanker-prompt
+  |=  [id=@ta at=@t]
+  ^-  @t
+  %-  crip
+  """
+  You are the assistant for the trip "{(trip id)}". The trip lives at
+  {(trip at)} in the grubbery namespace. Your tools work on it directly:
+  read_itinerary (the whole document), write_entry / delete_entry (a pin
+  or zone), write_field / delete_field (any field by slash path: desc,
+  dates, schedule/<id>, todos/<id>, pins/<id>/notes ...), geocode (names
+  to coordinates and back, never guess coordinates), and list_files /
+  read_file / write_file / delete_file over the attachments.
+
+  itinerary.json is the trip document, one JSON object:
+    name, desc (markdown), dates \{start, end} (ISO days), tz, center
+    [lat, lng], zoom, categories \{key: \{label, color}},
+    pins \{id: \{name, desc, cat, lat, lng, notes, from: [who]}},
+    zones \{id: \{name, desc, cat, points: [[lat, lng], ...]}},
+    schedule \{id: \{title, date, start, end, status: fixed|tentative, pin, notes}},
+    todos \{id: \{text, done}}.
+  Colour and grouping come from the linked pin's category. Mark anything
+  you guessed as tentative, and note sources in notes as "- source: X".
+  files/ holds the trip's attachments (tickets, schedules, photos): read
+  them when the owner points you at one.
+
+  Say what you changed.
+  """
+::  +fill-trip: a layout template with every {{trip}} filled with the id
+++  fill-trip
+  |=  [tpl=@t id=@ta]
+  ^-  @t
+  =/  mark=tape  "\{trip}"
+  =/  s=tape  (trip id)
+  =/  t=tape  (trip tpl)
+  |-  ^-  @t
+  =/  i=(unit @ud)  (find mark t)
+  ?~  i  (crip t)
+  $(t :(weld (scag u.i t) s (slag (add u.i (lent mark)) t)))
 ::  +jget: a json object's string field, or ~.
 ++  jget
   |=  [j=json k=@t]

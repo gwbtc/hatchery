@@ -612,7 +612,35 @@
     =/  chat=@t  =/(c=@t (arg 'chat') ?:(=('' c) 'main' c))
     ;<  log=json  bind:m
       (read-json [%| 1 %& (welp /projects (welp u.proj [%chats `@ta`chat ~])) %'log.chat-log'])
-    (send-json eyre-id (en:json:html ?:(?=([%a *] log) log [%a ~])))
+    =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
+    ::  a range of the log, never the whole thing: ?from=N (events N on),
+    ::  ?to=M (up to M, exclusive), ?tail=K (the last K); the answer says
+    ::  the total and where the slice starts, so a pane can hold a window
+    ::  and ask for what is past it. No range: the whole array (legacy).
+    =/  num
+      |=  k=@t
+      ^-  (unit @ud)
+      =/  s=@t  (arg k)
+      ?:(=('' s) ~ (rush s dem))
+    =/  from=(unit @ud)  (num 'from')
+    =/  to=(unit @ud)    (num 'to')
+    =/  tail=(unit @ud)  (num 'tail')
+    ?:  &(?=(~ from) ?=(~ to) ?=(~ tail))
+      (send-json eyre-id (en:json:html a+evs))
+    =/  total=@ud  (lent evs)
+    =/  f=@ud
+      ?^  from  (min u.from total)
+      ?^  tail  (sub total (min u.tail total))
+      0
+    =/  t=@ud  ?^(to (min u.to total) total)
+    =/  slice=(list json)  ?:((gte f t) ~ (scag (sub t f) (slag f evs)))
+    %+  send-json  eyre-id
+    %-  en:json:html
+    %-  pairs:enjs:format
+    :~  ['total' (numb:enjs:format total)]
+        ['from' (numb:enjs:format f)]
+        ['events' a+slice]
+    ==
   ::  send is a poke and nothing else: the clanker's weir was set when it
   ::  was made and is kept current by +sand-watch, not here
   ?:  ?&(=(%'POST' method) =([%api %send ~] suffix))
@@ -977,13 +1005,18 @@
     |=  [proj=path chat=@ta]
     ^-  (unit json)
     =/  cdir=path  (welp coll (welp proj [%chats chat ~]))
+    ::  the log is followed by NAME only: the pane holds a window of it and
+    ::  fetches what is past that window on each change (/api/log?from=),
+    ::  never the whole array on the stream
     %-  ans
     :^  'chat'  '/grubbery/clanker/viewer.js'
       (pairs:enjs:format ~[['proj' s+(spat proj)] ['chat' s+chat]])
-    ~[(fol (snoc cdir %'log.chat-log') & |)]
+    ~[(fol (snoc cdir %'log.chat-log') | |)]
   ::  (each ?= is the test of its own ?: so it narrows the path it matched)
   ?.  dir
-    ?:  =('chat-log' blot)
+    ::  a chat's log, by its blot or by its name (a restored log may sit
+    ::  as plain mime until the agent next writes it)
+    ?:  |(=('chat-log' blot) ?=([%'log.chat-log' *] f))
       ?.  ?=([@ @ %chats *] f)  ~
       ::  ?view=prompt on a chat's log: the chat's own prompt, as the
       ::  record form (its system.md may not exist yet, so the log is the
