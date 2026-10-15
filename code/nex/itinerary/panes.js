@@ -47,6 +47,13 @@
       '.it-meta{padding:10px 14px 0;color:#57606a;font-size:12px}' +
       '.it-todo{display:flex;align-items:baseline;gap:8px;padding:6px 12px;cursor:pointer;border-bottom:1px solid #f0f2f4}.it-todo input{accent-color:#1a1a1a}.it-todo .t{flex:1}.it-todo.done .t{text-decoration:line-through;color:#a0a6ae}' +
       '.it-todo .x{color:#c4c8cd;visibility:hidden;padding:0 4px}.it-todo:hover .x{visibility:visible}.it-todo .x:hover{color:#c0392b}' +
+      '.it-armed{background:#fff5f5!important;box-shadow:inset 3px 0 0 #cf222e!important}.it-arm{margin-left:auto;flex:none;font-size:11px;color:#cf222e;white-space:nowrap;padding-left:8px;display:inline-flex;align-items:center;gap:6px}.it-card.it-armed{position:relative}.it-card .it-arm{position:absolute;right:10px;top:9px}.blk .it-arm{display:block;padding:0}' +
+      // a write in flight: a small ring where the action happened, until the
+      // doc comes back and the pane redraws; a failure flashes the place red
+      '@keyframes it-spin{to{transform:rotate(360deg)}}.it-spin{display:inline-block;width:11px;height:11px;border:1.5px solid #d0d7de;border-top-color:#57606a;border-radius:50%;animation:it-spin .7s linear infinite;vertical-align:-1px;flex:none}' +
+      '.it-todo .it-spin{width:13px;height:13px;margin:0 1px;position:relative;top:2px}.it-todo.busy input{display:none}.it-todo.busy .x{visibility:hidden}' +
+      '.it-fail{background:#fff0f0!important;box-shadow:inset 3px 0 0 #cf222e!important;transition:background .6s}' +
+      '.it-new-row{position:relative}.it-new-row .it-spin{position:absolute;right:22px;top:50%;margin-top:-6px}.it-new.fail{border-color:#cf222e!important;border-style:solid}' +
       '.it-new{margin:8px 12px;padding:7px 10px;border:1.5px dashed #d6dae0;border-radius:8px;font:inherit;font-size:12.5px;outline:none;width:calc(100% - 24px);box-sizing:border-box}.it-new:focus{border-color:#8a919a;border-style:solid}' +
       '.it-card{margin:8px 10px 0;border:1px solid #e6e8eb;border-left:3px solid var(--sc,#6a7280);border-radius:8px;padding:9px 11px}.it-card.tentative{border-style:dashed;border-left-style:dashed}' +
       '.it-card .h{display:flex;align-items:center;gap:7px}.it-card .t{font-weight:600;flex:1}.it-card .w{font-size:11px;color:#8a919a;margin-top:2px;font-variant-numeric:tabular-nums}.it-card .n{font-size:12px;color:#79808a;margin-top:4px;white-space:pre-wrap}' +
@@ -89,13 +96,33 @@
   function docPane(root, opts, draw) {
     css();
     var box = el('div', 'it'); root.appendChild(box);
-    var doc = null, dead = false;
-    var state = { doc: null, redraw: function () { if (!dead && state.doc) draw(box, state.doc); } };
+    var dead = false;
+    var state = { doc: null, seq: 0, redraw: function () { if (!dead && state.doc) { state.seq++; draw(box, state.doc); } } };
+    function refetch() { return get(docOf(opts.url)).then(function (d) { if (!dead) { state.doc = d; state.redraw(); } }).catch(function () {}); }
+    // a write of the doc. The stream redraws the pane when the doc lands,
+    // which is what clears a spinner; if no redraw comes within a few
+    // seconds the pane refetches, so a spinner never outlives the write.
+    // A failed write runs `fail` (undo the optimistic change), refetches,
+    // and rejects so the caller can show it where it happened
+    state.commit = function (pr, fail) {
+      var at = state.seq;
+      return pr.then(function (r) {
+        if (r && r.ok === false) throw new Error(r.status + '');
+        setTimeout(function () { if (!dead && state.seq === at) refetch(); }, 2500);
+      }, function (e) { if (fail) fail(e); refetch(); throw e; });
+    };
     get(docOf(opts.url)).then(function (d) { state.doc = d; state.redraw(); }).catch(function (e) { box.appendChild(el('div', 'it-err', 'could not load the trip: ' + e.message)); });
     return { box: box, state: state, handle: {
       destroy: function () { dead = true; box.remove(); },
-      onUpdate: function (ev) { if (ev && ev.body && typeof ev.body === 'object') { state.doc = ev.body; state.redraw(); } else get(docOf(opts.url)).then(function (d) { state.doc = d; state.redraw(); }).catch(function () {}); }
+      onUpdate: function (ev) { if (ev && ev.body && typeof ev.body === 'object') { state.doc = ev.body; state.redraw(); } else refetch(); }
     } };
+  }
+  // a write that failed, shown where it was asked for: the place flashes
+  // red for a moment and its spinner goes
+  function flashFail(node) {
+    if (!node) return;
+    node.classList.remove('busy'); var s = node.querySelector('.it-spin'); if (s) s.remove();
+    node.classList.add('it-fail'); setTimeout(function () { node.classList.remove('it-fail'); }, 1600);
   }
   function focusPin(url, id) { window.dispatchEvent(new CustomEvent('itin-focus', { detail: { doc: docOf(url), pin: id } })); }
 
@@ -322,12 +349,44 @@
   // the stream: rows carry a key (_key), and the cursor is put back on the
   // same key after a redraw, so Enter on a to-do (which writes the doc and
   // redraws) leaves the cursor where it was
-  function keyedNav(box, rowSel, open) {
+  //
+  // Delete / Backspace on the cursored row arms its removal (the row says
+  // so); Enter then removes it, any other key backs out. The pane host's
+  // close works the same way. `remove(row)` writes the doc; the redraw
+  // puts the cursor on the row that took its place.
+  function keyedNav(box, rowSel, open, remove) {
     if (!window.navKeys) return null;
     var nk = window.navKeys(box, { rows: function () { return Array.prototype.slice.call(box.querySelectorAll(rowSel)); }, open: open });
-    var last = null;
-    nk.remember = function () { var c = nk.cursor(); last = c ? c._key : last; };
+    var last = null, armed = null, pinned = false;
+    function disarm() { if (!armed) return; armed.classList.remove('it-armed'); var l = armed.querySelector('.it-arm'); if (l) l.remove(); armed = null; }
+    function arm(row) { disarm(); armed = row; row.classList.add('it-armed'); row.appendChild(el('span', 'it-arm', 'delete? ⏎ / esc')); }
+    if (remove) box.addEventListener('keydown', function (e) {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (armed) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        var row = armed, l = row.querySelector('.it-arm');
+        armed = null; row.classList.remove('it-armed');
+        if (e.key !== 'Enter') { if (l) l.remove(); return; }
+        var rs = Array.prototype.slice.call(box.querySelectorAll(rowSel)), i = rs.indexOf(row);
+        var next = rs[i + 1] || rs[i - 1]; last = next ? next._key : null; pinned = true;   // the cursor lands on the neighbour
+        if (l) { l.textContent = ''; l.appendChild(el('span', 'it-spin')); }   // the label becomes the spinner
+        row.classList.add('busy');
+        Promise.resolve(remove(row)).catch(function () {
+          pinned = false; if (l) { l.textContent = 'failed'; setTimeout(function () { l.remove(); }, 1600); }
+          flashFail(row);
+        });
+        return;
+      }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      var c = nk.cursor(); if (!c) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      arm(c);
+    }, true);
+    nk.remember = function () { var c = nk.cursor(); if (armed) return; if (pinned) { pinned = false; return; } last = c ? c._key : last; };
+    nk.pin = function (k) { last = k; pinned = true; };   // the cursor for the next redraw, whatever it is now
     nk.restore = function () {
+      armed = null;
       nk.mark();
       if (!last) return;
       var rs = Array.prototype.slice.call(box.querySelectorAll(rowSel));
@@ -341,6 +400,8 @@
     var id = tripIdOf(opts.url);
     var p = docPane(root, opts, function (box, doc) {
       if (nk) nk.remember();
+      // a redraw while typing a new to-do keeps the box and its draft
+      var ae = document.activeElement, typing = !!(ae && ae.classList && ae.classList.contains('it-new') && box.contains(ae)), draft = typing ? ae.value : '';
       box.textContent = '';
       var body = el('div', 'body'); box.appendChild(body);
       var todos = doc.todos || {}, ids = Object.keys(todos);
@@ -349,18 +410,40 @@
       ids.forEach(function (tid) {
         var t = todos[tid]; var row = el('label', 'it-todo' + (t.done ? ' done' : ''));
         var cb = el('input'); cb.type = 'checkbox'; cb.checked = !!t.done;
-        cb.onchange = function () { t.done = cb.checked; putDoc(id, doc).catch(function () {}); };
-        var x = el('span', 'x', '×'); x.onclick = function (e) { e.preventDefault(); delete doc.todos[tid]; putDoc(id, doc).catch(function () {}); };
+        // toggle: the spinner stands in for the checkbox until the doc is back
+        cb.onchange = function () {
+          row.classList.add('busy'); row.insertBefore(el('span', 'it-spin'), cb);
+          t.done = cb.checked;
+          p.state.commit(putDoc(id, doc), function () { t.done = !t.done; cb.checked = t.done; }).catch(function () { flashFail(row); });
+        };
+        var x = el('span', 'x', '×');
+        x.onclick = function (e) { e.preventDefault(); row.classList.add('busy'); row.appendChild(el('span', 'it-spin')); delete doc.todos[tid]; p.state.commit(putDoc(id, doc)).catch(function () { flashFail(row); }); };
         row.append(cb, el('span', 't', t.text || ''), x); body.appendChild(row);
         row._key = tid;
         row._open = function () { cb.checked = !cb.checked; cb.onchange(); };   // Enter toggles
       });
-      var inp = el('input', 'it-new'); inp.placeholder = 'Add a to-do…'; inp.spellcheck = false;
-      inp.addEventListener('keydown', function (e) { if (e.key !== 'Enter') return; var v = inp.value.trim(); if (!v) return; doc.todos = doc.todos || {}; doc.todos['t-' + Date.now().toString(36)] = { text: v, done: false }; inp.value = ''; putDoc(id, doc).catch(function () {}); });
-      box.appendChild(inp);
+      // the add box. Enter adds and puts the cursor on the new to-do, back in
+      // the list; shift-Enter adds and stays here for another; Esc returns to
+      // the list; Tab from the list reaches it
+      var nrow = el('div', 'it-new-row'), inp = el('input', 'it-new'); inp.placeholder = 'Add a to-do…'; inp.spellcheck = false;
+      inp.title = '⏎ adds, back to the list · ⇧⏎ adds and stays for another · esc back to the list';
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.value = ''; if (nk) nk.focus(); return; }
+        if (e.key !== 'Enter') return;
+        e.preventDefault(); e.stopPropagation();
+        var v = inp.value.trim();
+        if (!v) { if (!e.shiftKey && nk) nk.focus(); return; }
+        var tid = 't-' + Date.now().toString(36);
+        doc.todos = doc.todos || {}; doc.todos[tid] = { text: v, done: false };
+        inp.value = ''; inp.classList.remove('fail'); nrow.appendChild(el('span', 'it-spin'));
+        if (!e.shiftKey && nk) { nk.pin(tid); nk.focus(); }
+        p.state.commit(putDoc(id, doc), function () { delete doc.todos[tid]; }).catch(function () { inp.classList.add('fail'); inp.value = v; var s = nrow.querySelector('.it-spin'); if (s) s.remove(); });
+      });
+      nrow.appendChild(inp); box.appendChild(nrow);
+      if (typing) { inp.value = draft; inp.focus(); }
       if (nk) nk.restore();
     });
-    var nk = keyedNav(p.box, '.it-todo', function (row) { if (row._open) row._open(); });
+    var nk = keyedNav(p.box, '.it-todo', function (row) { if (row._open) row._open(); }, function (row) { var d = p.state.doc; if (!d || !d.todos) return; var was = d.todos[row._key]; delete d.todos[row._key]; return p.state.commit(putDoc(id, d), function () { d.todos[row._key] = was; }); });
     var h = p.handle, d = h.destroy; h.destroy = function () { if (nk) nk.destroy(); d(); };
     return h;
   }
@@ -426,8 +509,12 @@
       var s2 = el('div', 'it-sec'); s2.style.marginTop = '8px'; s2.append(el('span', null, 'Unscheduled'), el('span', 'n', String(undated.length))); body.appendChild(s2);
       if (!undated.length) body.appendChild(el('div', 'it-empty', 'no unscheduled events'));
       undated.forEach(function (i) { body.appendChild(eventCard(doc, i, sched[i], opts.url)); });
+      if (nk) nk.restore();
     });
-    return p.handle;
+    var id = tripIdOf(opts.url);
+    var nk = keyedNav(p.box, '.it-card', function (row) { if (row._open) row._open(); }, function (row) { var d = p.state.doc; if (!d || !d.schedule) return; var was = d.schedule[row._key]; delete d.schedule[row._key]; return p.state.commit(putDoc(id, d), function () { d.schedule[row._key] = was; }); });
+    var h = p.handle, d = h.destroy; h.destroy = function () { if (nk) nk.destroy(); d(); };
+    return h;
   }
 
   // ---- schedule: the week grid ----
@@ -443,6 +530,7 @@
   }
   function mountSchedule(root, opts) {
     var p = docPane(root, opts, function (box, doc) {
+      if (nk) nk.remember();
       box.textContent = '';
       var list = dayList(doc), sched = doc.schedule || {}, today = isoDay(new Date());
       if (!list.length) { box.appendChild(el('div', 'it-empty', 'no dates set for this trip, and nothing scheduled: set dates (write_field dates, or the trip tab) to see the week')); return; }
@@ -470,13 +558,19 @@
           b.appendChild(el('div', 'bt', s.title || id)); if (s.start) b.appendChild(el('div', 'bm', s.start + (s.end ? '–' + s.end : '')));
           b.title = (s.title || id) + '\n' + whenText(s, true) + (s.notes ? '\n\n' + s.notes : '');
           if (s.pin) b.addEventListener('click', function () { focusPin(opts.url, s.pin); });
+          b._key = id;
+          b._open = function () { if (s.pin) focusPin(opts.url, s.pin); };
           if (m0 === null) all.appendChild(b);
           else { var m1 = minutes(s.end), top = ((m0 / 60) - H0) * PX, hgt = m1 !== null ? Math.max(24, ((m1 - m0) / 60) * PX - 2) : 32; b.style.top = Math.max(0, top) + 'px'; b.style.height = hgt + 'px'; b.classList.add('timed'); body.appendChild(b); }
         });
         col.appendChild(body); days.appendChild(col);
       });
+      if (nk) nk.restore();
     });
-    return p.handle;
+    var id = tripIdOf(opts.url);
+    var nk = keyedNav(p.box, '.blk', function (row) { if (row._open) row._open(); }, function (row) { var d = p.state.doc; if (!d || !d.schedule) return; var was = d.schedule[row._key]; delete d.schedule[row._key]; return p.state.commit(putDoc(id, d), function () { d.schedule[row._key] = was; }); });
+    var h = p.handle, d = h.destroy; h.destroy = function () { if (nk) nk.destroy(); d(); };
+    return h;
   }
 
   window.Viewers = window.Viewers || {};

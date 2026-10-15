@@ -26,6 +26,18 @@
       '.cv-msg.user{align-items:flex-end}' +
       '.cv-msg .body{font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;max-width:90%}' +
       '.cv-msg.user .body{background:#ddf4ff;border-radius:10px;padding:8px 12px;max-width:80%}' +
+      '.cv-msg.bot .body{white-space:normal}' +
+      '.cv-msg.bot .body>:first-child{margin-top:0}.cv-msg.bot .body>:last-child{margin-bottom:0}' +
+      '.cv-msg.bot .body p,.cv-msg.bot .body ul,.cv-msg.bot .body ol,.cv-msg.bot .body blockquote,.cv-msg.bot .body table{margin:0 0 10px}' +
+      '.cv-msg.bot .body ul,.cv-msg.bot .body ol{padding-left:22px}.cv-msg.bot .body li{margin:2px 0}' +
+      '.cv-msg.bot .body h1,.cv-msg.bot .body h2,.cv-msg.bot .body h3,.cv-msg.bot .body h4{margin:12px 0 6px;font-size:14px;font-weight:600}' +
+      '.cv-msg.bot .body code{background:#eff1f3;padding:1px 4px;border-radius:3px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}' +
+      '.cv-msg.bot .body pre{margin:0 0 10px;padding:8px 10px;background:#f6f8fa;border:1px solid #eaeef2;border-radius:6px;overflow:auto;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}' +
+      '.cv-msg.bot .body pre code{background:none;padding:0}' +
+      '.cv-msg.bot .body blockquote{border-left:3px solid #d0d7de;padding-left:10px;color:#57606a}' +
+      '.cv-msg.bot .body a{color:#0969da;text-decoration:none}.cv-msg.bot .body a:hover{text-decoration:underline}' +
+      '.cv-msg.bot .body table{border-collapse:collapse;font-size:13px}.cv-msg.bot .body th,.cv-msg.bot .body td{border:1px solid #d0d7de;padding:3px 8px;text-align:left}' +
+      '.cv-msg.bot .body hr{border:0;border-top:1px solid #d0d7de;margin:10px 0}' +
       '.cv-msg.user.pending .body{opacity:.55}' +
       '.cv-meta{font-size:11px;color:#8b949e}' +
       '.cv-trace{display:flex;flex-direction:column;gap:2px;max-width:90%}' +
@@ -221,9 +233,20 @@
       }
       return box;
     }
+    // the model's text is markdown (the explorer page carries marked in
+    // its kit); the user's stays text. Without marked, text as it is.
+    function renderMarkdown(md) {
+      if (window.marked) { try { return window.marked.parse(md); } catch (e) { /* fall through */ } }
+      return null;
+    }
     function msg(cls, label, text) {
       var m = el('div', 'cv-msg ' + cls); m.appendChild(el('div', 'who', label));
-      if (text) m.appendChild(el('div', 'body', text));
+      if (text) {
+        var body = el('div', 'body');
+        var html = cls === 'bot' ? renderMarkdown(text) : null;
+        if (html != null) body.innerHTML = html; else body.textContent = text;
+        m.appendChild(body);
+      }
       return m;
     }
     function render(log, keepScroll) {
