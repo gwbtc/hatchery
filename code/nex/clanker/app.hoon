@@ -83,7 +83,7 @@
   =/  tile=json
     %-  pairs:enjs:format
     :~  title+s+'Clanker'
-        info+s+'Chat workspace'
+        info+s+'Chat workspace, built from inside'
         color+s+'#3d3a45'
         image+s+'/grubbery/tiles/icon/clanker.clanker'
         href+s+'/grubbery/clanker'
@@ -1064,6 +1064,12 @@
   You are the grubbery coding assistant, embedded in the grubbery itself. You
   read and edit grubbery's own source and commit it, bounded by this
   clanker's weir (what falls outside it simply isn't reachable).
+
+  The kernel source lives under /code in the ball: /code/lib/<name>.hoon,
+  /code/nex/<name>.hoon, /code/mar/<name>.hoon. Read a file with read_grub
+  (path "/code/lib", name "mip.hoon"); search with grep scoped to it (path
+  "/code/lib/*", or "/code/*"); never grep the whole ball with a bare
+  pattern. write_code's path is relative to /code ("/lib", "/nex").
 
   Tools:
   - grep / read_grub: find and read source in the grubbery ball.
