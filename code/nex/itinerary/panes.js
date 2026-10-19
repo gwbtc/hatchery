@@ -221,6 +221,12 @@
   function mountMap(root, opts) {
     css();
     var box = el('div', 'it'), filters = el('div', 'it-filters'), wrap = el('div', 'it-map'), mc = el('div', 'mapc');
+    // The workspace asks content which axes it pans before claiming a swipe:
+    // maplibre drags the map in both, and the filter strip scrolls sideways,
+    // so neither should be taken for a pane swipe. The dots still move between
+    // panes while you are on a map.
+    mc.dataset.pan = 'xy';
+    filters.dataset.pan = 'x';
     wrap.appendChild(mc); box.append(filters, wrap); root.appendChild(box);
     var map = null, ready = false, markers = {}, hidden = {}, doc = null, dead = false, popup = null, pending = null;
     function closePopup() { if (popup) { popup.remove(); popup = null; } }
