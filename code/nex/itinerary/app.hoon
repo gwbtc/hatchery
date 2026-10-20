@@ -756,8 +756,11 @@
         ['follow' a+~[(pairs:enjs:format ~[['road' s+road] ['body' b+body] ['fold' b+fold]])]]
     ==
   ?~  segs  ?:(=('' view) (lay '/grubbery/itinerary/collection-layout.json') ~)
+  ::  trips is the ONLY way to look at this dir, so the bare dir opens it
+  ::  too — the same courtesy / and a trip dir already get. Naming the view
+  ::  bought nothing and made the moment depend on an argument.
   ?:  ?=([%itineraries ~] segs)
-    ?.  =('trips' view)  ~
+    ?.  |(=('trips' view) =('' view))  ~
     (pane 'itin-trips' (cat 3 (spat (weld abs /itineraries)) '/') %.n %.y)
   ?:  ?=([%itineraries @ ~] segs)
     ?:  &(dir =('' view))  (lay (crip "/grubbery/itinerary/trip/{(trip i.t.segs)}/layout.json"))
