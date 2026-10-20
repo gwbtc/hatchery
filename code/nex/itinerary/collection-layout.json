@@ -1,1 +1,1 @@
-{"div": {"dir": "horizontal", "ratio": 0.22, "open": {"a": {"to": "b", "mode": "tab"}}, "a": {"tabs": [{"label": "trips", "entries": [{"path": "./itineraries?view=trips"}], "cursor": 0}]}, "b": {"bar": true, "nav": false, "tabs": [{"entries": [], "cursor": -1}]}}}
+{"div": {"dir": "horizontal", "ratio": 0.22, "a": {"open": {"to": "#content", "mode": "tab"}, "tabs": [{"label": "trips", "entries": [{"path": "./itineraries?view=trips"}], "cursor": 0}]}, "b": {"id": "content", "bar": true, "nav": false, "tabs": [{"entries": [], "cursor": -1}]}}}

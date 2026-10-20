@@ -1,4 +1,3 @@
 {"div":{"dir":"horizontal","ratio":0.24,
- "open":{"a":{"to":"b","mode":"tab"}},
- "a":{"tabs":[{"label":"clankers","entries":[{"path":"./?view=collection"}],"cursor":0}]},
- "b":{"bar":true,"nav":false,"tabs":[{"entries":[],"cursor":-1}]}}}
+ "a":{"open":{"to":"#content","mode":"tab"},"tabs":[{"label":"clankers","entries":[{"path":"./?view=collection"}],"cursor":0}]},
+ "b":{"id":"content","bar":true,"nav":false,"tabs":[{"entries":[],"cursor":-1}]}}}
