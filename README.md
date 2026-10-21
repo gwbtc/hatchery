@@ -95,6 +95,12 @@ not the place to edit. Everything below is MCP calls against the ship.
    (`/nex/itinerary` `agent`, `/lib/nostr-bundle/tools` `nostr-feed`). A
    compile error shows nowhere else. The ghostprompter was broken for four
    versions before anyone ran this.
+
+   Check that the thing you compiled is YOURS. `check_bin` answers about the
+   namespace as it stands, so a bump that has not landed yet gets you a
+   cheerful "compiled successfully" about the previous build. `grep` the
+   deployed copy (`desk/code/nex/<app>/...`, not `data/tree/`) for an arm or
+   a comment you just wrote, then believe the check.
 4. `browse` the instance under `desk/data` to see it is born. `read_weir` on
    it to see what it may reach.
 5. A new or changed `weir.json` is a new ask. It shows in the shell's Permits
@@ -104,9 +110,15 @@ not the place to edit. Everything below is MCP calls against the ship.
    was a one-line fix in this repo.
 6. When it works, commit and push through the lane: `git_cmd` (call_tool
    with `path: /apps/forge.git_forge/tools`, `path` arg = the repo instance)
-   with `add <file>` per file or bare `add` for everything, then
-   `commit -m "..."`, then `push`. Read `run.git-action` after each; the
-   log entry says `staged N path(s)`, the commit hash, or the refusal.
+   with `add <file>` per file, then `commit -m "..."`, then `push`. Read
+   `run.git-action` after each; the log entry says `staged N path(s)`, the
+   commit hash, or the refusal.
+
+   Name the paths. Bare `add` is git's "all" and this tree often has more
+   than one agent working in it, so it stages their half-finished work into
+   your commit — check `data/ui/status.json` and read `staged` before you
+   commit, it should list only your files. `add .` is not "all" either: `.`
+   is taken as a literal path, matches nothing, and stages nothing.
    `data/ui/status.json` and `current.json` are rebuilt on the data
    nexus's next reload, so they can lag the lane's log by a moment. The
    push speaks git's own protocol: it packs the objects the remote lacks
