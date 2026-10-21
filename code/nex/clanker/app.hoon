@@ -579,6 +579,11 @@
     (send-json eyre-id (en:json:html (tree-json ball.dv)))
   ::  with chat=, the record is that chat's own prompt (chats/<chat>/
   ::  system.md, the role it plays on top of the clanker's), nothing else
+  ::  the providers a clanker may be pointed at, from the registry in
+  ::  lib/clanker: {name, label, dialect, route}. The config form offers
+  ::  these and reads each one's /api/models for its models.
+  ?:  ?&(=(%'GET' method) =([%api %providers ~] suffix))
+    (send-json eyre-id (en:json:html providers-json:clanker))
   ?:  ?&(=(%'GET' method) =([%api %record ~] suffix))
     =/  proj=(unit path)  (parse-proj (arg 'path'))
     ?~  proj  (bad eyre-id 'path required')
@@ -1101,9 +1106,12 @@
       :^  'recipe'  '/grubbery/clanker/recipe.js'
         (pairs:enjs:format ~[['proj' s+(spat proj)] ['name' s+i.f]])
       ~[(fol (welp coll (welp proj [%recipes i.f ~])) & |)]
-    ::  a clanker's record (config and standing prompt) or its tool
-    ::  policy, as forms, both opened on its config.json
-    ?.  |(=('record' view) =('tools' view))  ~
+    ::  a clanker's standing prompt, its settings, or its tool policy, as
+    ::  three forms, all opened on its config.json. `record` is the prompt
+    ::  alone: the model and the provider live in `config`, so the two are
+    ::  edited and saved apart (the api merges, so neither clobbers the
+    ::  other's fields).
+    ?.  ?|(=('record' view) =('tools' view) =('config' view))  ~
     ?.  ?=([%'config.json' @ *] f)  ~
     ?.  (is-clanker i.t.f)  ~
     =/  proj=path  (flop t.f)
@@ -1112,9 +1120,13 @@
       %-  ans
       :^  'tools'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
       ~[(fol (snoc pdir %'tools.json') | |) (fol (welp pdir /tools/code/lib/tools) | &)]
+    ?:  =('config' view)
+      %-  ans
+      :^  'config'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
+      ~[(fol (snoc pdir %'config.json') & |)]
     %-  ans
     :^  'record'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
-    ~[(fol (snoc pdir %'config.json') & |) (fol (snoc pdir %'system.md') | |)]
+    ~[(fol (snoc pdir %'system.md') | |)]
   ::  a clanker's chats/ directory is its list of chats, live on the dir
   ?:  ?=([%chats @ *] f)
     =/  proj=path  (flop t.f)

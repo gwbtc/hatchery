@@ -7,8 +7,10 @@
 //   collection  the collection root or a category: its categories and
 //               clankers, one row each, in a sidebar. args {parent}
 //   chats       a clanker's chats/: one row per chat, in a sidebar. args {proj}
-//   record      a clanker's config + standing prompt, or (args.chat) one
-//               chat's own prompt, as a form. args {proj, chat?}
+//   record      a clanker's standing prompt, or (args.chat) one chat's
+//               own prompt, as a form. args {proj, chat?}
+//   config      which endpoint answers a clanker and with which model,
+//               as a form over the provider registry. args {proj}
 (function () {
   'use strict';
   var API = '/grubbery/clanker';
@@ -316,7 +318,10 @@
     return sb.handle;
   }
 
-  // ---- record: config + standing prompt, or one chat's own prompt ----
+  // ---- record: the standing prompt, or one chat's own ----
+  // The model and the provider are the config pane's; this is the prose.
+  // Both save through /api/record, which merges field by field, so neither
+  // pane clobbers what the other owns.
   function mountRecord(root, opts) {
     css();
     var proj = opts.args && typeof opts.args.proj === 'string' ? opts.args.proj : null;
@@ -328,36 +333,119 @@
     var qs = '?path=' + encodeURIComponent(proj) + (chat ? '&chat=' + encodeURIComponent(chat) : '');
     var box = el('div', 'ck-rec');
     box.appendChild(el('h2', null, chat ? short(proj) + ' / ' + chat : short(proj)));
-    var extra = el('div', 'extra mono', ''); box.appendChild(extra);
-    var model = el('input'), max = el('input'); model.spellcheck = false; max.type = 'number'; max.min = '1';
-    if (!chat) {
-      var grid = el('div', 'grid');
-      var l1 = el('label'); l1.appendChild(el('span', null, 'model')); l1.appendChild(model);
-      var l2 = el('label'); l2.appendChild(el('span', null, 'max tokens')); l2.appendChild(max);
-      grid.appendChild(l1); grid.appendChild(l2); box.appendChild(grid);
-    }
     var sys = el('textarea'); sys.spellcheck = false;
     var l3 = el('label', 'grow'); l3.appendChild(el('span', null, chat ? 'this chat’s prompt, on top of ' + short(proj) + '’s' : 'standing prompt (system.md)')); l3.appendChild(sys); box.appendChild(l3);
     var foot = el('div', 'foot'), save = el('button', null, 'save'), note = el('span', 'note', '');
     foot.appendChild(save); foot.appendChild(note); box.appendChild(foot);
     root.appendChild(box);
-    [model, max, sys].forEach(function (i) { i.addEventListener('input', function () { dirty = true; note.textContent = 'unsaved changes'; }); });
+    sys.addEventListener('input', function () { dirty = true; note.textContent = 'unsaved changes'; });
     var rec = null;
-    function fill() {
-      if (dirty || !rec) return;
-      var r = rec.record || {};
-      model.value = r.model || ''; max.value = r.max_tokens != null ? r.max_tokens : ''; sys.value = rec.system || '';
-      var ks = Object.keys(r).filter(function (k) { return ['name', 'model', 'max_tokens'].indexOf(k) < 0; });
-      extra.textContent = ks.map(function (k) { return k + ': ' + (typeof r[k] === 'string' ? r[k] : JSON.stringify(r[k])); }).join('\n');
-    }
+    function fill() { if (dirty || !rec) return; sys.value = rec.system || ''; }
     function load() {
       if (dead) return;
       get(API + '/api/record' + qs).then(function (j) { if (!dead) { rec = j; fill(); } }, function (e) { if (!dead) note.textContent = 'could not load: ' + e.message; });
     }
     function doSave() {
       save.disabled = true; note.textContent = 'saving…';
-      var body = chat ? { path: proj, chat: chat, system: sys.value } : { path: proj, model: model.value.trim(), system: sys.value };
-      var mt = parseInt(max.value, 10); if (!chat && !isNaN(mt)) body.max_tokens = mt;
+      var body = chat ? { path: proj, chat: chat, system: sys.value } : { path: proj, system: sys.value };
+      post('/api/record', body)
+        .then(function () { dirty = false; note.textContent = 'saved'; load(); }, function (e) { note.textContent = 'save failed: ' + e.message; })
+        .then(function () { save.disabled = false; });
+    }
+    save.addEventListener('click', doSave);
+    box.addEventListener('keydown', function (e) { if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); doSave(); } });
+    load();
+    return handle;
+  }
+
+  // ---- config: which endpoint answers, which model, how many tokens ----
+  // The providers are the ship's registry (/api/providers, from the list in
+  // lib/clanker); the models come from the chosen provider's own
+  // /api/models, the one shape every model-endpoint nexus answers. The
+  // model stays a free-text field with the catalogue as typeahead, so an id
+  // the catalogue has not synced is still reachable.
+  function mountConfig(root, opts) {
+    css();
+    var proj = opts.args && typeof opts.args.proj === 'string' ? opts.args.proj : null;
+    root.innerHTML = ''; root.classList.add('ck');
+    var dead = false, dirty = false;
+    var handle = { destroy: function () { dead = true; root.innerHTML = ''; root.classList.remove('ck'); }, onUpdate: function () { load(); } };
+    if (!proj) { root.appendChild(el('div', 'ck-err', 'no clanker here')); return handle; }
+    var box = el('div', 'ck-rec');
+    box.appendChild(el('h2', null, short(proj) + ' · config'));
+    box.appendChild(el('div', 'extra', 'Which endpoint answers this clanker, and with which model. Its prompt is the prompt tab.'));
+    var prov = el('select');
+    var model = el('input'); model.spellcheck = false;
+    var max = el('input'); max.type = 'number'; max.min = '1';
+    var dl = el('datalist'); dl.id = 'ck-models-' + Math.random().toString(36).slice(2);
+    model.setAttribute('list', dl.id);
+    var grid = el('div', 'grid');
+    var lp = el('label'); lp.appendChild(el('span', null, 'provider')); lp.appendChild(prov);
+    var lt = el('label'); lt.appendChild(el('span', null, 'max tokens')); lt.appendChild(max);
+    grid.appendChild(lp); grid.appendChild(lt); box.appendChild(grid);
+    var lm = el('label'); lm.appendChild(el('span', null, 'model')); lm.appendChild(model); box.appendChild(lm);
+    box.appendChild(dl);
+    var price = el('div', 'extra mono', ''); box.appendChild(price);
+    var rest = el('div', 'extra mono', ''); box.appendChild(rest);
+    var foot = el('div', 'foot'), save = el('button', null, 'save'), note = el('span', 'note', '');
+    foot.appendChild(save); foot.appendChild(note); box.appendChild(foot);
+    root.appendChild(box);
+    var PROVIDERS = [], CAT = {};
+    function current() { for (var i = 0; i < PROVIDERS.length; i++) if (PROVIDERS[i].name === prov.value) return PROVIDERS[i]; return null; }
+    // what the chosen model costs, when the catalogue knows it. An id the
+    // catalogue has not got is said so plainly rather than silently blank:
+    // it is still sent, and a typo should not look like a price of nothing
+    function showPrice() {
+      var p = current(), rows = (p && CAT[p.name]) || [], id = model.value.trim(), hit = null;
+      for (var i = 0; i < rows.length; i++) if (rows[i].id === id) { hit = rows[i]; break; }
+      if (!p) { price.textContent = ''; return; }
+      if (!rows.length) { price.textContent = 'no catalogue synced for ' + p.label; return; }
+      if (!hit) { price.textContent = rows.length + ' models listed · this id is not among them (it is still sent)'; return; }
+      var ctx = hit.context ? ' · ' + Number(hit.context).toLocaleString() + ' ctx' : '';
+      price.textContent = 'in $' + hit['in'] + '/M · out $' + hit.out + '/M' + ctx;
+    }
+    function fillModels() {
+      var p = current(); if (!p) return;
+      dl.innerHTML = '';
+      (CAT[p.name] || []).forEach(function (m) { var o = el('option'); o.value = m.id; dl.appendChild(o); });
+      showPrice();
+    }
+    function catalogue(p) {
+      if (!p) return;
+      if (CAT[p.name]) { fillModels(); return; }
+      get(p.route + '/api/models').then(function (j) {
+        if (dead) return;
+        var rows = (j && j.models) || [];
+        rows.sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
+        CAT[p.name] = rows; fillModels();
+      }, function () { if (!dead) { CAT[p.name] = []; fillModels(); } });
+    }
+    var rec = null;
+    function fill() {
+      if (dirty || !rec) return;
+      var r = rec.record || {};
+      prov.innerHTML = '';
+      PROVIDERS.forEach(function (p) { var o = el('option', null, p.label); o.value = p.name; prov.appendChild(o); });
+      prov.value = r.provider || (PROVIDERS[0] && PROVIDERS[0].name) || '';
+      model.value = r.model || ''; max.value = r.max_tokens != null ? r.max_tokens : '';
+      var skip = ['name', 'model', 'max_tokens', 'provider'];
+      var ks = Object.keys(r).filter(function (k) { return skip.indexOf(k) < 0; });
+      rest.textContent = ks.map(function (k) { return k + ': ' + (typeof r[k] === 'string' ? r[k] : JSON.stringify(r[k])); }).join('\n');
+      catalogue(current());
+    }
+    function load() {
+      if (dead) return;
+      var first = PROVIDERS.length ? Promise.resolve() : get(API + '/api/providers').then(function (j) { PROVIDERS = Array.isArray(j) ? j : []; });
+      first.then(function () { return get(API + '/api/record?path=' + encodeURIComponent(proj)); })
+        .then(function (j) { if (!dead) { rec = j; fill(); } }, function (e) { if (!dead) note.textContent = 'could not load: ' + e.message; });
+    }
+    [prov, model, max].forEach(function (i) { i.addEventListener('input', function () { dirty = true; note.textContent = 'unsaved changes'; }); });
+    prov.addEventListener('change', function () { catalogue(current()); });
+    model.addEventListener('input', showPrice);
+    function doSave() {
+      save.disabled = true; note.textContent = 'saving…';
+      var body = { path: proj, provider: prov.value, model: model.value.trim() };
+      var mt = parseInt(max.value, 10); if (!isNaN(mt)) body.max_tokens = mt;
       post('/api/record', body)
         .then(function () { dirty = false; note.textContent = 'saved'; load(); }, function (e) { note.textContent = 'save failed: ' + e.message; })
         .then(function () { save.disabled = false; });
@@ -472,5 +560,6 @@
   window.Viewers['tools'] = { label: 'Tools', mount: mountTools };
   window.Viewers['collection'] = { label: 'Clankers', mount: mountCollection };
   window.Viewers['chats'] = { label: 'Chats', mount: mountChats };
-  window.Viewers['record'] = { label: 'Record', mount: mountRecord };
+  window.Viewers['record'] = { label: 'Prompt', mount: mountRecord };
+  window.Viewers['config'] = { label: 'Config', mount: mountConfig };
 })();

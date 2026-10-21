@@ -211,6 +211,31 @@
     ==
   (over:io usage-road [[/ %json] new])
 ::
+::  +per-million: a per-token price string as $/M-token, by moving the
+::  decimal point six places right. String arithmetic, so no floats are
+::  involved and no precision is lost: '0.00000015' -> '0.15'. This is
+::  the conversion the UI used to do in the browser.
+::
+++  per-million
+  |=  s=@t
+  ^-  @t
+  =/  t=tape  (trip s)
+  ?:  =(~ t)  '0'
+  =/  dot=(unit @ud)  (find "." t)
+  =/  whole=tape  ?~(dot t (scag u.dot t))
+  =/  frac=tape   (weld `tape`?~(dot "" (slag +(u.dot) t)) `tape`(reap 6 '0'))
+  =/  lead=tape   (strip-zeros (weld whole `tape`(scag 6 frac)))
+  =/  tail=tape   (flop (strip-zeros (flop `tape`(slag 6 frac))))
+  =/  int=tape    ?:(=(~ lead) "0" lead)
+  (crip ?:(=(~ tail) int (weld int (weld "." tail))))
+::
+++  strip-zeros
+  |=  t=tape
+  ^-  tape
+  ?~  t  ~
+  ?.  =('0' i.t)  t
+  $(t t.t)
+::
 ++  read-key
   =/  m  (fiber:fiber:nexus ,@t)
   ^-  form:m
@@ -286,9 +311,28 @@
     ;<  uusage=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'usage.json'] ,json)
     (send-json eyre-id (fall uusage *json))
   ::
+  ::  the catalog: what EVERY model-endpoint nexus answers, in the one
+  ::  shape a consumer can read without knowing which provider it asked
+  ::  — {models:[{id, label, in, out, context}]}, prices as $/M-token
+  ::  strings. models.json behind it is this nexus's own cache of what
+  ::  openrouter last told us, in openrouter's per-token units.
+  ::
       [%api %models ~]
     ;<  umod=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'models.json'] ,json)
-    (send-json eyre-id (fall umod *json))
+    =/  mods=json  (fall umod [%o ~])
+    =/  rows=(list json)
+      ?.  ?=([%o *] mods)  ~
+      %+  turn  ~(tap by p.mods)
+      |=  [id=@t m=json]
+      ^-  json
+      %-  pairs:enjs:format
+      :~  ['id' s+id]
+          ['label' s+id]
+          ['in' s+(per-million (jget m 'prompt'))]
+          ['out' s+(per-million (jget m 'completion'))]
+          ['context' (numb:enjs:format (jnum m 'context' 0))]
+      ==
+    (send-json eyre-id (pairs:enjs:format ~[['models' [%a rows]]]))
   ::
       [%api %key ~]
     ;<  key=@t  bind:m  read-key

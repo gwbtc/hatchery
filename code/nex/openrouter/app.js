@@ -22,7 +22,12 @@ const cost = (c) => parseFloat(c && c.cost != null ? c.cost : 0) || 0;
 let MODELS = {};
 let modelsLoaded = false;
 async function loadModels() {
-  MODELS = await jget('/api/models');
+  // /api/models is the catalog every model-endpoint nexus answers:
+  // {models:[{id,label,in,out,context}]}, prices already $/M-token.
+  // Keyed by id here because that is how this page looks them up.
+  const cat = await jget('/api/models');
+  MODELS = Object.create(null);
+  for (const m of (cat.models || [])) MODELS[m.id] = m;
   const dl = $('model-list');
   dl.textContent = '';
   for (const id of Object.keys(MODELS).sort()) {
@@ -35,7 +40,7 @@ async function loadModels() {
 $('test-model').addEventListener('input', () => {
   const m = MODELS[$('test-model').value];
   $('model-info').textContent = !m ? '' :
-    `context ${fmt(m.context)} · $${(parseFloat(m.prompt) * 1e6).toFixed(2)}/M in · $${(parseFloat(m.completion) * 1e6).toFixed(2)}/M out`;
+    `context ${fmt(m.context)} · $${parseFloat(m['in']).toFixed(2)}/M in · $${parseFloat(m.out).toFixed(2)}/M out`;
 });
 
 async function refresh() {
@@ -138,7 +143,7 @@ function renderRates() {
     if (q && !m.toLowerCase().includes(q)) continue;
     const r = MODELS[m];
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="mono">${m}</td><td class="r">$${(parseFloat(r.prompt) * 1e6).toFixed(2)}</td><td class="r">$${(parseFloat(r.completion) * 1e6).toFixed(2)}</td><td class="r">${fmt(r.context)}</td>`;
+    tr.innerHTML = `<td class="mono">${m}</td><td class="r">$${parseFloat(r['in']).toFixed(2)}</td><td class="r">$${parseFloat(r.out).toFixed(2)}</td><td class="r">${fmt(r.context)}</td>`;
     tb.appendChild(tr);
   }
 }

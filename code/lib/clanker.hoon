@@ -55,6 +55,7 @@
       link=@t      ::  /sys/link name, e.g. '@openrouter'
       dialect=@t   ::  'messages' | 'chat-completions'
       label=@t     ::  for the UI
+      route=@t     ::  its web route, which serves /api/catalog
   ==
 ::  +providers: THE registry. Explicit, never discovered by scanning
 ::  /apps. Adding an endpoint nexus is a row here and nothing else: the
@@ -65,8 +66,8 @@
 ::
 ++  providers
   ^-  (list provider)
-  :~  ['anthropic' '@anthropic' 'messages' 'Anthropic']
-      ['openrouter' '@openrouter' 'chat-completions' 'OpenRouter']
+  :~  ['anthropic' '@anthropic' 'messages' 'Anthropic' '/grubbery/anthropic']
+      ['openrouter' '@openrouter' 'chat-completions' 'OpenRouter' '/grubbery/openrouter']
   ==
 ::  +provider-for: the row a name selects, else the fallback.
 ::
@@ -90,6 +91,7 @@
   :~  ['name' s+name.p]
       ['label' s+label.p]
       ['dialect' s+dialect.p]
+      ['route' s+route.p]
   ==
 ::
 ++  clanker

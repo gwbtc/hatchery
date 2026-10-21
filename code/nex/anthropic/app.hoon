@@ -375,6 +375,28 @@
       [%api %key ~]
     ;<  cfg=[key=@t url=@t]  bind:m  read-config
     (send-json eyre-id (pairs:enjs:format ~[['key' s+key.cfg]]))
+  ::  the catalog: what EVERY model-endpoint nexus answers, in the one
+  ::  shape a consumer can read without knowing which provider it asked
+  ::  — {models:[{id, label, in, out, context}]}, prices as $/M-token
+  ::  strings. Ours come straight from rates.json, which is already in
+  ::  those units; context is 0 because this nexus is not told it.
+  ::
+      [%api %models ~]
+    ;<  urates=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'rates.json'] ,json)
+    =/  rates=json  (fall urates [%o ~])
+    =/  rows=(list json)
+      ?.  ?=([%o *] rates)  ~
+      %+  turn  ~(tap by p.rates)
+      |=  [id=@t r=json]
+      ^-  json
+      %-  pairs:enjs:format
+      :~  ['id' s+id]
+          ['label' s+id]
+          ['in' s+(jget r 'in')]
+          ['out' s+(jget r 'out')]
+          ['context' (numb:enjs:format 0)]
+      ==
+    (send-json eyre-id (pairs:enjs:format ~[['models' [%a rows]]]))
   ::
       [%api %usage ~]
     ;<  uusage=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'usage.json'] ,json)

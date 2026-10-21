@@ -10,6 +10,7 @@
    "a":{"open":{"to":"#content","mode":"tab"},"tabs":[{"entries":[{"path":"./skills?view=tree"}],"cursor":0}]},
    "b":{"id":"content","open":{"to":"#content","mode":"tab"},"bar":true,"nav":false,"tabs":[{"entries":[],"cursor":-1}]}}}],"cursor":0},
  {"label":"prompt","entries":[{"path":"./config.json?view=record"}],"cursor":0},
+ {"label":"config","entries":[{"path":"./config.json?view=config"}],"cursor":0},
  {"label":"tools","entries":[{"path":"./config.json?view=tools"}],"cursor":0},
  {"label":"recipes","entries":[{"div":{"dir":"horizontal","ratio":0.24,
    "a":{"open":{"to":"#content","mode":"tab"},"tabs":[{"entries":[{"path":"./recipes?view=tree"}],"cursor":0}]},
