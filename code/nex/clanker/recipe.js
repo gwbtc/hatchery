@@ -26,6 +26,19 @@
   // an aim is [title, '', ...description]: the first line is the label
   function title(aim) { return (aim && aim.length) ? aim[0] : ''; }
   function body(aim) { return (aim || []).slice(1).join('\n').replace(/^\n+/, ''); }
+  // input and output are part of the shape at both levels (the parser
+  // refuses a file without them), so they are always drawn: an empty one
+  // is the author saying "nothing", shown as a dash rather than dropped
+  function ioBlock(input, output) {
+    var box = el('div', 'io');
+    [['input', input], ['output', output]].forEach(function (p) {
+      var row = el('div', 'iorow');
+      var k = el('span', 'iok'); k.textContent = p[0];
+      var v = el('span', 'iov'); v.textContent = (p[1] && p[1].length) ? p[1].join('\n') : '-';
+      row.appendChild(k); row.appendChild(v); box.appendChild(row);
+    });
+    return box;
+  }
 
   var CSS =
     '.rcp{display:flex;height:100%;min-height:0;font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:#1f2328;background:#fff}' +
@@ -48,6 +61,11 @@
     '.rcp .chip{font:11px ui-monospace,monospace;color:#57606a;background:#eef1f4;border-radius:5px;padding:1px 7px}' +
     '.rcp .aim{font-weight:600;margin:6px 0 4px}' +
     '.rcp .desc{color:#57606a;white-space:pre-wrap;margin:0 0 8px}' +
+    '.rcp .io{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;margin:0 0 10px;padding:6px 8px;background:#f6f8fa;border-radius:6px}' +
+    '.rcp .io.top{margin:0 0 14px}' +
+    '.rcp .iorow{display:contents}' +
+    '.rcp .iok{font:11px ui-monospace,monospace;color:#8b949e;text-transform:uppercase;letter-spacing:.04em;padding-top:2px}' +
+    '.rcp .iov{color:#24292f;white-space:pre-wrap;min-width:0}' +
     '.rcp .arrows{margin:0;padding:6px 0 0;list-style:none;border-top:1px solid #f0f2f5}' +
     '.rcp .arrows li{display:flex;gap:7px;padding:2px 4px;border-radius:5px}' +
     '.rcp .arrows li.on{background:#ddf4ff}' +
@@ -232,6 +250,9 @@
       var lede = el('div', 'lede');
       lede.textContent = title(recipe.aim) + (body(recipe.aim) ? '\n\n' + body(recipe.aim) : '');
       side.appendChild(lede);
+      var top = ioBlock(recipe.input, recipe.output);
+      top.classList.add('top');
+      side.appendChild(top);
 
       var lv = Object.keys(recipe.levels || {});
       if (lv.length) {
@@ -284,6 +305,7 @@
           de.textContent = body(st.aim);
           card.appendChild(de);
         }
+        card.appendChild(ioBlock(st.input, st.output));
 
         var ul = el('ul', 'arrows');
         Object.keys(st.next || {}).forEach(function (to) {
