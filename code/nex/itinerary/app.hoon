@@ -802,10 +802,18 @@
   ::  the geocode proxy, by name: the trip's geocode tool pokes it and
   ::  reads its calls; absent, the roads are left out and the tool says so
   ;<  geo=(unit lane:tarball)  bind:m  (resolve-link:io '@geocode')
+  ::  The geocode dependency: the two endpoints the tool uses, AND the name it
+  ::  looks them up by. Resolving @geocode is a peek on /sys/link/geocode, so a
+  ::  grant that names only the endpoints is refused at the tool's first line —
+  ::  it holds the key and may not read the address. That is what wedged the
+  ::  somewhere trip: every geocode call banged on the lookup, the run never
+  ::  left step 'start', and the chat waited on it. The clanker already does
+  ::  this correctly for @anthropic; geocode was bolted on as resolved paths
+  ::  and the lookup was forgotten. See "Reads don't resolve" in the README.
   =/  geo-roads=[poke=(list @t) peek=(list @t)]
     ?.  ?=([~ %| *] geo)  [~ ~]
     :-  ~[(crip "{(spud p.u.geo)}/main.sig")]
-    ~[(crip "{(spud p.u.geo)}/calls/")]
+    ~[(crip "{(spud p.u.geo)}/calls/") '/sys/link/geocode/']
   =/  trip=@t  (spat (weld p.u.it (snoc `path`/itineraries id)))
   =/  strs  |=(l=(list @t) ^-(json a+(turn l |=(s=@t `json`s+s))))
   =/  ensure=json
