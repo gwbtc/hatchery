@@ -158,7 +158,10 @@
           ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@itinerary')
           =/  abs=path  ?.(?=([~ %| *] root) / p.u.root)
           =/  segs=path  =/(p=@t (gq 'path') ?:(=('' p) / (fall (mole |.((stab p))) /)))
-          =/  pick=(unit json)  (pick-viewer abs segs =('dir' (gq 'kind')) (gq 'view'))
+          ::  mode is 'mobile' or 'desktop': the phone is a distinct context, not
+          ::  a narrow desktop, so a rule may answer it with a different pane
+          =/  pick=(unit json)
+            (pick-viewer abs segs =('dir' (gq 'kind')) (gq 'view') (gq 'mode'))
           ?~  pick  (send-json eyre-id '')
           (send-json eyre-id (en:json:html u.pick))
         ::
@@ -741,8 +744,11 @@
 ::    /itineraries  ?view=trips          the trips navigator (follows the dir)
 ::    /itineraries/<id>                  the trip layout
 ::    /itineraries/<id>/itinerary.json  ?view=map|trip|todos|places|events|schedule
+::    `mode` is 'mobile' or 'desktop' (empty from an older caller). Mobile is
+::    the focused, fat-thumb context rather than a narrow desktop, so a rule
+::    may answer it with a different pane — or the same one, as these do.
 ++  pick-viewer
-  |=  [abs=path segs=path dir=? view=@t]
+  |=  [abs=path segs=path dir=? view=@t mode=@t]
   ^-  (unit json)
   =/  lay  |=(u=@t ^-((unit json) `(pairs:enjs:format ~[['layout' s+u]])))
   =/  pane
