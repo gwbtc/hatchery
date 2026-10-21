@@ -98,6 +98,15 @@
 ++  test-stay-keeps-step
   |.  =/  s=state:rec  (won (move:rec rcp (tik 1 st0) 'self'))
       (chk-t 'a' step.s)
+::  the tip labels the self-arrow `stay`, so that word has to move too
+++  test-stay-alias-is-accepted
+  |.  =/  s=state:rec  (won (move:rec rcp (tik 1 st0) 'stay'))
+      (chk-t 'a' step.s)
+++  test-stay-alias-keeps-dwell
+  |.  =/  s=state:rec  (won (move:rec rcp (tik 1 st0) 'stay'))
+      (chk-ud 1 dwell.s)
+++  test-stay-alias-refused-when-spent
+  |.((chk-lo & (fail (move:rec rcp (tik 2 st0) 'stay'))))
 ++  test-move-resets-dwell
   |.  =/  s=state:rec  (won (move:rec rcp (tik 1 st0) 'b'))
       (chk-ud 0 dwell.s)

@@ -89,6 +89,9 @@
 ++  move
   |=  [=recipe =state target=@t]
   ^-  (each ^state @t)
+  ::  the tip labels the self-arrow `stay`, so accept the word it showed.
+  ::  'self' stays the graph key; nobody has to know that but the file.
+  =?  target  =('stay' target)  'self'
   =/  opts=(list arrow)  (open recipe state)
   |-  ^-  (each ^state @t)
   ?~  opts

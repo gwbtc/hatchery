@@ -593,7 +593,7 @@
     |=  input=json
     ^-  @t
     ?.  ?=([%o *] input)  ''
-    =/  keys=(list @t)  ~['id' 'name' 'path' 'query' 'kind' 'field' 'itinerary']
+    =/  keys=(list @t)  ~['id' 'name' 'path' 'query' 'kind' 'field' 'itinerary' 'target']
     |-
     ?~  keys
       ::  none of the usual suspects: any short string

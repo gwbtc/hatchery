@@ -30,6 +30,7 @@
 /&  coll-tools  /lib/clanker-collection-bundle/
 /&  viewer-js   ./viewer.js
 /&  chats-js    ./chats.js
+/&  recipe-js   ./recipe.js
 /&  icon        ./icon.svg
 ::  the layouts the explorer opens the collection's dirs as ('./' paths
 ::  resolve against the dir opened): the collection root or a category
@@ -94,6 +95,7 @@
       [%over %& [/ %'tile.json'] [[/ %json] tile]]
       ::  the panes +pick-viewer hands out: a chat-log's chat, a chats/ dir's list
       [%over %& [/ %'viewer.js'] [[/ %mime] viewer-js]]
+      [%over %& [/ %'recipe.js'] [[/ %mime] recipe-js]]
       [%over %& [/ %'chats.js'] [[/ %mime] chats-js]]
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
       [%over %& [/ %'collection-layout.json'] [[/ %mime] coll-layout]]
@@ -461,7 +463,7 @@
   =/  body=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) *json)
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
-  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix) =(%'root-layout.json' i.suffix)))
+  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'recipe.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix) =(%'root-layout.json' i.suffix)))
     (serve-file eyre-id / i.suffix)
   ::  the root's view: the nexus root itself opens as the root layout
   ::  (the collection over ./projects); anything else at the root keeps
@@ -1030,6 +1032,15 @@
       ?:  =('tools' view)
         (ans 'tools' panes a ~[(fol (snoc cdir %'tools.json') | |) (fol (snoc pdir %'tools.json') | |)])
       (ans 'record' panes a ~[(fol (snoc cdir %'system.md') | |)])
+    ::  a recipe: its graph beside its aims. The pane follows the file
+    ::  with its body, so editing the json redraws the graph.
+    ?:  ?=([@ %recipes @ *] f)
+      ?.  (is-clanker i.t.t.f)  ~
+      =/  proj=path  (flop t.t.f)
+      %-  ans
+      :^  'recipe'  '/grubbery/clanker/recipe.js'
+        (pairs:enjs:format ~[['proj' s+(spat proj)] ['name' s+i.f]])
+      ~[(fol (welp coll (welp proj [%recipes i.f ~])) & |)]
     ::  a clanker's record (config and standing prompt) or its tool
     ::  policy, as forms, both opened on its config.json
     ?.  |(=('record' view) =('tools' view))  ~
