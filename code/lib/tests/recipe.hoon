@@ -15,7 +15,13 @@
 ::  rather than a bare literal.
 ::
 =/  src=@t
-  '{"aim":["Test recipe","","A description."],"start":"a","steps":{"a":{"aim":["Step A"],"next":{"self":"more to do","b":"a is settled"}},"b":{"aim":["Step B"],"next":{"done":"finished"}},"done":{"aim":["must be dropped"]}},"levels":{"normal":{"run":10,"steps":{"a":{"life":4,"dwell":2},"b":{"life":3}}}}}'
+  '{"aim":["Test recipe","","A description."],"input":["a question"],"output":["an answer"],"start":"a","steps":{"a":{"aim":["Step A"],"input":["the question"],"output":[],"next":{"self":"more to do","b":"a is settled"}},"b":{"aim":["Step B"],"input":[],"output":["the answer"],"next":{"done":"finished"}},"done":{"aim":["must be dropped"]}},"levels":{"normal":{"run":10,"steps":{"a":{"life":4,"dwell":2},"b":{"life":3}}}}}'
+::  the same recipe missing its own output, and missing a step's input:
+::  both must be refused whole
+=/  no-out=@t
+  '{"aim":["x"],"input":[],"start":"a","steps":{"a":{"aim":["A"],"input":[],"output":[],"next":{"done":"ok"}}}}'
+=/  no-step-in=@t
+  '{"aim":["x"],"input":[],"output":[],"start":"a","steps":{"a":{"aim":["A"],"output":[],"next":{"done":"ok"}}}}'
 =/  rcp=recipe:rec  (need (parse:rec 'demo' (need (de:json:html src))))
 =/  st0=state:rec   (enter:rec rcp 'normal')
 %-  run-tests:test
@@ -66,6 +72,16 @@
   |.((chk-ud 2 ~(wyt by steps.rcp)))
 ++  test-parse-rejects-startless
   |.((chk-rcp ~ (parse:rec 'x' (need (de:json:html '{"steps":{}}')))))
+::  input and output are part of the shape at both levels: a file that
+::  omits either, on the recipe or on any step, is refused whole
+++  test-parse-keeps-input
+  |.((chk-list ~['a question'] input.rcp))
+++  test-parse-keeps-step-output
+  |.((chk-list ~['the answer'] output:(need (~(get by steps.rcp) 'b'))))
+++  test-parse-rejects-recipe-without-output
+  |.((chk-rcp ~ (parse:rec 'x' (need (de:json:html no-out)))))
+++  test-parse-rejects-step-without-input
+  |.((chk-rcp ~ (parse:rec 'x' (need (de:json:html no-step-in)))))
 ::  entry
 ::
 ++  test-enter-step
@@ -154,6 +170,14 @@
       (chk-lo & (has "[dwell -, step 3, run 9]" (tip:rec rcp s)))
 ++  test-tip-quotes-the-aim
   |.((chk-lo & (has "| Step A" (tip:rec rcp st0))))
+::  input and output ride under structural labels, the author's lines
+::  quoted; an empty one shows as a dash rather than vanishing
+++  test-tip-labels-recipe-input
+  |.((chk-lo & (has "INPUT \0a| a question" (tip:rec rcp st0))))
+++  test-tip-labels-step-input
+  |.((chk-lo & (has "| the question" (tip:rec rcp st0))))
+++  test-tip-dash-for-empty-output
+  |.((chk-lo & (has "OUTPUT  -" (tip:rec rcp st0))))
 ++  test-tip-offers-abort-always
   |.((chk-lo & (has "abort" (tip:rec rcp st0))))
 ++  test-tip-lists-open-arrow

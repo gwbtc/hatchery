@@ -25,14 +25,21 @@
 +$  recipe
   $:  name=@t
       aim=(list @t)
+      input=(list @t)
+      output=(list @t)
       start=@t
       steps=(map @t step)
       levels=(map @t level)
   ==
-::  a step's arrows: target -> the condition under which to take it.
-::  targets are a step name, 'self', or 'done'.
+::  a step: its aim, what it expects to have in hand (input), what it
+::  leaves behind (output), and its arrows: target -> the condition
+::  under which to take it. targets are a step name, 'self', or 'done'.
+::  input and output are part of the shape at both levels, and +parse
+::  refuses a file that omits either: a recipe that does not say what
+::  it needs and what it hands back is not a function, and a step that
+::  does not is not a step. Empty is a statement; absent is not.
 ::
-+$  step  [aim=(list @t) next=(map @t @t)]
++$  step  [aim=(list @t) input=(list @t) output=(list @t) next=(map @t @t)]
 +$  level  [run=@ud caps=(map @t cap)]
 +$  cap   [life=(unit @ud) dwell=(unit @ud)]
 ::  run state for one chat. `spent` is lifetime consumed per step,
@@ -57,11 +64,16 @@
   ?:  =('' start)  ~
   =/  sj=(unit json)  (~(get by p.jon) 'steps')
   ?.  ?=([~ %o *] sj)  ~
+  ?.  &((~(has by p.jon) 'input') (~(has by p.jon) 'output'))  ~
+  =/  steps=(unit (map @t step))  (steps-of u.sj)
+  ?~  steps  ~
   :-  ~
   :*  nm
       (jlines (~(get by p.jon) 'aim'))
+      (jlines (~(get by p.jon) 'input'))
+      (jlines (~(get by p.jon) 'output'))
       start
-      (steps-of u.sj)
+      u.steps
       (levels-of (~(get by p.jon) 'levels'))
   ==
 ::  +enter: the state a fresh run starts in.
@@ -186,9 +198,13 @@
     "<recipe-state>\0a"
     "RECIPE  "  (trip name.recipe)  "  (level "  (trip level.state)  ")\0a"
     (quoted aim.recipe)
+    (labeled "INPUT " input.recipe)
+    (labeled "OUTPUT" output.recipe)
     "\0a"
     (step-line recipe state)
     (quoted ?~(st ~ aim.u.st))
+    (labeled "INPUT " ?~(st ~ input.u.st))
+    (labeled "OUTPUT" ?~(st ~ output.u.st))
     "\0a"
     "FROM HERE  (name one to move; staying is naming 'stay')\0a"
     (arrows-block recipe state)
@@ -305,6 +321,15 @@
   %-  zing
   %+  turn  ls
   |=(l=@t ?:(=('' l) "\0a" (weld (weld "| " (trip l)) "\0a")))
+::  +labeled: a structural label over the author's quoted lines. An
+::  empty list renders as a dash: the author said "nothing", which is
+::  shown, since +parse refuses a file that said nothing at all.
+::
+++  labeled
+  |=  [lbl=tape ls=(list @t)]
+  ^-  tape
+  ?~  ls  (weld lbl "  -\0a")
+  (weld (weld lbl "\0a") (quoted ls))
 ::
 ++  gauge
   |=  u=(unit @ud)
@@ -329,17 +354,28 @@
   ?:  =('done' t.b)  &
   (lth t.a t.b)
 ::
+::  +steps-of: the steps object. ~ when any step omits input or output
+::  — the whole recipe is refused, since a step without a stated shape
+::  cannot be entered any more than a recipe without a start.
+::
 ++  steps-of
   |=  jon=json
-  ^-  (map @t step)
+  ^-  (unit (map @t step))
   ?.  ?=([%o *] jon)  ~
-  %-  ~(gas by *(map @t step))
-  %+  murn  ~(tap by p.jon)
-  |=  [k=@t v=json]
-  ^-  (unit [@t step])
-  ?.  ?=([%o *] v)  ~
-  ?:  |(=('done' k) =('abort' k))  ~
-  `[k [(jlines (~(get by p.v) 'aim')) (jarrows (~(get by p.v) 'next'))]]
+  =/  all=(list [k=@t v=json])  ~(tap by p.jon)
+  =|  out=(map @t step)
+  |-  ^-  (unit (map @t step))
+  ?~  all  `out
+  ?.  ?=([%o *] v.i.all)  $(all t.all)
+  ?:  |(=('done' k.i.all) =('abort' k.i.all))  $(all t.all)
+  =/  v  v.i.all
+  ?.  &((~(has by p.v) 'input') (~(has by p.v) 'output'))  ~
+  =/  st=step
+    :^    (jlines (~(get by p.v) 'aim'))
+        (jlines (~(get by p.v) 'input'))
+      (jlines (~(get by p.v) 'output'))
+    (jarrows (~(get by p.v) 'next'))
+  $(all t.all, out (~(put by out) k.i.all st))
 ::
 ++  levels-of
   |=  v=(unit json)
