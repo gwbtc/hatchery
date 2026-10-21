@@ -40,7 +40,7 @@ and spawns the bill.
 /apps/forge.git_forge/repos/hatchery.git_repo/        the clone
   config.json                                         {repo, ref, account, author_name, author_email}
   poll.json                                           {minutes}; 0 = pull only when poked
-  run.git-action                                      the serial command lane and its log
+  run.git-action                                      the serial command queue and its log
   data/tree/                                          the working tree (this repo)
   data/ui/current.json                                {hash, branch, remote}
   data/ui/status.json                                 {clean, staged, unstaged, untracked}
@@ -77,7 +77,7 @@ An app's root on the ship is therefore
 ## The loop
 
 The working copy is the ship's. The repo instance's tree at `data/tree/` is
-edited in place, committed through the instance's command lane, and pushed
+edited in place, committed through the instance's command queue, and pushed
 to GitHub from the ship. A laptop checkout is a mirror and a recovery hatch,
 not the place to edit. Everything below is MCP calls against the ship.
 
@@ -108,7 +108,7 @@ not the place to edit. Everything below is MCP calls against the ship.
    previous grant, or none, and a dart past the fence prints a veto trace in
    the dojo naming the boundary, the road, and the jump. Read those; each one
    was a one-line fix in this repo.
-6. When it works, commit and push through the lane: `git_cmd` (call_tool
+6. When it works, commit and push through the queue: `git_cmd` (call_tool
    with `path: /apps/forge.git_forge/tools`, `path` arg = the repo instance)
    with `add <file>` per file, then `commit -m "..."`, then `push`. Read
    `run.git-action` after each; the log entry says `staged N path(s)`, the
@@ -119,8 +119,11 @@ not the place to edit. Everything below is MCP calls against the ship.
    your commit — check `data/ui/status.json` and read `staged` before you
    commit, it should list only your files. `add .` is not "all" either: `.`
    is taken as a literal path, matches nothing, and stages nothing.
-   `data/ui/status.json` and `current.json` are rebuilt on the data
-   nexus's next reload, so they can lag the lane's log by a moment. The
+   `data/ui/status.json` and `current.json` are rebuilt by `write-ui-outputs`
+   in the same event as the command, like every other path that moves HEAD,
+   so they do not lag — if one disagrees with the log, one of them is wrong.
+   (`behind` was: it counted ancestors until the loose object store ran out
+   whenever the local tip was ahead, reporting a stable nonsense number.) The
    push speaks git's own protocol: it packs the objects the remote lacks
    and posts them to `git-receive-pack`, so the commit on GitHub is the
    same hash as the one on the ship, and GitHub shows the commit's own
@@ -129,7 +132,7 @@ not the place to edit. Everything below is MCP calls against the ship.
 
 Commit needs `author_name` and `author_email` in the repo's `config.json`;
 push needs `account` set to a GitHub login the github nexus holds a token
-for. All three are empty on a fresh instance and the lane refuses with a
+for. All three are empty on a fresh instance and the queue refuses with a
 clear message until they are set; `write_grub` the config with them filled
 in. `remote set-url` and other unlisted verbs are rejected; the remote is
 the `repo` field of `config.json`. The GitHub repo has a branch rule that
