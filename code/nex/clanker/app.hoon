@@ -193,35 +193,56 @@
 ::  walks up by neck). So the weir names its own directory, relatively:
 ::  [%| 0 %| /] resolves against the directory the weir sits on.
 ++  default-weir
-  |=  anth=(unit path)
+  |=  prox=(list path)
   ^-  weir:tarball
   =/  fil  |=([p=path n=@ta] `road:tarball`[%& %& p n])
   =/  dir  |=(p=path `road:tarball`[%& %| p])
-  =/  opt  |=([u=(unit path) f=$-(path road:tarball)] ^-((list road:tarball) ?~(u ~ ~[(f u.u)])))
   =/  self=road:tarball  [%| 0 %| /]
+  ::  every model proxy that resolves gets a road, not only the one this
+  ::  clanker's config names: a weir is set per CAUSE, so a config edit
+  ::  that switches provider must not have to wait for a re-sand
+  =/  mains=(list road:tarball)  (turn prox |=(p=path (fil p 'main.sig')))
+  =/  calls=(list road:tarball)  (turn prox |=(p=path (dir (snoc p %calls))))
+  ::  and every provider's link registry, by name, so resolve-link works
+  ::  for whichever one the config names
+  =/  regs=(list road:tarball)
+    %+  turn  providers:clanker
+    |=  p=provider:clanker
+    ^-  road:tarball
+    =/  t=tape  (trip link.p)
+    =/  nm=@ta  (crip ?:(&(?=(^ t) =('@' i.t)) t.t t))
+    (dir (welp /sys/link ~[nm]))
   ::  time (bowl) and TIMERS (behn): a deadline or a sleep in the agent or
   ::  in a tool is a poke to behn; without this road the first timer is
   ::  vetoed and the fiber is parked
   :*  make=~
-      poke=(sy (weld ~[(fil /sys 'bowl.sig') (fil /sys/behn 'main.behn-state')] (opt anth |=(p=path (fil p 'main.sig')))))
-      peek=(sy (weld ~[self (dir /sys/link/anthropic)] (opt anth |=(p=path (dir (snoc p %calls))))))
+      poke=(sy (weld ~[(fil /sys 'bowl.sig') (fil /sys/behn 'main.behn-state')] mains))
+      peek=(sy :(weld ~[self] regs calls))
   ==
 ::  +kernel-weir: the grubbery clanker: the default plus the kernel
 ::  namespace its self-editing tools touch.
 ++  kernel-weir
-  |=  anth=(unit path)
+  |=  prox=(list path)
   ^-  weir:tarball
-  =/  d=weir:tarball  (default-weir anth)
+  =/  d=weir:tarball  (default-weir prox)
   :*  make=(~(put in make.d) `road:tarball`[%& %| /code])
       poke=(~(put in poke.d) `road:tarball`[%& %| /sys])
       peek=(~(put in peek.d) `road:tarball`[%& %| /])
   ==
-::  +anthropic-root: the proxy, by name, when a fiber can look it up.
-++  anthropic-root
-  =/  m  (fiber:fiber:nexus ,(unit path))
+::  +proxy-roots: the model proxies, by name, as they resolve now. The
+::  anthropic and openrouter nexuses answer the SAME {id, body} protocol
+::  and differ only in the dialect of the body, so a clanker needs a road
+::  to whichever one its config names. A proxy that is not linked yet
+::  simply contributes no road.
+++  proxy-roots
+  =/  m  (fiber:fiber:nexus ,(list path))
   ^-  form:m
-  ;<  anth=(unit lane:tarball)  bind:m  (resolve-link:io '@anthropic')
-  (pure:m ?.(?=([~ %| *] anth) ~ `p.u.anth))
+  =|  out=(list path)
+  =/  all=(list provider:clanker)  providers:clanker
+  |-  ^-  form:m
+  ?~  all  (pure:m (flop out))
+  ;<  got=(unit lane:tarball)  bind:m  (resolve-link:io link.i.all)
+  $(all t.all, out ?.(?=([~ %| *] got) out [p.u.got out]))
 ::  +config-weir: a clanker's weir from its config: the kernel set for
 ::  bundle "kernel", the default otherwise, plus the extra roads the
 ::  config grants it (config.json "roads": {"peek": [...], "make": [...],
@@ -230,10 +251,10 @@
 ::  write, and its git lane to poke. Re-applied on every send, so the
 ::  proxy resolves and the extras survive a config edit.
 ++  config-weir
-  |=  [cfg=json anth=(unit path)]
+  |=  [cfg=json prox=(list path)]
   ^-  weir:tarball
   =/  base=weir:tarball
-    ?:(=('kernel' (jstr:clanker cfg 'bundle')) (kernel-weir anth) (default-weir anth))
+    ?:(=('kernel' (jstr:clanker cfg 'bundle')) (kernel-weir prox) (default-weir prox))
   =/  roads
     |=  key=@t
     ^-  (list road:tarball)
@@ -274,21 +295,57 @@
   ;<  ~  bind:m  (rise-wait:io prod "%clanker sand: failed")
   ;<  ~  bind:m  sand-all
   |-
-  ;<  got=(unit wave:nexus)  bind:m  (keep-soft:io /proxy (link-road:io '@anthropic') ~ ~s30)
-  ?~  got
+  ;<  any=?  bind:m  keep-registries
+  ?.  any
     ;<  ~  bind:m  (sleep:io ~m5)
     $
   |-
-  ;<  *  bind:m  (take-news:io /proxy)
+  ;<  ~  bind:m  (take-news-any registry-wires)
   ;<  ~  bind:m  sand-all
   $
+::  +keep-registries: keep EVERY provider's link registry, each on its
+::  own wire, so a proxy linked later also triggers a sand pass. Yields
+::  whether any of them resolved: none means no proxy is linked yet, so
+::  the caller waits and tries again rather than parking forever.
+++  keep-registries
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  all=(list provider:clanker)  providers:clanker
+  =|  any=?
+  |-  ^-  form:m
+  ?~  all  (pure:m any)
+  ;<  got=(unit wave:nexus)  bind:m
+    (keep-soft:io (registry-wire name.i.all) (link-road:io link.i.all) ~ ~s30)
+  $(all t.all, any |(any ?=(^ got)))
+::
+++  registry-wire
+  |=  nm=@t
+  ^-  wire
+  (welp /proxy ~[`@ta`nm])
+::
+++  registry-wires
+  ^-  (list wire)
+  (turn providers:clanker |=(p=provider:clanker (registry-wire name.p)))
+::  +take-news-any: news on ANY of these wires. The sand pass does not
+::  care which registry moved, only that one did.
+++  take-news-any
+  |=  wires=(list wire)
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  |=  input:fiber:nexus
+  :+  ~  q.state
+  ?+  in  [%skip ~]
+      ~  [%wait ~]
+      [~ %news * *]
+    ?:((lien wires |=(w=wire =(w wire.u.in))) [%done ~] [%skip ~])
+  ==
 ::  +sand-all: every clanker in the collection, at any depth, re-sanded
 ::  from its config with the proxy as it resolves now. Runs in sand.sig's
 ::  fiber, at the collection root (up 0).
 ++  sand-all
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  anth=(unit path)  bind:m  anthropic-root
+  ;<  anth=(list path)  bind:m  proxy-roots
   =/  todo=(list path)  ~[/]
   |-  ^-  form:m
   ?~  todo  (pure:m ~)
@@ -311,7 +368,7 @@
   |=  [proj=path cfg=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  anth=(unit path)  bind:m  anthropic-root
+  ;<  anth=(list path)  bind:m  proxy-roots
   (sand:io [%| 1 %| (welp /projects proj)] `(config-weir cfg anth))
 ::  +handle-poke: the collection's poke protocol, for other apps (forge
 ::  makes a repo's clanker this way) and for tools. One action for now:
@@ -362,7 +419,7 @@
   ::  its host fields folded into its config and its weir re-sanded
   =/  proj=path  (snoc parent (crip "{(trip name)}.clanker"))
   =/  dir=path  (welp /projects proj)
-  ;<  anth=(unit path)  bind:m  anthropic-root
+  ;<  anth=(list path)  bind:m  proxy-roots
   ;<  dv=view:nexus  bind:m  (peek:io [%| 0 %| dir] ~)
   ;<  ~  bind:m
     ?.  ?=([%ball *] dv)
@@ -555,7 +612,10 @@
       =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.cv)))) [%o ~])
       ?:(?=([%o *] j) p.j ~)
     =/  new=(map @t json)
-      %+  roll  `(list @t)`~['model' 'max_tokens']
+      ::  provider picks which proxy answers ('anthropic', absent, or
+      ::  'openrouter'); a key left out of the body is left alone, so a
+      ::  form that does not know about it cannot clobber it
+      %+  roll  `(list @t)`~['model' 'max_tokens' 'provider']
       |=  [k=@t acc=_cur]
       =/  v=(unit json)  ?.(?=([%o *] body) ~ (~(get by p.body) k))
       ?~(v acc (~(put by acc) k u.v))
@@ -700,7 +760,7 @@
     ?:  =('clanker' kind)
       =/  dir=@ta  (crip "{(trip name)}.clanker")
       =/  proj=path  (snoc u.parent dir)
-      ;<  anth=(unit path)  bind:m  anthropic-root
+      ;<  anth=(list path)  bind:m  proxy-roots
       ;<  ~  bind:m
         (make:io [%| 1 %| (welp /projects proj)] &+(clanker-bole name 'default' '' (default-weir anth) ~))
       (send-json eyre-id '{"ok":true}')

@@ -43,6 +43,54 @@
       system-seed=@t       ::  initial system prompt
       config-seed=json     ::  initial {model, max_tokens}
   ==
+::  +$provider: one model-endpoint nexus. Every such nexus answers the
+::  same protocol — poke {id, body} at its main.sig, read the outcome
+::  from calls/<id>.json — so what distinguishes them is `dialect`, the
+::  wire format of `body`. The codec dispatches on THAT, not on the
+::  name, so an endpoint speaking a dialect we already have is a row
+::  here and no new code.
+::
++$  provider
+  $:  name=@t      ::  what a clanker's config.json `provider` names
+      link=@t      ::  /sys/link name, e.g. '@openrouter'
+      dialect=@t   ::  'messages' | 'chat-completions'
+      label=@t     ::  for the UI
+  ==
+::  +providers: THE registry. Explicit, never discovered by scanning
+::  /apps. Adding an endpoint nexus is a row here and nothing else: the
+::  collection's weir pass resolves every link in this list and grants
+::  the roads, and watches every link registry for one appearing later.
+::  The FIRST row is the fallback, so a clanker with no `provider` set
+::  behaves exactly as it did before providers existed.
+::
+++  providers
+  ^-  (list provider)
+  :~  ['anthropic' '@anthropic' 'messages' 'Anthropic']
+      ['openrouter' '@openrouter' 'chat-completions' 'OpenRouter']
+  ==
+::  +provider-for: the row a name selects, else the fallback.
+::
+++  provider-for
+  |=  want=@t
+  ^-  provider
+  =/  all=(list provider)  providers
+  =/  dflt=provider  ?~(all *provider i.all)
+  |-
+  ?~  all  dflt
+  ?:(=(want name.i.all) i.all $(all t.all))
+::  +providers-json: the registry for the UI — what a config form offers
+::  in its provider select.
+::
+++  providers-json
+  ^-  json
+  :-  %a
+  %+  turn  providers
+  |=  p=provider
+  %-  pairs:enjs:format
+  :~  ['name' s+name.p]
+      ['label' s+label.p]
+      ['dialect' s+dialect.p]
+  ==
 ::
 ++  clanker
   |_  cfg=config
@@ -476,11 +524,19 @@
   ::
   ++  call-anthropic
     |=  body=json
+    (call-proxy '@anthropic' body)
+  ::  +call-proxy: the same round-trip against any proxy that speaks the
+  ::  {id, body} protocol. The anthropic and openrouter nexuses are
+  ::  identical here; they differ only in the DIALECT of `body`, which
+  ::  is the caller's business, not this arm's.
+  ::
+  ++  call-proxy
+    |=  [link=@t body=json]
     =/  m  (fiber:fiber:nexus ,(unit json))
     ^-  form:m
-    ::  the proxy is found by NAME: /sys/link/anthropic names whichever
+    ::  the proxy is found by NAME: /sys/link/<name> names whichever
     ::  instance claims it, so the agent's weir grants peek there
-    ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@anthropic')
+    ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io link)
     ?.  ?=([~ %| *] root)  (pure:m ~)
     =/  proxy=path  p.u.root
     ;<  eny=@uvJ  bind:m  get-entropy:io

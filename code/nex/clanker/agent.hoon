@@ -301,7 +301,7 @@
   ;<  sys=@t  bind:m  (standing rail chat)
   ;<  pol=policy  bind:m  (read-policy rail chat)
   ;<  schema=json  bind:m  (list-tools rail pol)
-  (run rail chat road log sys model max schema pol)
+  (run rail chat road log sys model max schema pol (provider-of cfg))
 ::  +turn-chat: one turn. Append the %input event to the chat log, persist
 ::  (so a refresh shows it even if the turn stalls), assemble this
 ::  clanker's standing context from its files, ask its tools nexus what it
@@ -337,7 +337,7 @@
   ;<  sys=@t  bind:m  (standing rail chat)
   ;<  pol=policy  bind:m  (read-policy rail chat)
   ;<  schema=json  bind:m  (list-tools rail pol)
-  (run rail chat road log sys model max schema pol)
+  (run rail chat road log sys model max schema pol (provider-of cfg))
 ::  the chat log: one file per chat, its own mark (the explorer opens a
 ::  chat-log in the chat viewer), json inside
 ++  log-name  %'log.chat-log'
@@ -448,7 +448,8 @@
   ;<  sys=@t  bind:m  (standing rail `@t`i.chats)
   ;<  pol=policy  bind:m  (read-policy rail `@t`i.chats)
   ;<  schema=json  bind:m  (list-tools rail pol)
-  ;<  ~  bind:m  (run rail `@t`i.chats road log sys model max schema pol)
+  ;<  ~  bind:m
+    (run rail `@t`i.chats road log sys model max schema pol (provider-of cfg))
   $(chats t.chats)
 ::  +open-turn: does this log end mid-turn? An input or tool results
 ::  await a response; a response that stopped for tool_use awaits its
@@ -645,7 +646,7 @@
 ::  proxy / tools) appends an %interrupt event and stops: the log is
 ::  intact and at rest.
 ++  run
-  |=  [=rail:tarball chat=@t road=road:tarball log=(list json) sys=@t model=@t max=@ud schema=json pol=policy]
+  |=  [=rail:tarball chat=@t road=road:tarball log=(list json) sys=@t model=@t max=@ud schema=json pol=policy pro=provider:clanker]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   |-  ^-  form:m
@@ -721,14 +722,17 @@
     ?:  =('' tip-text)  schema
     ?.  ?=([%a *] schema)  schema
     [%a (snoc p.schema step-schema)]
-  ;<  answered=(unit json)  bind:m  (call-anthropic:ck (encode model max sys kit sent))
+  ;<  answered=(unit json)  bind:m
+    %+  call-proxy:ck  link.pro
+    (encode-for pro model max sys kit sent)
   ?~  answered
     (write-log road %.y (snoc log event-interrupt))
   =/  resp=json  u.answered
-  =/  content-arr=(list json)  (resp-content resp)
-  =.  log  (snoc log (event-response content-arr (resp-stop resp) (resp-usage resp)))
+  =/  content-arr=(list json)  (decode pro resp)
+  =/  stop=@t  (stop-for pro resp)
+  =.  log  (snoc log (event-response content-arr stop (usage-for pro resp)))
   ;<  ~  bind:m  (write-log road %.y log)
-  ?.  =('tool_use' (resp-stop resp))  (pure:m ~)
+  ?.  =('tool_use' stop)  (pure:m ~)
   $
 ::  +run-tools: execute each tool_use; `spawn` is the engine's own, every
 ::  other name goes to this clanker's tools nexus. Yields the tool_result
@@ -1194,6 +1198,282 @@
   ^-  json
   ?.  ?=([%o *] resp)  [%o ~]
   (fall (~(get by p.resp) 'usage') [%o ~])
+::
+::  ---  dialects  ---
+::
+::  The anthropic Messages shape is this app's CANONICAL form: it is
+::  what the event log stores, what +assemble folds to, and what the
+::  viewer, +status-of and the recipe machinery read. OpenAI-dialect
+::  endpoints (openrouter) are translated on BOTH edges — out in
+::  +encode-for, back in +decode — so nothing above this line learns
+::  there is a second provider and no stored log needs migrating.
+::
+::  +provider-of: the registry row this clanker's config selects. An
+::  absent or unknown `provider` falls back to the first row, so every
+::  clanker that predates providers reads exactly as before.
+::
+++  provider-of
+  |=  cfg=json
+  ^-  provider:clanker
+  (provider-for:clanker (jstr:clanker cfg 'provider'))
+::  +oai: does this provider speak the openai dialect? The codec
+::  branches on the DIALECT, never on the provider's name, so a new
+::  endpoint nexus that speaks one we already have needs no code here.
+::
+++  oai
+  |=  pro=provider:clanker
+  ^-  ?
+  =('chat-completions' dialect.pro)
+::  +encode-for, +stop-for, +usage-for: the codec, by dialect.
+::
+++  encode-for
+  |=  [pro=provider:clanker model=@t max=@ud sys=@t schema=json messages=(list json)]
+  ^-  json
+  ?:  (oai pro)  (encode-oai model max sys schema messages)
+  (encode model max sys schema messages)
+::
+++  stop-for
+  |=  [pro=provider:clanker resp=json]
+  ^-  @t
+  ?:((oai pro) (stop-oai resp) (resp-stop resp))
+::
+++  usage-for
+  |=  [pro=provider:clanker resp=json]
+  ^-  json
+  ?:((oai pro) (usage-oai resp) (resp-usage resp))
+::  +decode: a response as canonical content. A response in neither
+::  dialect — a proxy error, an endpoint that refused the shape, a model
+::  with no tool support — becomes a VISIBLE text block rather than an
+::  empty turn, so a failed experiment reads as a failure in the chat
+::  instead of the model appearing to say nothing.
+::
+++  decode
+  |=  [pro=provider:clanker resp=json]
+  ^-  (list json)
+  =/  blocks=(list json)
+    ?:((oai pro) (decode-oai resp) (resp-content resp))
+  ?^  blocks  blocks
+  ~[(pairs:enjs:format ~[['type' s+'text'] ['text' s+(resp-error pro resp)]])]
+::  +resp-error: the most legible account of a response we could not
+::  read — the provider's own error text when there is one, else the raw
+::  json. Nothing fails silently.
+::
+++  resp-error
+  |=  [pro=provider:clanker resp=json]
+  ^-  @t
+  =/  tag=tape  "[{(trip name.pro)}] "
+  =/  err=(unit json)
+    ?.(?=([%o *] resp) ~ (~(get by p.resp) 'error'))
+  ?:  ?=([~ %s *] err)  (crip (weld tag (trip p.u.err)))
+  ?^  err
+    =/  msg=@t  (jstr:clanker u.err 'message')
+    ?:  =('' msg)  (crip (weld tag (trip (en:json:html u.err))))
+    (crip (weld tag (trip msg)))
+  ?:  ?=([%o ~] resp)  (crip (weld tag "empty response"))
+  (crip (weld tag (weld "unreadable response: " (trip (en:json:html resp)))))
+::  +encode-oai: the openai-dialect codec, request side. There is no
+::  top-level system field — the prompt is a leading message — tools are
+::  wrapped as functions, and the messages are translated out of our
+::  canonical shape.
+::
+++  encode-oai
+  |=  [model=@t max=@ud sys=@t schema=json messages=(list json)]
+  ^-  json
+  =/  sysm=json  (pairs:enjs:format ~[['role' s+'system'] ['content' s+sys]])
+  %-  pairs:enjs:format
+  :~  ['model' s+model]
+      ['max_tokens' (numb:enjs:format max)]
+      ['tools' (tools-to-oai schema)]
+      ['messages' [%a [sysm (msgs-to-oai messages)]]]
+  ==
+::  +tools-to-oai: an anthropic tool schema as openai functions. A
+::  server-side tool (web_search) has no input_schema and no openai
+::  equivalent: drop it rather than send a shape the endpoint refuses.
+::
+++  tools-to-oai
+  |=  schema=json
+  ^-  json
+  ?.  ?=([%a *] schema)  [%a ~]
+  :-  %a
+  %+  murn  p.schema
+  |=  t=json
+  ^-  (unit json)
+  ?.  ?=([%o *] t)  ~
+  =/  isc=(unit json)  (~(get by p.t) 'input_schema')
+  ?~  isc  ~
+  :-  ~
+  %-  pairs:enjs:format
+  :~  ['type' s+'function']
+      :-  'function'
+      %-  pairs:enjs:format
+      :~  ['name' s+(jstr:clanker t 'name')]
+          ['description' s+(jstr:clanker t 'description')]
+          ['parameters' u.isc]
+      ==
+  ==
+::  +msgs-to-oai: canonical messages as openai messages. Three shapes
+::  diverge: an assistant turn's tool_use blocks become a sibling
+::  tool_calls field, a user turn's tool_result blocks become their own
+::  role:'tool' messages (emitted FIRST, so each still follows the
+::  assistant turn that called it), and an image block becomes a data:
+::  url. Plain text turns pass through untouched — that part of the two
+::  dialects is identical.
+::
+++  msgs-to-oai
+  |=  msgs=(list json)
+  ^-  (list json)
+  %-  zing
+  %+  turn  msgs
+  |=  mj=json
+  ^-  (list json)
+  ?.  ?=([%o *] mj)  ~
+  =/  role=@t  (jstr:clanker mj 'role')
+  =/  con=(unit json)  (~(get by p.mj) 'content')
+  ?~  con  ~
+  ?.  ?=([%a *] u.con)  ~[mj]
+  =/  blocks=(list json)  p.u.con
+  ?:  =('assistant' role)
+    =/  calls=(list json)
+      %+  murn  blocks
+      |=  b=json
+      ^-  (unit json)
+      ?.  ?=([%o *] b)  ~
+      ?.  ?=([~ %s %'tool_use'] (~(get by p.b) 'type'))  ~
+      :-  ~
+      %-  pairs:enjs:format
+      :~  ['id' s+(jstr:clanker b 'id')]
+          ['type' s+'function']
+          :-  'function'
+          %-  pairs:enjs:format
+          :~  ['name' s+(jstr:clanker b 'name')]
+              ['arguments' s+(en:json:html (fall (~(get by p.b) 'input') [%o ~]))]
+          ==
+      ==
+    =/  base=(list [@t json])
+      ~[['role' s+'assistant'] ['content' s+(text-of blocks)]]
+    :_  ~
+    %-  pairs:enjs:format
+    ?~(calls base (snoc base [`@t`'tool_calls' `json`[%a calls]]))
+  =/  results=(list json)
+    %+  murn  blocks
+    |=  b=json
+    ^-  (unit json)
+    ?.  ?=([%o *] b)  ~
+    ?.  ?=([~ %s %'tool_result'] (~(get by p.b) 'type'))  ~
+    =/  c=json  (fall (~(get by p.b) 'content') s+'')
+    :-  ~
+    %-  pairs:enjs:format
+    :~  ['role' s+'tool']
+        ['tool_call_id' s+(jstr:clanker b 'tool_use_id')]
+        :-  'content'
+        ?:  ?=([%s *] c)  c
+        s+(text-of ?:(?=([%a *] c) p.c ~))
+    ==
+  =/  parts=(list json)
+    %+  murn  blocks
+    |=  b=json
+    ^-  (unit json)
+    ?.  ?=([%o *] b)  ~
+    =/  ty=@t  (jstr:clanker b 'type')
+    ?:  =('text' ty)  `b
+    ?.  =('image' ty)  ~
+    =/  src=json  (fall (~(get by p.b) 'source') [%o ~])
+    =/  mt=@t  (jstr:clanker src 'media_type')
+    =/  d=@t   (jstr:clanker src 'data')
+    ?:  |(=('' mt) =('' d))  ~
+    :-  ~
+    %-  pairs:enjs:format
+    :~  ['type' s+'image_url']
+        :-  'image_url'
+        %-  pairs:enjs:format
+        ~[['url' s+(crip "data:{(trip mt)};base64,{(trip d)}")]]
+    ==
+  %+  weld  results
+  ?~  parts  ~
+  ~[(pairs:enjs:format ~[['role' s+'user'] ['content' [%a parts]]])]
+::  +text-of: the text blocks of a content array, concatenated.
+::
+++  text-of
+  |=  blocks=(list json)
+  ^-  @t
+  %-  crip
+  %-  zing
+  %+  turn  blocks
+  |=  b=json
+  ^-  tape
+  ?.  ?=([%o *] b)  ""
+  ?.  ?=([~ %s %'text'] (~(get by p.b) 'type'))  ""
+  (trip (jstr:clanker b 'text'))
+::  +decode-oai: an openai-dialect response back into canonical content,
+::  so the log, the viewer and +assemble never learn of the dialect.
+::
+++  decode-oai
+  |=  resp=json
+  ^-  (list json)
+  =/  msg=json  (oai-message resp)
+  ?.  ?=([%o *] msg)  ~
+  =/  text=@t  (jstr:clanker msg 'content')
+  =/  blocks=(list json)
+    ?:  =('' text)  ~
+    ~[(pairs:enjs:format ~[['type' s+'text'] ['text' s+text]])]
+  =/  calls=(unit json)  (~(get by p.msg) 'tool_calls')
+  ?.  ?=([~ %a *] calls)  blocks
+  %+  weld  blocks
+  %+  murn  p.u.calls
+  |=  c=json
+  ^-  (unit json)
+  ?.  ?=([%o *] c)  ~
+  =/  f=json  (fall (~(get by p.c) 'function') [%o ~])
+  ::  arguments arrive as a JSON STRING; a model that emits malformed
+  ::  json yields an empty input, which the tool refuses on its own
+  ::  terms, rather than a crashed turn
+  =/  input=json  (fall (de:json:html (jstr:clanker f 'arguments')) [%o ~])
+  :-  ~
+  %-  pairs:enjs:format
+  :~  ['type' s+'tool_use']
+      ['id' s+(jstr:clanker c 'id')]
+      ['name' s+(jstr:clanker f 'name')]
+      ['input' input]
+  ==
+::  +oai-message: choices[0].message, or an empty object.
+::
+++  oai-message
+  |=  resp=json
+  ^-  json
+  ?.  ?=([%o *] resp)  [%o ~]
+  =/  ch=(unit json)  (~(get by p.resp) 'choices')
+  ?.  ?=([~ %a ^] ch)  [%o ~]
+  =/  c0=json  i.p.u.ch
+  ?.  ?=([%o *] c0)  [%o ~]
+  (fall (~(get by p.c0) 'message') [%o ~])
+::  +stop-oai: finish_reason as a canonical stop_reason, since +run
+::  branches on 'tool_use' to decide whether the turn continues.
+::
+++  stop-oai
+  |=  resp=json
+  ^-  @t
+  ?.  ?=([%o *] resp)  ''
+  =/  ch=(unit json)  (~(get by p.resp) 'choices')
+  ?.  ?=([~ %a ^] ch)  ''
+  =/  fr=@t  (jstr:clanker i.p.u.ch 'finish_reason')
+  ?:  =('tool_calls' fr)  'tool_use'
+  ?:  =('stop' fr)  'end_turn'
+  ?:  =('length' fr)  'max_tokens'
+  fr
+::  +usage-oai: openai token counts under canonical names, keeping
+::  openrouter's native `cost` when the proxy asked for accounting.
+::
+++  usage-oai
+  |=  resp=json
+  ^-  json
+  =/  u=json
+    ?.(?=([%o *] resp) [%o ~] (fall (~(get by p.resp) 'usage') [%o ~]))
+  ?.  ?=([%o *] u)  [%o ~]
+  %-  pairs:enjs:format
+  :~  ['input_tokens' (numb:enjs:format (jnum:clanker u 'prompt_tokens' 0))]
+      ['output_tokens' (numb:enjs:format (jnum:clanker u 'completion_tokens' 0))]
+      ['cost' (fall (~(get by p.u) 'cost') [%n '0'])]
+  ==
 ::  +event-*: the log vocabulary, as stored json.
 ++  event-input
   |=  body=@t
