@@ -46,6 +46,7 @@
 ::
 /<  clanker    /lib/clanker.hoon
 /<  nex-tools  /lib/tools.hoon
+/<  rcp-lib    /lib/recipe.hoon
 /&  bundle         /lib/clanker-bundle/
 /&  kernel-bundle  /lib/clanker-kernel-bundle/
 /&  repo-bundle    /lib/clanker-repo-bundle/
@@ -67,6 +68,9 @@
           [%fall %& [/ %'system.md'] [[/ %mime] [/text/markdown (as-octs:mimes:html '')]]]
           [%fall %| /memories empty-dir:loader]
           [%fall %| /skills empty-dir:loader]
+          ::  recipes/*.json: thought processes a chat can follow. A run's
+          ::  position lives beside that chat's log, as chats/<c>/run.json
+          [%fall %| /recipes empty-dir:loader]
           [%fall %| /chats empty-dir:loader]
           ::  files/: what the clanker writes for the owner (write_file) and
           ::  its attachments (files/blobs, content-addressed). The loader
@@ -189,6 +193,80 @@
     =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.cur)))) [%a ~])
     ?.(?=([%a *] j) ~ p.j)
   (pure:m [road ?=([%file *] cur) log])
+::  +read-run, +write-run: a chat's recipe run, a sibling of its log and
+::  its status. Only the position and the spend persist; the tip itself
+::  is rendered per request and never stored.
+::
+++  read-run
+  |=  [=rail:tarball chat=@t]
+  =/  m  (fiber:fiber:nexus ,(unit state:rcp-lib))
+  ^-  form:m
+  ;<  j=json  bind:m  (read-json rail [%& [%chats `@ta`chat ~] %'run.json'])
+  (pure:m (state-from-json:rcp-lib j))
+::
+++  write-run
+  |=  [=rail:tarball chat=@t st=state:rcp-lib]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  road=road:tarball  (nex-road:io rail [%& [%chats `@ta`chat ~] %'run.json'])
+  =/  j=json  (state-to-json:rcp-lib st)
+  ;<  v=view:nexus  bind:m  (peek:io road ~)
+  ?:  ?=([%file *] v)  (over:io road [[/ %json] j])
+  ;<  *  bind:m  (make-soft:io road |+[[[/ %json] j] ~])
+  (pure:m ~)
+::  +read-recipe: one of the clanker's recipes, parsed.
+::
+++  read-recipe
+  |=  [=rail:tarball name=@t]
+  =/  m  (fiber:fiber:nexus ,(unit recipe:rcp-lib))
+  ^-  form:m
+  ?:  =('' name)  (pure:m ~)
+  ;<  j=json  bind:m  (read-json rail [%& /recipes (crip "{(trip name)}.json")])
+  (pure:m (parse:rcp-lib name j))
+::  +engage: {recipe} in the poke starts that recipe for this chat, from
+::  its first step. Naming one again starts it over.
+::
+++  engage
+  |=  [=rail:tarball chat=@t jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  want=@t  (jstr:clanker jon 'recipe')
+  ?:  =('' want)  (pure:m ~)
+  ;<  r=(unit recipe:rcp-lib)  bind:m  (read-recipe rail want)
+  ?~  r  (pure:m ~)
+  =/  lvl=@t  =/(l=@t (jstr:clanker jon 'level') ?:(=('' l) 'normal' l))
+  (write-run rail chat (enter:rcp-lib u.r lvl))
+::  +step-schema: offered only while a run is live and still movable.
+::
+++  step-schema
+  ^-  json
+  %:  mk-tool-typed:clanker  'step'
+    'Adopt the next intention in the recipe you are following. Name the target exactly as the tip lists it; stay re-chooses the current step; abort leaves the recipe and is always available.'
+    :~  ['target' 'string' 'the step to adopt, or stay, or done, or abort']
+        ['note' 'string' 'optional one line for the run log']
+    ==
+    ~['target']
+  ==
+::  +take-step: the model adopting the next intention. A refused move
+::  comes back as the tool result rather than a crash, so it reads why
+::  and names something else, at the cost of one message.
+::
+++  take-step
+  |=  [=rail:tarball chat=@t input=json]
+  =/  m  (fiber:fiber:nexus ,(unit [json @t]))
+  ^-  form:m
+  =/  target=@t  (jstr:clanker input 'target')
+  ;<  held=(unit state:rcp-lib)  bind:m  (read-run rail chat)
+  ?~  held  (pure:m `[s+'no recipe is engaged' 'error'])
+  ?:  =('abort' target)
+    ;<  ~  bind:m  (write-run rail chat u.held(step 'done'))
+    (pure:m `[s+'left the recipe' 'abort'])
+  ;<  rcf=(unit recipe:rcp-lib)  bind:m  (read-recipe rail name.u.held)
+  ?~  rcf  (pure:m `[s+'the recipe is missing' 'error'])
+  =/  e=(each state:rcp-lib @t)  (move:rcp-lib u.rcf u.held target)
+  ?:  ?=(%| -.e)  (pure:m `[s+p.e 'refused'])
+  ;<  ~  bind:m  (write-run rail chat p.e)
+  (pure:m `[s+(crip "now in {(trip step.p.e)}") step.p.e])
 ::  +last-kind: the k of a log's last event ('' when empty).
 ++  last-kind
   |=  log=(list json)
@@ -246,6 +324,7 @@
   ;<  ~  bind:m
     ?:  ?=([%ball *] dv)  (pure:m ~)
     (make:io (nex-road:io rail [%| chat-dir]) &+empty-dir:loader)
+  ;<  ~  bind:m  (engage rail chat jon)
   ;<  [road=road:tarball existed=? log=(list json)]  bind:m  (chat-log rail chat)
   ::  a chat paused on an ask takes no new message until it is answered
   ::  (the model's pending tool uses must be answered first)
@@ -609,7 +688,40 @@
     ;<  ~  bind:m  (write-log road %.y log)
     $
   ;<  messages=(list json)  bind:m  (inline-blobs rail (assemble log))
-  ;<  answered=(unit json)  bind:m  (call-anthropic:ck (encode model max sys schema messages))
+  ::  a chat following a recipe carries its tip on the END of the last
+  ::  message, rendered from the run AFTER this message is spent, so what
+  ::  it reads is what it has left. The tip never enters the log: the log
+  ::  is written from events and `sent` is a local.
+  ;<  held=(unit state:rcp-lib)  bind:m  (read-run rail chat)
+  ;<  rcf=(unit recipe:rcp-lib)  bind:m
+    ?~  held  (pure:(fiber:fiber:nexus ,(unit recipe:rcp-lib)) ~)
+    (read-recipe rail name.u.held)
+  =/  spun=(unit state:rcp-lib)
+    ?~  rcf  ~
+    ?~  held  ~
+    `(tick:rcp-lib u.held)
+  ;<  ~  bind:m
+    ?~  spun  (pure:(fiber:fiber:nexus ,~) ~)
+    (write-run rail chat u.spun)
+  =/  tip-text=@t
+    ?~  rcf  ''
+    ?~  spun  ''
+    ?:  (done:rcp-lib u.spun)  ''
+    ?.  (stuck:rcp-lib u.rcf u.spun)  (tip:rcp-lib u.rcf u.spun)
+    %-  crip
+    ;:  weld
+      "<recipe-state>\0a"
+      "The budget is spent. Report what was settled and what stopped it.\0a"
+      "Do not call step again.\0a</recipe-state>\0a"
+    ==
+  =/  sent=(list json)
+    ?:(=('' tip-text) messages (append-tip:ck messages tip-text))
+  ::  step is on offer only while a run is live and still movable
+  =/  kit=json
+    ?:  =('' tip-text)  schema
+    ?.  ?=([%a *] schema)  schema
+    [%a (snoc p.schema step-schema)]
+  ;<  answered=(unit json)  bind:m  (call-anthropic:ck (encode model max sys kit sent))
   ?~  answered
     (write-log road %.y (snoc log event-interrupt))
   =/  resp=json  u.answered
@@ -640,6 +752,7 @@
       =/  mo  (fiber:fiber:nexus ,(unit [json @t]))
       (pure:mo `[s+'The user declined to run this tool. Do not retry it; ask, or go on without it.' 'declined'])
     ?:  =('spawn' name)  (spawn rail chat input)
+    ?:  =('step' name)  (take-step rail chat input)
     (call-tool rail name input tid)
   ?~  outcome  (pure:m ~)
   =/  result=json
@@ -743,7 +856,7 @@
     %-  pairs:enjs:format
     :~  ['cmd' s+'call']  ['id' s+run-name]  ['name' s+name]  ['arguments' args]
     ==
-  ;<  timed=(unit (unit json))  bind:m  (await-run run-road run-name)
+  ;<  timed=(unit (unit json))  bind:m  (await-run rail run-road run-name)
   ;<  ~  bind:m  (drop:io /tool run-road)
   ;<  ~  bind:m  (prune-runs rail)
   ?~  timed  (pure:m ~)
@@ -942,8 +1055,14 @@
 ::  fiber for good, so every few seconds the run is simply read, and a
 ::  run that is gone (the tools nexus reseeded, its runs/ with it) is
 ::  given up on as an error rather than waited on. ~ on interrupt.
+::    A run whose FIBER HAS BANGED is the third ending, and it used to be no
+::    ending at all: the grub is still there and still readable, its step just
+::    never becomes %done, so the two tests below (gone? done?) both missed it
+::    and this waited on a dead run for as long as the chat lived. A banged run
+::    is now read off the runs directory and answered as an error, so the turn
+::    finishes and the chat says what happened instead of sitting busy.
 ++  await-run
-  |=  [run-road=road:tarball run-name=@ta]
+  |=  [=rail:tarball run-road=road:tarball run-name=@ta]
   =/  m  (fiber:fiber:nexus ,(unit (unit json)))
   ^-  form:m
   =/  misses=@ud  0
@@ -959,8 +1078,32 @@
     $(misses +(misses))
   =/  res  (mule |.(!<(tool-state:nex-tools (need-vase:tarball sang.view))))
   ?:  ?=(%| -.res)  $
-  ?.  =(%done step.p.res)  $
+  ?.  =(%done step.p.res)
+    ::  not done — but is it ever going to be? A banged fiber leaves the run
+    ::  readable and stuck at whatever step it reached.
+    ;<  banged=(unit tang)  bind:m  (run-bang rail run-name)
+    ?~  banged  $
+    =/  why=tape  (zing (turn (scag 1 u.banged) |=(=tank ~(ram re tank))))
+    %-  pure:m
+    :^  ~  ~  %o
+    %-  malt
+    :~  ['type' s+'error']
+        ['message' s+(crip "the tool crashed: {why}")]
+    ==
   (pure:m `update.p.res)
+::  +run-bang: the crash of a run's own fiber, if it has one. The runs
+::  directory carries a bang per grub; a run that banged will never write
+::  another step, so this is the only way to tell waiting from dead.
+++  run-bang
+  |=  [=rail:tarball run-name=@ta]
+  =/  m  (fiber:fiber:nexus ,(unit tang))
+  ^-  form:m
+  ;<  dv=view:nexus  bind:m  (peek-shallow:io (nex-road:io rail [%| /tools/runs]) ~)
+  ?.  ?=([%ball *] dv)  (pure:m ~)
+  ?~  fil.ball.dv  (pure:m ~)
+  =/  got  (~(get by contents.u.fil.ball.dv) run-name)
+  ?~  got  (pure:m ~)
+  (pure:m bang.u.got)
 ::  +assemble: THE context policy. Fold the event log into Anthropic
 ::  messages. v1 = append-all, with one repair: the API requires every
 ::  tool_use in an assistant turn to be answered by a tool_result in the
