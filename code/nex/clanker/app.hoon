@@ -31,6 +31,8 @@
 /&  viewer-js   ./viewer.js
 /&  chats-js    ./chats.js
 /&  recipe-js   ./recipe.js
+/<  rcp-lib     /lib/recipe.hoon
+/&  sp-raw      /nex/clanker/system-prompt/
 /&  icon        ./icon.svg
 ::  the layouts the explorer opens the collection's dirs as ('./' paths
 ::  resolve against the dir opened): the collection root or a category
@@ -652,10 +654,76 @@
     %-  pairs:enjs:format
     :~  ['path' s+(spat u.proj)]
         ['chat' s+chat]
-        ['tools' a+(turn names |=(n=@t `json`s+n))]
+        ::  the runtime tools (the agent's own: enter, step, spawn) take
+        ::  verdicts by name like the rest, so they are listed with them
+        ['tools' a+(turn (weld runtime-tools names) |=(n=@t `json`s+n))]
         ['clanker' bj]
         ['own' oj]
     ==
+  ::  the tip of a chat's recipe run: where it stands and the block that
+  ::  rides at the tail of the model's next request. null when no run is
+  ::  live. Rendered from run.json as it is, so it is the state after the
+  ::  last message was spent.
+  ?:  ?&(=(%'GET' method) =([%api %tip ~] suffix))
+    =/  proj=(unit path)  (parse-proj (arg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    =/  chat=@t  (arg 'chat')
+    =/  pdir=path  (welp /projects u.proj)
+    =/  cdir=path  (welp pdir [%chats `@ta`chat ~])
+    ;<  rj=(unit json)  bind:m  (read-json-maybe [%| 1 %& cdir %'run.json'])
+    =/  stk=stack:rcp-lib  ?~(rj ~ (stack-from-json:rcp-lib u.rj))
+    ::  frames, bottom first. Each carries its run state and the recipe
+    ::  file itself, so the pane renders the step from the source rather
+    ::  than parsing the tip; the tip rides along as the model reads it
+    ;<  frames=(list json)  bind:m
+      =/  mf  (fiber:fiber:nexus ,(list json))
+      =/  todo=(list state:rcp-lib)  (flop stk)
+      =|  acc=(list json)
+      |-  ^-  form:mf
+      ?~  todo  (pure:mf (flop acc))
+      =/  st=state:rcp-lib  i.todo
+      ;<  raw=(unit json)  bind:mf
+        (read-json-maybe [%| 1 %& (snoc pdir %recipes) (crip "{(trip name.st)}.json")])
+      ?~  raw  $(todo t.todo)
+      =/  rcp=(unit recipe:rcp-lib)  (parse:rcp-lib name.st u.raw)
+      ?~  rcp  $(todo t.todo)
+      ::  the frames beneath this one, in the top-first stack
+      =/  outer=(list state:rcp-lib)  (slag +((lent t.todo)) stk)
+      =/  fj=json
+        %-  pairs:enjs:format
+        :~  ['name' s+name.st]
+            ['step' s+step.st]
+            ['level' s+level.st]
+            ['asked' b+asked.st]
+            ['run' (state-to-json:rcp-lib st)]
+            ['recipe' u.raw]
+            ['tip' s+(tip-in:rcp-lib (frags-of:rcp-lib fil.sp-raw) u.rcp st outer)]
+        ==
+      $(todo t.todo, acc [fj acc])
+    %+  send-json  eyre-id
+    %-  en:json:html
+    (pairs:enjs:format ~[['frames' a+frames]])
+  ::  the user takes a chat out of its recipe: two pokes in order. The
+  ::  interrupt lands mid-await inside a running turn and cancels it
+  ::  (idle, it is a no-op); the leave is taken next, on a log at rest
+  ?:  ?&(=(%'POST' method) =([%api %leave ~] suffix))
+    =/  proj=(unit path)  (parse-proj (jarg 'path'))
+    ?~  proj  (bad eyre-id 'path required')
+    ;<  ~  bind:m
+      %-  poke:io
+      :+  [%| 1 %& (welp /projects u.proj) %'main.sig']  [/ %json]
+      (pairs:enjs:format ~[['action' s+'interrupt'] ['chat' s+(jarg 'chat')]])
+    ;<  ~  bind:m
+      %-  poke:io
+      :+  [%| 1 %& (welp /projects u.proj) %'main.sig']  [/ %json]
+      %-  pairs:enjs:format
+      :~  ['action' s+'leave']
+          ['chat' s+(jarg 'chat')]
+          ::  depth: the frame to leave, bottom = 0; it and everything
+          ::  above it go. Omitted: the top.
+          ['depth' ?.(?=([%o *] body) ~ (fall (~(get by p.body) 'depth') ~))]
+      ==
+    (send-json eyre-id '{"ok":true}')
   ::  write a policy: {path, chat?, policy: {default, allow, ask, deny}}
   ::  to the clanker's tools.json, or the chat's
   ?:  ?&(=(%'POST' method) =([%api %tools ~] suffix))
@@ -850,6 +918,9 @@
 ::  agent derives from the log on every write ({state, events, last,
 ::  input, asks}): the list never reads a transcript. A chat with no
 ::  status yet (never written since it was made) falls back to its log.
+::  the tools the agent loop runs itself rather than sending to the tools
+::  nexus (+run-tools in agent.hoon); policy applies to them by name
+++  runtime-tools  ^-((list @t) ~['enter' 'step' 'spawn'])
 ++  chats-of
   |=  chats-dir=path
   =/  m  (fiber:fiber:nexus ,(list json))
@@ -876,6 +947,7 @@
           ['busy' b+=('busy' state)]
           ['asking' b+=('asking' state)]
           ['prompt' b+!=('' sys)]
+          ['recipe' (fall (~(get by p.u.st) 'recipe') ~)]
       ==
     ;<  log=json  bind:mj  (read-json [%| 1 %& cdir %'log.chat-log'])
     =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
@@ -1088,11 +1160,15 @@
       ::  ?view=prompt on a chat's log: the chat's own prompt, as the
       ::  record form (its system.md may not exist yet, so the log is the
       ::  path the form opens on)
-      ?.  |(=('prompt' view) =('tools' view))  (chat-ans (flop t.t.t.f) i.t.f)
+      ?.  |(=('prompt' view) =('tools' view) =('tip' view))  (chat-ans (flop t.t.t.f) i.t.f)
       =/  proj=path  (flop t.t.t.f)
       =/  pdir=path  (welp coll proj)
       =/  cdir=path  (welp pdir [%chats i.t.f ~])
       =/  a=json  (pairs:enjs:format ~[['proj' s+(spat proj)] ['chat' s+i.t.f]])
+      ::  ?view=tip: the chat's recipe run, following run.json and the
+      ::  log (a leave writes both; a move writes the run)
+      ?:  =('tip' view)
+        (ans 'tip' panes a ~[(fol (snoc cdir %'run.json') | |) (fol (snoc cdir %'log.chat-log') | |)])
       ::  ?view=tools: the chat's own tool policy, over the clanker's
       ?:  =('tools' view)
         (ans 'tools' panes a ~[(fol (snoc cdir %'tools.json') | |) (fol (snoc pdir %'tools.json') | |)])

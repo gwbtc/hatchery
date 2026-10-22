@@ -331,6 +331,7 @@
           var d = ev.decisions || {}, ids = Object.keys(d), ran = ids.filter(function (k) { return d[k] !== false; }).length;
           thread.appendChild(el('div', 'cv-meta', ran === ids.length ? 'allowed' : ran === 0 ? 'declined' : ran + ' allowed · ' + (ids.length - ran) + ' declined'));
         } else if (ev.k === 'interrupt') thread.appendChild(el('div', 'cv-meta', 'stopped'));
+        else if (ev.k === 'recipe') thread.appendChild(el('div', 'cv-meta', ev.body));
         else thread.appendChild(el('div', 'cv-err', JSON.stringify(ev)));
       });
       if (state.pending != null) thread.appendChild(msg('user pending', 'you', state.pending));

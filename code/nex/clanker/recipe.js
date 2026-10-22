@@ -19,7 +19,11 @@
   'use strict';
   window.Viewers = window.Viewers || {};
 
-  var TERM = { done: 1, abort: 1 };
+  // the reserved exits, each its own kind: done ends the run with its
+  // output, abort ends it without, ask pauses it on the user. A step
+  // offers an exit only by naming it in next, so which exits a step has
+  // is part of its shape and each is drawn in its own colour
+  var TERM = { done: 1, abort: 1, ask: 1 };
   var SELF = { self: 1, stay: 1 };
 
   function el(tag, cls) { var e = document.createElement(tag); if (cls) e.className = cls; return e; }
@@ -71,7 +75,9 @@
     '.rcp .arrows li.on{background:#ddf4ff}' +
     '.rcp .to{font:11px ui-monospace,monospace;color:#0969da;flex:0 0 auto;min-width:5.5rem}' +
     '.rcp .to.back{color:#9a6700}' +
-    '.rcp .to.term{color:#116329}' +
+    '.rcp .to.done{color:#116329}' +
+    '.rcp .to.ask{color:#9a6700;font-style:italic}' +
+    '.rcp .to.abort{color:#cf222e}' +
     '.rcp .cond{color:#57606a;min-width:0}' +
     '.rcp .empty{color:#8b949e;padding:18px}';
 
@@ -125,8 +131,8 @@
       Object.keys(nx).forEach(function (to) {
         if (SELF[to]) return;
         if (TERM[to]) {
-          if (!seenTerm[to]) { seenTerm[to] = 1; out.push({ data: { id: 't:' + to, label: to }, classes: 'term' }); }
-          out.push({ data: { id: from + '>' + to, source: from, target: 't:' + to, cond: nx[to] }, classes: 'toterm' });
+          if (!seenTerm[to]) { seenTerm[to] = 1; out.push({ data: { id: 't:' + to, label: to }, classes: 'term ' + to }); }
+          out.push({ data: { id: from + '>' + to, source: from, target: 't:' + to, cond: nx[to] }, classes: 'toterm ' + to });
           return;
         }
         if (!steps[to]) return;
@@ -153,6 +159,10 @@
       'shape': 'round-rectangle', 'background-color': '#dafbe1', 'border-color': '#116329',
       'color': '#116329', 'height': 22, 'padding': '10px'
     } },
+    { selector: 'node.term.ask', style: { 'shape': 'diamond', 'background-color': '#fff8c5', 'border-color': '#9a6700', 'color': '#9a6700', 'height': 30, 'padding': '12px' } },
+    { selector: 'node.term.abort', style: { 'background-color': '#ffebe9', 'border-color': '#cf222e', 'color': '#cf222e' } },
+    { selector: 'edge.toterm.ask', style: { 'line-color': '#9a6700', 'target-arrow-color': '#9a6700', 'line-style': 'dotted' } },
+    { selector: 'edge.toterm.abort', style: { 'line-color': '#cf222e', 'target-arrow-color': '#cf222e' } },
     { selector: 'edge', style: {
       'width': 1.4, 'line-color': '#9aa4b0', 'target-arrow-color': '#9aa4b0',
       'target-arrow-shape': 'triangle', 'arrow-scale': 0.9,
@@ -312,7 +322,7 @@
           var li = el('li');
           li.setAttribute('data-to', to);
           var a = el('span', 'to');
-          if (TERM[to]) a.className = 'to term';
+          if (TERM[to]) a.className = 'to term ' + to;
           else if (!SELF[to] && recipe.steps[to] && order.indexOf(to) < order.indexOf(name)) a.className = 'to back';
           a.textContent = SELF[to] ? 'stay' : to;
           var cd = el('span', 'cond');

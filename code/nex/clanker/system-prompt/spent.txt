@@ -1,0 +1,4 @@
+<recipe-state>
+The budget is spent. Report what was settled and what stopped it.
+Do not call step again.
+</recipe-state>

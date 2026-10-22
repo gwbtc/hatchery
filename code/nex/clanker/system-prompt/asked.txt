@@ -1,0 +1,1 @@
+ASKED      the user has not answered yet: end this turn with the question

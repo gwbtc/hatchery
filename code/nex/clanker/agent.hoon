@@ -47,6 +47,11 @@
 /<  clanker    /lib/clanker.hoon
 /<  nex-tools  /lib/tools.hoon
 /<  rcp-lib    /lib/recipe.hoon
+::  every sentence the model reads from this agent, one file each: the
+::  standing section on recipes, the runtime tools' descriptions, the
+::  step results, the lines the log records, the tip. None of it is in
+::  here; +say fills a fragment with the run's facts
+/&  sp-raw     /nex/clanker/system-prompt/
 /&  bundle         /lib/clanker-bundle/
 /&  kernel-bundle  /lib/clanker-kernel-bundle/
 /&  repo-bundle    /lib/clanker-repo-bundle/
@@ -99,6 +104,12 @@
     --
 |%
 ++  ck  ~(. clanker:clanker [%clanker [%a ~] '' [%o ~]])
+::  the system-prompt fragments, and one of them with its {keys} filled
+++  frags  ^-(frags:rcp-lib (frags-of:rcp-lib fil.sp-raw))
+++  say
+  |=  [name=@ta subs=(list [tape tape])]
+  ^-  @t
+  (crip (say:rcp-lib frags name subs))
 ++  default-config
   ^-  json
   %-  pairs:enjs:format
@@ -179,8 +190,42 @@
   ?:  ?=([~ %'resolve'] act)
     ;<  ~  bind:m  (resolve-chat rail jon chat)
     $
+  ::  the user takes the chat out of its recipes: {action:'leave', chat,
+  ::  depth?}: the frame at depth (bottom = 0) and every one above it
+  ::  go; no depth means the top one
+  ?:  ?=([~ %'leave'] act)
+    =/  depth=(unit @ud)
+      =/  d=(unit json)  (~(get by p.jon) 'depth')
+      ?~  d  ~
+      (mole |.((ni:dejs:format u.d)))
+    ;<  ~  bind:m  (leave-run rail chat depth)
+    $
   ;<  ~  bind:m  (turn-chat rail jon chat)
   $
+::  +leave-run: the user ends recipe runs from outside. The frames are
+::  dropped and the log says who did it, one line each, so the model's
+::  history shows the exit too. Not while a turn runs: the running
+::  fiber holds the log and would write over the lines.
+++  leave-run
+  |=  [=rail:tarball chat=@t depth=(unit @ud)]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  held=stack:rcp-lib  bind:m  (read-run rail chat)
+  ?~  held  (pure:m ~)
+  ;<  [road=road:tarball existed=? log=(list json)]  bind:m  (chat-log rail chat)
+  ?:  (open-turn log)  (pure:m ~)
+  ::  `all` is held before ?~ narrowed it: scag and slag return ^+ their
+  ::  list, and ~ does not nest in a lest
+  =/  all=stack:rcp-lib  held
+  =/  n=@ud  (lent all)
+  =/  keep=@ud  ?~(depth (dec n) (min u.depth (dec n)))
+  =/  gone=stack:rcp-lib  (scag (sub n keep) all)
+  ;<  ~  bind:m  (write-run rail chat (slag (sub n keep) all))
+  =/  lines=(list json)
+    %+  turn  gone
+    |=  s=state:rcp-lib
+    (event-recipe (say %'left-by-user.txt' ~[["name" (trip name.s)] ["step" (trip step.s)]]))
+  (write-log road existed (weld log lines))
 ::  +chat-log: a chat's log road and its events (~ when there is none).
 ++  chat-log
   |=  [=rail:tarball chat=@t]
@@ -199,17 +244,17 @@
 ::
 ++  read-run
   |=  [=rail:tarball chat=@t]
-  =/  m  (fiber:fiber:nexus ,(unit state:rcp-lib))
+  =/  m  (fiber:fiber:nexus ,stack:rcp-lib)
   ^-  form:m
   ;<  j=json  bind:m  (read-json rail [%& [%chats `@ta`chat ~] %'run.json'])
-  (pure:m (state-from-json:rcp-lib j))
+  (pure:m (stack-from-json:rcp-lib j))
 ::
 ++  write-run
-  |=  [=rail:tarball chat=@t st=state:rcp-lib]
+  |=  [=rail:tarball chat=@t st=stack:rcp-lib]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  road=road:tarball  (nex-road:io rail [%& [%chats `@ta`chat ~] %'run.json'])
-  =/  j=json  (state-to-json:rcp-lib st)
+  =/  j=json  (stack-to-json:rcp-lib st)
   ;<  v=view:nexus  bind:m  (peek:io road ~)
   ?:  ?=([%file *] v)  (over:io road [[/ %json] j])
   ;<  *  bind:m  (make-soft:io road |+[[[/ %json] j] ~])
@@ -223,27 +268,88 @@
   ?:  =('' name)  (pure:m ~)
   ;<  j=json  bind:m  (read-json rail [%& /recipes (crip "{(trip name)}.json")])
   (pure:m (parse:rcp-lib name j))
-::  +engage: {recipe} in the poke starts that recipe for this chat, from
-::  its first step. Naming one again starts it over.
+::  +engage: {recipe} in the poke (or the enter tool's input) starts that
+::  recipe for this chat, from its first step, pushed over whatever the
+::  chat is already on. Yields the line the chat log records for it, so
+::  the entry is in the history both the user and the model read; ~
+::  when nothing was entered.
 ::
 ++  engage
   |=  [=rail:tarball chat=@t jon=json]
-  =/  m  (fiber:fiber:nexus ,~)
+  =/  m  (fiber:fiber:nexus ,(unit @t))
   ^-  form:m
   =/  want=@t  (jstr:clanker jon 'recipe')
   ?:  =('' want)  (pure:m ~)
   ;<  r=(unit recipe:rcp-lib)  bind:m  (read-recipe rail want)
   ?~  r  (pure:m ~)
   =/  lvl=@t  =/(l=@t (jstr:clanker jon 'level') ?:(=('' l) 'normal' l))
-  (write-run rail chat (enter:rcp-lib u.r lvl))
+  ;<  held=stack:rcp-lib  bind:m  (read-run rail chat)
+  ;<  ~  bind:m  (write-run rail chat (push:rcp-lib held (enter:rcp-lib u.r lvl)))
+  (pure:m `(entering-line want start.u.r lvl held))
+::  +entering-line: the one line a push writes to the log.
+::
+++  entering-line
+  |=  [name=@t step=@t lvl=@t outer=stack:rcp-lib]
+  ^-  @t
+  =/  within=tape
+    ?~  outer  ""
+    (trip (say %'entering-within.txt' ~[["name" (trip name.i.outer)] ["step" (trip step.i.outer)]]))
+  (say %'entering.txt' ~[["name" (trip name)] ["step" (trip step)] ["level" (trip lvl)] ["within" within]])
+::  +recipe-names: the recipes this clanker holds, by file stem.
+::
+++  recipe-names
+  |=  =rail:tarball
+  =/  m  (fiber:fiber:nexus ,(list @t))
+  ^-  form:m
+  ;<  v=view:nexus  bind:m  (peek-shallow:io (nex-road:io rail [%| /recipes]) ~)
+  ?.  ?=([%ball *] v)  (pure:m ~)
+  ?~  fil.ball.v  (pure:m ~)
+  %-  pure:m
+  %+  murn  (sort ~(tap in ~(key by contents.u.fil.ball.v)) aor)
+  |=  n=@ta
+  ^-  (unit @t)
+  =/  t=tape  (trip n)
+  ?:  (lth (lent t) 5)  ~
+  ?.  =(".json" (slag (sub (lent t) 5) t))  ~
+  `(crip (scag (sub (lent t) 5) t))
+::  +enter-schema: offered only while no run is live. The names ride in
+::  the description, so the model knows what it may enter without a
+::  separate catalog. The tool policy governs it like any other tool,
+::  by the name `enter`.
+::
+++  enter-schema
+  |=  names=(list @t)
+  ^-  json
+  =/  listed=tape
+    %-  zing
+    %+  join  ", "
+    (turn names |=(n=@t (trip n)))
+  %:  mk-tool-typed:clanker  'enter'
+    (say %'tool-enter.txt' ~[["recipes" listed]])
+    :~  ['recipe' 'string' (say %'tool-enter-recipe.txt' ~)]
+        ['level' 'string' (say %'tool-enter-level.txt' ~)]
+    ==
+    ~['recipe']
+  ==
+::  +take-enter: the model entering a recipe: +engage pushes it. What
+::  that did to the stack is recorded by +run from the stack itself,
+::  not from this result.
+::
+++  take-enter
+  |=  [=rail:tarball chat=@t input=json]
+  =/  m  (fiber:fiber:nexus ,(unit [json @t]))
+  ^-  form:m
+  ;<  line=(unit @t)  bind:m  (engage rail chat input)
+  ?~  line  (pure:m `[s+(say %'no-such-recipe.txt' ~) 'error'])
+  (pure:m `[s+u.line 'entered'])
 ::  +step-schema: offered only while a run is live and still movable.
 ::
 ++  step-schema
   ^-  json
   %:  mk-tool-typed:clanker  'step'
-    'Adopt the next intention in the recipe you are following. Name the target exactly as the tip lists it; stay re-chooses the current step; abort leaves the recipe and is always available.'
-    :~  ['target' 'string' 'the step to adopt, or stay, or done, or abort']
-        ['note' 'string' 'optional one line for the run log']
+    (say %'tool-step.txt' ~)
+    :~  ['target' 'string' (say %'tool-step-target.txt' ~)]
+        ['note' 'string' (say %'tool-step-note.txt' ~)]
     ==
     ~['target']
   ==
@@ -256,17 +362,35 @@
   =/  m  (fiber:fiber:nexus ,(unit [json @t]))
   ^-  form:m
   =/  target=@t  (jstr:clanker input 'target')
-  ;<  held=(unit state:rcp-lib)  bind:m  (read-run rail chat)
-  ?~  held  (pure:m `[s+'no recipe is engaged' 'error'])
-  ?:  =('abort' target)
-    ;<  ~  bind:m  (write-run rail chat u.held(step 'done'))
-    (pure:m `[s+'left the recipe' 'abort'])
-  ;<  rcf=(unit recipe:rcp-lib)  bind:m  (read-recipe rail name.u.held)
-  ?~  rcf  (pure:m `[s+'the recipe is missing' 'error'])
-  =/  e=(each state:rcp-lib @t)  (move:rcp-lib u.rcf u.held target)
+  ;<  held=stack:rcp-lib  bind:m  (read-run rail chat)
+  ?~  held  (pure:m `[s+(say %'no-recipe-engaged.txt' ~) 'error'])
+  ;<  rcf=(unit recipe:rcp-lib)  bind:m  (read-recipe rail name.i.held)
+  ?~  rcf  (pure:m `[s+(say %'recipe-missing.txt' ~) 'error'])
+  =/  e=(each state:rcp-lib @t)  (move:rcp-lib u.rcf i.held target)
   ?:  ?=(%| -.e)  (pure:m `[s+p.e 'refused'])
-  ;<  ~  bind:m  (write-run rail chat p.e)
-  (pure:m `[s+(crip "now in {(trip step.p.e)}") step.p.e])
+  ::  the moved frame stays on the stack even when it has ended: +run
+  ::  pops it after this batch and writes the line; here the model is
+  ::  told where that leaves it
+  ;<  ~  bind:m  (write-run rail chat [p.e t.held])
+  ?:  asked.p.e
+    (pure:m `[s+(say %'step-ask.txt' ~) 'ask'])
+  ?.  (done:rcp-lib p.e)
+    (pure:m `[s+(say %'step-now.txt' ~[["step" (trip step.p.e)]]) step.p.e])
+  =/  how=tape  ?:(=('abort' step.p.e) "left" "finished")
+  =/  back=tape
+    ?~  t.held  (trip (say %'step-none-left.txt' ~))
+    (trip (say %'step-back.txt' ~[["name" (trip name.i.t.held)] ["step" (trip step.i.t.held)]]))
+  (pure:m `[s+(say %'step-ended.txt' ~[["how" how] ["name" (trip name.p.e)] ["back" back]]) step.p.e])
+::  +answer-run: the user's message answers a run paused on an ask.
+::
+++  answer-run
+  |=  [=rail:tarball chat=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  held=stack:rcp-lib  bind:m  (read-run rail chat)
+  ?~  held  (pure:m ~)
+  ?.  asked.i.held  (pure:m ~)
+  (write-run rail chat [(answer:rcp-lib i.held) t.held])
 ::  +last-kind: the k of a log's last event ('' when empty).
 ++  last-kind
   |=  log=(list json)
@@ -324,11 +448,13 @@
   ;<  ~  bind:m
     ?:  ?=([%ball *] dv)  (pure:m ~)
     (make:io (nex-road:io rail [%| chat-dir]) &+empty-dir:loader)
-  ;<  ~  bind:m  (engage rail chat jon)
+  ;<  entered=(unit @t)  bind:m  (engage rail chat jon)
+  ;<  ~  bind:m  (answer-run rail chat)
   ;<  [road=road:tarball existed=? log=(list json)]  bind:m  (chat-log rail chat)
   ::  a chat paused on an ask takes no new message until it is answered
   ::  (the model's pending tool uses must be answered first)
   ?:  =('ask' (last-kind log))  (pure:m ~)
+  =?  log  ?=(^ entered)  (snoc log (event-recipe u.entered))
   =.  log  (snoc log (event-input u.msg))
   ;<  ~  bind:m  (write-log road existed log)
   ;<  cfg=json  bind:m  (read-json rail [%& / %'config.json'])
@@ -353,31 +479,44 @@
     (pure:m ~)
   (write-status road log)
 ::  +write-status: the chat's state as a sibling status.json, derived from
-::  the log every time the log is written: {state, asks, last}. The log's
-::  own mark is this app's, so a reader elsewhere (a tool, another app)
-::  cannot validate it; plain json it can. state is one of idle, busy
-::  (a turn runs), asking (paused on the user: `asks` lists the pending
-::  tool uses, {id, name, input}, answered by {action:'resolve'}),
-::  stopped. last is the latest assistant text.
+::  the log every time the log is written: {state, asks, last, recipe}.
+::  The log's own mark is this app's, so a reader elsewhere (a tool,
+::  another app) cannot validate it; plain json it can. state is one of
+::  idle, busy (a turn runs), asking (paused on the user: `asks` lists
+::  the pending tool uses, {id, name, input}, answered by
+::  {action:'resolve'}), stopped. last is the latest assistant text.
+::  recipe is the run beside the log, {name, step, asked}, or null.
 ++  write-status
   |=  [road=road:tarball log=(list json)]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ::  the log's road with the file name swapped, absolute or relative
-  =/  status-road=(unit road:tarball)
-    ?-  -.road
-      %&  ?.(?=(%& -.p.road) ~ `road(name.p.p %'status.json'))
-      %|  ?.(?=(%& -.q.p.road) ~ `road(name.p.q.p %'status.json'))
-    ==
+  =/  status-road=(unit road:tarball)  (sibling road %'status.json')
   ?~  status-road  (pure:m ~)
   =/  status-road=road:tarball  u.status-road
-  =/  jon=json  (status-of log)
+  ;<  stk=stack:rcp-lib  bind:m
+    =/  mr  (fiber:fiber:nexus ,stack:rcp-lib)
+    =/  run-road=(unit road:tarball)  (sibling road %'run.json')
+    ?~  run-road  (pure:mr ~)
+    ;<  v=view:nexus  bind:mr  (peek:io u.run-road `[/ %json])
+    ?.  ?=([%file *] v)  (pure:mr ~)
+    =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.v)))) ~)
+    (pure:mr (stack-from-json:rcp-lib j))
+  =/  jon=json  (status-of log stk)
   ;<  v=view:nexus  bind:m  (peek:io status-road ~)
   ?:  ?=([%file *] v)  (over:io status-road [[/ %json] jon])
   ;<  *  bind:m  (make-soft:io status-road |+[[[/ %json] jon] ~])
   (pure:m ~)
+::  +sibling: the log's road with the file name swapped, absolute or
+::  relative; ~ for a road that names no file.
+++  sibling
+  |=  [road=road:tarball name=@ta]
+  ^-  (unit road:tarball)
+  ?-  -.road
+    %&  ?.(?=(%& -.p.road) ~ `road(name.p.p name))
+    %|  ?.(?=(%& -.q.p.road) ~ `road(name.p.q.p name))
+  ==
 ++  status-of
-  |=  log=(list json)
+  |=  [log=(list json) stk=stack:rcp-lib]
   ^-  json
   =/  k=@t  (last-kind log)
   =/  resp=json  (last-response log)
@@ -419,6 +558,15 @@
       ['asks' [%a asks]]
       ['last' s+last]
       ['input' s+input]
+      ::  the top frame, and how deep the chat is
+      :-  'recipe'
+      ?~  stk  ~
+      %-  pairs:enjs:format
+      :~  ['name' s+name.i.stk]
+          ['step' s+step.i.stk]
+          ['asked' b+asked.i.stk]
+          ['depth' (numb:enjs:format (lent stk))]
+      ==
   ==
 ::  +resume: the restart contract. This fiber may be restarted at any
 ::  moment (a deploy, a crash); the log is the truth, so a chat whose log
@@ -543,6 +691,7 @@
   ;<  chat-sys=@t  bind:m  (read-text rail [%& [%chats `@ta`chat ~] %'system.md'])
   ;<  skills=(list [@ta @t])  bind:m  (read-dir-texts rail /skills)
   ;<  memories=(list [@ta @t])  bind:m  (read-dir-texts rail /memories)
+  ;<  recipes=(list @t)  bind:m  (recipe-names rail)
   =/  section
     |=  [title=tape files=(list [n=@ta body=@t])]
     ^-  tape
@@ -559,7 +708,18 @@
     ?:(=('' chat-sys) "" "\0a\0a# This chat\0a{(trip chat-sys)}\0a")
     (section "Skills" skills)
     (section "Memories" memories)
+    (recipes-section recipes)
   ==
+::  +recipes-section: what a recipe is and how it is engaged, in the
+::  standing prompt of a clanker that holds any. The names are listed;
+::  the recipes themselves are read through the tip once entered.
+::
+++  recipes-section
+  |=  names=(list @t)
+  ^-  tape
+  ?~  names  ""
+  =/  listed=tape  (zing (join ", " (turn names |=(n=@t (trip n)))))
+  (trip (say %'recipes.md' ~[["recipes" listed]]))
 ::  +list-tools: what this clanker's tools nexus advertises, as an
 ::  Anthropic tool schema array, plus the engine's own `spawn`. The tools
 ::  nexus answers a {cmd:'list'} poke by poking the array back to us.
@@ -682,10 +842,56 @@
       %-  sy
       %+  murn  ~(tap by p.u.d)
       |=([id=@t v=json] ?:(?=([%b %.n] v) `id ~))
+    ;<  before=stack:rcp-lib  bind:m  (read-run rail chat)
     ;<  ran=(unit [(list json) (list json)])  bind:m  (run-tools rail chat tool-uses declined)
     ?~  ran
       (write-log road %.y (snoc log event-interrupt))
     =.  log  (snoc log (event-results -.u.ran +.u.ran))
+    ::  what the tools did to the recipe stack is read from the stack,
+    ::  not from their results: frames that appeared are entries, a top
+    ::  frame that has ended is popped, and each is a line in the log
+    ;<  after=stack:rcp-lib  bind:m  (read-run rail chat)
+    =/  grew=@ud  ?:((gth (lent after) (lent before)) (sub (lent after) (lent before)) 0)
+    =.  log
+      =/  new=stack:rcp-lib  (flop (scag grew after))
+      =/  i=@ud  grew
+      |-  ^-  _log
+      ?~  new  log
+      =/  outer=stack:rcp-lib  (slag i after)
+      %=  $
+        new  t.new
+        i    (dec i)
+        log  (snoc log (event-recipe (entering-line name.i.new step.i.new level.i.new outer)))
+      ==
+    =/  settled=[stk=stack:rcp-lib lines=(list json)]
+      =/  stk=stack:rcp-lib  after
+      =|  lines=(list json)
+      |-  ^-  [stack:rcp-lib (list json)]
+      ?~  stk  [stk (flop lines)]
+      ?.  (done:rcp-lib i.stk)  [stk (flop lines)]
+      =/  how=tape  ?:(=('abort' step.i.stk) "left" "finished")
+      =/  back=tape
+        ?~  t.stk  ""
+        (trip (say %'ended-back.txt' ~[["name" (trip name.i.t.stk)] ["step" (trip step.i.t.stk)]]))
+      =/  line=@t  (say %'ended.txt' ~[["how" how] ["name" (trip name.i.stk)] ["back" back]])
+      $(stk t.stk, lines [(event-recipe line) lines])
+    ;<  ~  bind:m
+      ?:  =(stk.settled after)  (pure:(fiber:fiber:nexus ,~) ~)
+      (write-run rail chat stk.settled)
+    =.  log  (weld log lines.settled)
+    ::  an ask taken ends the turn here: the question is the text the
+    ::  model wrote before naming ask, and calling it again would only
+    ::  have it ask twice. The waiting line is the tail at rest; the
+    ::  user's next message runs on from it.
+    =/  asked=?
+      ?~  stk.settled  |
+      ?.  asked.i.stk.settled  |
+      ?~  before  &
+      !asked.i.before
+    ?:  asked
+      =/  top=state:rcp-lib  (head stk.settled)
+      =/  line=@t  (say %'waiting.txt' ~[["name" (trip name.top)] ["step" (trip step.top)]])
+      (write-log road %.y (snoc log (event-recipe line)))
     ;<  ~  bind:m  (write-log road %.y log)
     $
   ;<  messages=(list json)  bind:m  (inline-blobs rail (assemble log))
@@ -693,35 +899,33 @@
   ::  message, rendered from the run AFTER this message is spent, so what
   ::  it reads is what it has left. The tip never enters the log: the log
   ::  is written from events and `sent` is a local.
-  ;<  held=(unit state:rcp-lib)  bind:m  (read-run rail chat)
+  ;<  held=stack:rcp-lib  bind:m  (read-run rail chat)
   ;<  rcf=(unit recipe:rcp-lib)  bind:m
     ?~  held  (pure:(fiber:fiber:nexus ,(unit recipe:rcp-lib)) ~)
-    (read-recipe rail name.u.held)
-  =/  spun=(unit state:rcp-lib)
-    ?~  rcf  ~
-    ?~  held  ~
-    `(tick:rcp-lib u.held)
+    (read-recipe rail name.i.held)
+  ::  one message spends every frame: the outer steps stay occupied
+  ::  while the inner recipe runs
+  =/  spun=stack:rcp-lib  (tick-all:rcp-lib held)
   ;<  ~  bind:m
     ?~  spun  (pure:(fiber:fiber:nexus ,~) ~)
-    (write-run rail chat u.spun)
+    (write-run rail chat spun)
   =/  tip-text=@t
     ?~  rcf  ''
     ?~  spun  ''
-    ?:  (done:rcp-lib u.spun)  ''
-    ?.  (stuck:rcp-lib u.rcf u.spun)  (tip:rcp-lib u.rcf u.spun)
-    %-  crip
-    ;:  weld
-      "<recipe-state>\0a"
-      "The budget is spent. Report what was settled and what stopped it.\0a"
-      "Do not call step again.\0a</recipe-state>\0a"
-    ==
+    ?:  (done:rcp-lib i.spun)  ''
+    ?.  (stuck:rcp-lib u.rcf i.spun)  (tip-in:rcp-lib frags u.rcf i.spun t.spun)
+    (spent:rcp-lib frags)
   =/  sent=(list json)
     ?:(=('' tip-text) messages (append-tip:ck messages tip-text))
-  ::  step is on offer only while a run is live and still movable
+  ::  step is on offer while a run is live and still movable; enter
+  ::  whenever there are recipes to enter (entering nests)
+  ;<  names=(list @t)  bind:m  (recipe-names rail)
   =/  kit=json
-    ?:  =('' tip-text)  schema
     ?.  ?=([%a *] schema)  schema
-    [%a (snoc p.schema step-schema)]
+    =/  ts=(list json)  p.schema
+    =?  ts  !=('' tip-text)  (snoc ts step-schema)
+    =?  ts  ?=(^ names)  (snoc ts (enter-schema names))
+    [%a ts]
   ;<  answered=(unit json)  bind:m
     %+  call-proxy:ck  link.pro
     (encode-for pro model max sys kit sent)
@@ -757,6 +961,7 @@
       (pure:mo `[s+'The user declined to run this tool. Do not retry it; ask, or go on without it.' 'declined'])
     ?:  =('spawn' name)  (spawn rail chat input)
     ?:  =('step' name)  (take-step rail chat input)
+    ?:  =('enter' name)  (take-enter rail chat input)
     (call-tool rail name input tid)
   ?~  outcome  (pure:m ~)
   =/  result=json
@@ -1148,6 +1353,22 @@
       pending  ~
       out      [(pairs:enjs:format ~[['role' s+'user'] ['content' content]]) out]
     ==
+  ::  a recipe event reaches the model as a tagged line on the user's
+  ::  side, the register the tip uses, so it reads as the harness speaking
+  ?:  =('recipe' k)
+    =/  text=json
+      %-  pairs:enjs:format
+      :~  ['type' s+'text']
+          ['text' s+(say %'event.txt' ~[["body" (trip (jstr:clanker ev 'body'))]])]
+      ==
+    =/  content=json
+      ?~  pending  a+~[text]
+      a+(snoc (stopped pending) text)
+    %=  $
+      log      t.log
+      pending  ~
+      out      [(pairs:enjs:format ~[['role' s+'user'] ['content' content]]) out]
+    ==
   ?:  =('results' k)
     =/  c=(unit json)  (~(get by p.ev) 'content')
     ?.  ?=([~ %a *] c)  $(log t.log)
@@ -1479,6 +1700,11 @@
   |=  body=@t
   ^-  json
   (pairs:enjs:format ~[['k' s+'input'] ['body' s+body]])
+::  a recipe was entered: one line, in the history of both readers
+++  event-recipe
+  |=  body=@t
+  ^-  json
+  (pairs:enjs:format ~[['k' s+'recipe'] ['body' s+body]])
 ++  event-response
   |=  [content=(list json) stop=@t usage=json]
   ^-  json

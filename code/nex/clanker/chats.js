@@ -73,7 +73,36 @@
       '.ck-tool.head .opts{display:block}' +
       '.ck-tool .pick{all:unset;cursor:pointer;flex:1;text-align:center;font-size:11px;padding:2px 0;border:1px solid #d0d7de;margin-left:-1px;color:#57606a;background:#fff}' +
       '.ck-tool .pick:first-child{border-radius:5px 0 0 5px;margin-left:0}.ck-tool .pick:last-child{border-radius:0 5px 5px 0}' +
-      '.ck-tool .pick.on{background:#24292f;color:#fff;border-color:#24292f;position:relative}';
+      '.ck-tool .pick.on{background:#24292f;color:#fff;border-color:#24292f;position:relative}' +
+      '.ck-tip{margin:6px 0 0;padding:10px 12px;border:1px solid #d0d7de;border-radius:6px;background:#f6f8fa;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;color:#24292f;max-height:320px;overflow:auto}' +
+      '.ck-rec button.quiet{border-color:#d0d7de;background:#fff;color:#cf222e;font-size:11px;padding:2px 9px}' +
+      '.ck-stack{flex:1;min-height:0;overflow:auto}' +
+      '.ck-frame{border:1px solid #e2e7ee;border-radius:8px;padding:10px 12px;margin:0 0 10px;background:#fff}' +
+      '.ck-frame.top{border-color:#54aeff;box-shadow:0 0 0 2px #ddf4ff}' +
+      '.ck-frame .fhead{display:flex;gap:8px;align-items:center;min-width:0}' +
+      '.ck-frame .fname{font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace}' +
+      '.ck-frame .fstep{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#0969da}' +
+      '.ck-frame .fstep:before{content:"→ ";color:#8b949e}' +
+      '.ck-frame .flevel{font-size:11px;color:#8b949e}' +
+      '.ck-frame .fask{font-size:11px;color:#7d4e00;background:#fff8c5;border-radius:5px;padding:1px 7px}' +
+      '.ck-frame .fhead button{margin-left:auto}' +
+      '.ck-frame .faim{color:#57606a;margin:4px 0 0}' +
+      '.ck-frame .fcard{border-top:1px solid #f0f2f5;margin-top:8px;padding-top:8px}' +
+      '.ck-frame .caim{font-weight:600;margin:0 0 4px}' +
+      '.ck-frame .cdesc{color:#57606a;white-space:pre-wrap;margin:0 0 8px}' +
+      '.ck-frame .fio{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;padding:6px 8px;background:#f6f8fa;border-radius:6px;margin:0 0 8px}' +
+      '.ck-frame .fio .k{font:11px ui-monospace,monospace;color:#8b949e;text-transform:uppercase;letter-spacing:.04em;padding-top:2px}' +
+      '.ck-frame .fio .v{white-space:pre-wrap;min-width:0}' +
+      '.ck-frame .fchips{display:flex;gap:4px;margin:0 0 8px;flex-wrap:wrap}' +
+      '.ck-frame .fchip{font:11px ui-monospace,monospace;color:#57606a;background:#eef1f4;border-radius:5px;padding:1px 7px}' +
+      '.ck-frame .fchip.out{color:#cf222e;background:#ffebe9}' +
+      '.ck-frame .farrows{list-style:none;margin:0;padding:6px 0 0;border-top:1px solid #f0f2f5}' +
+      '.ck-frame .farrows li{display:flex;gap:8px;padding:2px 4px;border-radius:5px}' +
+      '.ck-frame .farrows li.spent{opacity:.45}.ck-frame .farrows li.spent .to{text-decoration:line-through}' +
+      '.ck-frame .to{font:11px ui-monospace,monospace;color:#0969da;flex:0 0 auto;min-width:5.5rem}' +
+      '.ck-frame .to.done{color:#116329}.ck-frame .to.ask{color:#9a6700;font-style:italic}.ck-frame .to.abort{color:#cf222e}' +
+      '.ck-frame .cond{color:#57606a;min-width:0}' +
+      '.ck-frame details{margin-top:8px}.ck-frame summary{cursor:pointer;font-size:11px;color:#8b949e}';
     document.head.appendChild(s);
   }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -129,7 +158,16 @@
     if (right) r.appendChild(el('span', 'right', right));
     return r;
   }
-  function chatDot(c) { return c.asking ? 'asking' : c.busy ? 'busy' : ''; }
+  // a chat is on the user when a tool asks to run, or when the recipe it
+  // follows took an ask arrow; both are the same dot and the same row text
+  function onUser(c) { return !!(c.asking || (c.recipe && c.recipe.asked)); }
+  function chatDot(c) { return onUser(c) ? 'asking' : c.busy ? 'busy' : ''; }
+  function chatSub(c) {
+    if (c.asking) return 'waiting for you: a tool asks to run';
+    if (c.recipe && c.recipe.asked) return 'waiting for you: ' + c.recipe.name + ' at ' + c.recipe.step + ' asks';
+    if (c.recipe) return c.recipe.name + ' at ' + c.recipe.step + (c.last ? ' · ' + c.last : '');
+    return c.last;
+  }
   // a confirmation that takes over the sidebar's list: what is about to
   // happen, cancel / the verb. Enter is the verb, Escape cancels (only while
   // focus is on the card, so a chat being typed in is never caught). The
@@ -194,7 +232,7 @@
     function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
     // a clanker's state is its chats'; a category's is its clankers': asking
     // beats busy beats quiet, so the dot at every level says what is inside
-    function dotOf(chats) { return chats.some(function (c) { return c.asking; }) ? 'asking' : chats.some(function (c) { return c.busy; }) ? 'busy' : ''; }
+    function dotOf(chats) { return chats.some(onUser) ? 'asking' : chats.some(function (c) { return c.busy; }) ? 'busy' : ''; }
     function status(node) {
       var states = (node.clankers || []).map(function (k) { return dotOf(k.chats || []); }).concat((node.categories || []).map(status));
       return states.indexOf('asking') >= 0 ? 'asking' : states.indexOf('busy') >= 0 ? 'busy' : '';
@@ -296,7 +334,7 @@
         list.innerHTML = '';
         if (!rows.length) { list.appendChild(el('div', 'ck-empty', 'No chats yet. Name one above.')); return; }
         rows.forEach(function (c) {
-          var r = row('', chatDot(c), c.name, c.asking ? 'waiting for you: a tool asks to run' : c.last, c.events ? c.events + (c.events === 1 ? ' event' : ' events') : '');
+          var r = row('', chatDot(c), c.name, chatSub(c), c.events ? c.events + (c.events === 1 ? ' event' : ' events') : '');
           r.__ck = { kind: 'chat', proj: proj, name: c.name, url: './' + encodeURIComponent(c.name) };   // relative to this chats/ dir, as spelled
           r.addEventListener('click', function () { sb.go('./' + encodeURIComponent(c.name), 'dir', c.name); });
           r._nk = { open: function (beside) { sb.go('./' + encodeURIComponent(c.name), 'dir', c.name, beside); } };
@@ -556,7 +594,107 @@
     return handle;
   }
 
+  // ---- tip: the recipe run a chat is on, as the model sees it ----
+  // One request to /api/tip: where the run stands and the block that
+  // rides at the tail of the model's next request. The leave button
+  // takes the chat out of the run (a poke; the log records it). Follows
+  // run.json and the log, so a move or a leave redraws it.
+  function mountTip(root, opts) {
+    css();
+    var proj = opts.args && typeof opts.args.proj === 'string' ? opts.args.proj : null;
+    var chat = opts.args && typeof opts.args.chat === 'string' ? opts.args.chat : null;
+    root.innerHTML = ''; root.classList.add('ck');
+    var dead = false;
+    var handle = { destroy: function () { dead = true; root.innerHTML = ''; root.classList.remove('ck'); }, onUpdate: function () { load(); } };
+    if (!proj || !chat) { root.appendChild(el('div', 'ck-err', 'no chat here')); return handle; }
+    var qs = '?path=' + encodeURIComponent(proj) + '&chat=' + encodeURIComponent(chat);
+    var box = el('div', 'ck-rec');
+    var note = el('div', 'extra', ''); box.appendChild(note);
+    var stack = el('div', 'ck-stack'); box.appendChild(stack);
+    root.appendChild(box);
+    var TERM = { done: 'done', ask: 'ask', abort: 'abort' };
+    function title(aim) { return (aim && aim.length) ? aim[0] : ''; }
+    function body(aim) { return (aim || []).slice(1).join('\n').replace(/^\n+/, ''); }
+    function io(input, output) {
+      var g = el('div', 'fio');
+      [['input', input], ['output', output]].forEach(function (p) {
+        g.appendChild(el('span', 'k', p[0]));
+        g.appendChild(el('span', 'v', (p[1] && p[1].length) ? p[1].join('\n') : '-'));
+      });
+      return g;
+    }
+    function left(cap, used) { return cap == null ? null : Math.max(0, cap - used); }
+    function chip(label, n) {
+      var c = el('span', 'fchip' + (n === 0 ? ' out' : ''));
+      c.textContent = label + ' ' + (n == null ? '-' : n);
+      return c;
+    }
+    function leaveAt(depth, btn) {
+      btn.disabled = true;
+      post('/api/leave', { path: proj, chat: chat, depth: depth })
+        .then(function () { load(); }, function (e) { note.textContent = 'leave failed: ' + e.message; })
+        .then(function () { btn.disabled = false; });
+    }
+    // one frame of the stack: its recipe and where it stands; the top one
+    // opens into the step it is on, with what is left and the arrows out
+    function frame(f, depth, top) {
+      var r = f.recipe || {}, st = f.run || {}, lv = ((r.levels || {})[f.level] || {}), caps = lv.steps || {}, step = (r.steps || {})[f.step] || {};
+      var fr = el('div', 'ck-frame' + (top ? ' top' : ''));
+      fr.style.marginLeft = (depth * 18) + 'px';
+      var head = el('div', 'fhead');
+      head.appendChild(el('span', 'fname', f.name));
+      head.appendChild(el('span', 'fstep', f.step));
+      head.appendChild(el('span', 'flevel', 'level ' + f.level));
+      if (f.asked) head.appendChild(el('span', 'fask', 'waiting on you'));
+      var lb = el('button', 'quiet', depth === 0 ? 'leave' : 'leave this and above'); lb.type = 'button';
+      lb.addEventListener('click', function () { leaveAt(depth, lb); });
+      head.appendChild(lb);
+      fr.appendChild(head);
+      if (title(r.aim)) fr.appendChild(el('div', 'faim', title(r.aim)));
+      if (!top) return fr;
+      var card = el('div', 'fcard');
+      card.appendChild(el('div', 'caim', title(step.aim)));
+      if (body(step.aim)) card.appendChild(el('div', 'cdesc', body(step.aim)));
+      card.appendChild(io(step.input, step.output));
+      var cap = caps[f.step] || {};
+      var dwellLeft = left(cap.dwell, st.dwell || 0), lifeLeft = left(cap.life, (st.spent || {})[f.step] || 0), runLeft = lv.run == null ? 0 : Math.max(0, lv.run - (st.run || 0));
+      var chips = el('div', 'fchips');
+      chips.appendChild(chip('dwell', dwellLeft)); chips.appendChild(chip('step', lifeLeft)); chips.appendChild(chip('run', runLeft));
+      card.appendChild(chips);
+      var ul = el('ul', 'farrows');
+      Object.keys(step.next || {}).forEach(function (to) {
+        var self = to === 'self' || to === 'stay';
+        var ok = TERM[to] ? true : self ? (dwellLeft == null || dwellLeft > 0) : (function () { var c = caps[to] || {}; var l = left(c.life, (st.spent || {})[to] || 0); return l == null || l > 0; })();
+        var li = el('li', ok ? '' : 'spent');
+        li.appendChild(el('span', 'to' + (TERM[to] ? ' ' + to : ''), self ? 'stay' : to));
+        li.appendChild(el('span', 'cond', step.next[to]));
+        ul.appendChild(li);
+      });
+      card.appendChild(ul);
+      if (f.tip) {
+        var d = el('details'); d.appendChild(el('summary', null, 'as the model reads it'));
+        d.appendChild(el('pre', 'ck-tip', f.tip)); card.appendChild(d);
+      }
+      fr.appendChild(card);
+      return fr;
+    }
+    function load() {
+      if (dead) return;
+      get(API + '/api/tip' + qs).then(function (t) {
+        if (dead) return;
+        stack.innerHTML = '';
+        var frames = (t && t.frames) || [];
+        if (!frames.length) { note.textContent = 'no recipe engaged in this chat'; return; }
+        note.textContent = frames.length === 1 ? '' : frames.length + ' recipes engaged, innermost last';
+        frames.forEach(function (f, i) { stack.appendChild(frame(f, i, i === frames.length - 1)); });
+      }, function (e) { if (!dead) note.textContent = 'could not load: ' + e.message; });
+    }
+    load();
+    return handle;
+  }
+
   window.Viewers = window.Viewers || {};
+  window.Viewers['tip'] = { label: 'Tip', mount: mountTip };
   window.Viewers['tools'] = { label: 'Tools', mount: mountTools };
   window.Viewers['collection'] = { label: 'Clankers', mount: mountCollection };
   window.Viewers['chats'] = { label: 'Chats', mount: mountChats };

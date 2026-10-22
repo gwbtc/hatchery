@@ -1,11 +1,13 @@
 /<  test  /lib/test.hoon
 /<  rec   /lib/recipe.hoon
+/&  raw   /nex/clanker/system-prompt/
 ::  tests for lib/recipe: parse, budget arithmetic, transitions, render
 ::
-::  The demo recipe is two steps. `a` may stay (dwell 2, life 4) or go
-::  to `b`; `b` may finish. `a` is budgeted both ways and `b` has no
-::  dwell, so the unbudgeted-vs-zero distinction gets exercised. The
-::  file also declares a `done` step, which parse must drop.
+::  The demo recipe is two steps. `a` may stay (dwell 2, life 4), go to
+::  `b`, ask the user, or abort; `b` may only finish. `a` is budgeted
+::  both ways and `b` has no dwell, so the unbudgeted-vs-zero
+::  distinction gets exercised. The file also declares `done` and `ask`
+::  steps, which parse must drop.
 ::
 ::  rcp and st0 are =/ legs rather than core arms on purpose: a face
 ::  looked up through an arm reference does not carry the arm's mold,
@@ -15,7 +17,7 @@
 ::  rather than a bare literal.
 ::
 =/  src=@t
-  '{"aim":["Test recipe","","A description."],"input":["a question"],"output":["an answer"],"start":"a","steps":{"a":{"aim":["Step A"],"input":["the question"],"output":[],"next":{"self":"more to do","b":"a is settled"}},"b":{"aim":["Step B"],"input":[],"output":["the answer"],"next":{"done":"finished"}},"done":{"aim":["must be dropped"]}},"levels":{"normal":{"run":10,"steps":{"a":{"life":4,"dwell":2},"b":{"life":3}}}}}'
+  '{"aim":["Test recipe","","A description."],"input":["a question"],"output":["an answer"],"start":"a","steps":{"a":{"aim":["Step A"],"input":["the question"],"output":[],"next":{"self":"more to do","b":"a is settled","ask":"the question is unclear","abort":"no way forward"}},"b":{"aim":["Step B"],"input":[],"output":["the answer"],"next":{"done":"finished"}},"done":{"aim":["must be dropped"]},"ask":{"aim":["must be dropped"]}},"levels":{"normal":{"run":10,"steps":{"a":{"life":4,"dwell":2},"b":{"life":3}}}}}'
 ::  the same recipe missing its own output, and missing a step's input:
 ::  both must be refused whole
 =/  no-out=@t
@@ -24,6 +26,9 @@
   '{"aim":["x"],"input":[],"output":[],"start":"a","steps":{"a":{"aim":["A"],"output":[],"next":{"done":"ok"}}}}'
 =/  rcp=recipe:rec  (need (parse:rec 'demo' (need (de:json:html src))))
 =/  st0=state:rec   (enter:rec rcp 'normal')
+::  the tip's words come from the clanker's system-prompt directory
+=/  fr=frags:rec    (frags-of:rec fil.raw)
+=/  tip  |=([r=recipe:rec s=state:rec] (tip:rec fr r s))
 %-  run-tests:test
 !>
 |%
@@ -67,8 +72,8 @@
   |.((chk-t 'a' start.rcp))
 ++  test-parse-aim-lines
   |.((chk-ud 3 (lent aim.rcp)))
-::  'done' is a reserved arrow target, so a step by that name is dropped
-++  test-parse-drops-done-step
+::  the reserved exits are arrow targets, so steps by those names are dropped
+++  test-parse-drops-reserved-steps
   |.((chk-ud 2 ~(wyt by steps.rcp)))
 ++  test-parse-rejects-startless
   |.((chk-rcp ~ (parse:rec 'x' (need (de:json:html '{"steps":{}}')))))
@@ -88,6 +93,8 @@
   |.((chk-t 'a' step.st0))
 ++  test-enter-unspent
   |.((chk-ud 0 (add run.st0 dwell.st0)))
+++  test-enter-not-asked
+  |.((chk-lo | asked.st0))
 ::  budgets: ~ is unbudgeted, which is not zero
 ::
 ++  test-life-fresh
@@ -138,14 +145,33 @@
 ++  test-done-is-terminal
   |.  =/  s=state:rec  (won (move:rec rcp st0 'b'))
       (chk-lo & (done:rec (won (move:rec rcp s 'done'))))
-::  the open set, in render order: stay first, then the rest
+::  ask: the step is kept and the run is marked waiting; the user's
+::  message clears it. abort: terminal, and only where the author put it
+++  test-ask-keeps-step
+  |.  =/  s=state:rec  (won (move:rec rcp (tik 1 st0) 'ask'))
+      (chk-t 'a' step.s)
+++  test-ask-marks-waiting
+  |.((chk-lo & asked:(won (move:rec rcp (tik 1 st0) 'ask'))))
+++  test-ask-keeps-dwell
+  |.((chk-ud 1 dwell:(won (move:rec rcp (tik 1 st0) 'ask'))))
+++  test-answer-clears-waiting
+  |.((chk-lo | asked:(answer:rec (won (move:rec rcp st0 'ask')))))
+++  test-ask-refused-where-not-offered
+  |.  =/  s=state:rec  (won (move:rec rcp st0 'b'))
+      (chk-lo & (fail (move:rec rcp s 'ask')))
+++  test-abort-is-terminal
+  |.((chk-lo & (done:rec (won (move:rec rcp st0 'abort')))))
+++  test-abort-refused-where-not-offered
+  |.  =/  s=state:rec  (won (move:rec rcp st0 'b'))
+      (chk-lo & (fail (move:rec rcp s 'abort')))
+::  the open set, in render order: stay first, steps, then the exits
 ::
 ++  test-open-order
-  |.  %+  chk-list  ~['self' 'b']
+  |.  %+  chk-list  ~['self' 'b' 'ask' 'abort']
       (turn (open:rec rcp st0) |=(a=arrow:rec target.a))
 ::  a spent arrow drops out of the open set rather than erroring
 ++  test-open-drops-spent-stay
-  |.  %+  chk-list  ~['b']
+  |.  %+  chk-list  ~['b' 'ask' 'abort']
       %+  turn
         (skim (open:rec rcp (tik 2 st0)) |=(a=arrow:rec ok.a))
       |=(a=arrow:rec target.a)
@@ -161,27 +187,35 @@
 ::  render: the structural lines are facts, the aim is quoted
 ::
 ++  test-tip-names-step
-  |.((chk-lo & (has "STEP  a" (tip:rec rcp st0))))
+  |.((chk-lo & (has "STEP  a" (tip rcp st0))))
 ++  test-tip-shows-budgets
-  |.((chk-lo & (has "[dwell 2, step 4, run 10]" (tip:rec rcp st0))))
+  |.((chk-lo & (has "[dwell 2, step 4, run 10]" (tip rcp st0))))
 ::  an unbudgeted figure renders as a dash, never as 0
 ++  test-tip-dash-for-unbudgeted
   |.  =/  s=state:rec  (won (move:rec rcp (tik 1 st0) 'b'))
-      (chk-lo & (has "[dwell -, step 3, run 9]" (tip:rec rcp s)))
+      (chk-lo & (has "[dwell -, step 3, run 9]" (tip rcp s)))
 ++  test-tip-quotes-the-aim
-  |.((chk-lo & (has "| Step A" (tip:rec rcp st0))))
+  |.((chk-lo & (has "| Step A" (tip rcp st0))))
 ::  input and output ride under structural labels, the author's lines
 ::  quoted; an empty one shows as a dash rather than vanishing
 ++  test-tip-labels-recipe-input
-  |.((chk-lo & (has "INPUT \0a| a question" (tip:rec rcp st0))))
+  |.((chk-lo & (has "INPUT \0a| a question" (tip rcp st0))))
 ++  test-tip-labels-step-input
-  |.((chk-lo & (has "| the question" (tip:rec rcp st0))))
+  |.((chk-lo & (has "| the question" (tip rcp st0))))
 ++  test-tip-dash-for-empty-output
-  |.((chk-lo & (has "OUTPUT  -" (tip:rec rcp st0))))
-++  test-tip-offers-abort-always
-  |.((chk-lo & (has "abort" (tip:rec rcp st0))))
+  |.((chk-lo & (has "OUTPUT  -" (tip rcp st0))))
+::  the exits show only where the step offers them
+++  test-tip-lists-abort-where-offered
+  |.((chk-lo & (has "abort" (tip rcp st0))))
+++  test-tip-omits-abort-where-not-offered
+  |.  =/  s=state:rec  (won (move:rec rcp st0 'b'))
+      (chk-lo | (has "abort" (tip rcp s)))
+++  test-tip-says-asked
+  |.((chk-lo & (has "ASKED" (tip rcp (won (move:rec rcp st0 'ask'))))))
+++  test-tip-silent-when-not-asked
+  |.((chk-lo | (has "ASKED" (tip rcp st0))))
 ++  test-tip-lists-open-arrow
-  |.((chk-lo & (has "a is settled" (tip:rec rcp st0))))
+  |.((chk-lo & (has "a is settled" (tip rcp st0))))
 ::  catalog: one line per recipe, title only
 ::
 ++  test-catalog-names-recipe
@@ -203,6 +237,27 @@
   |.  =/  s=state:rec  (won (move:rec rcp (tik 2 st0) 'b'))
       =/  s=state:rec  (tik 3 s)
       (chk-state `s (state-from-json:rec (state-to-json:rec s)))
+++  test-state-round-trip-asked
+  |.  =/  s=state:rec  (won (move:rec rcp (tik 1 st0) 'ask'))
+      (chk-state `s (state-from-json:rec (state-to-json:rec s)))
+::  the stack: entering pushes, one message spends every frame, the file
+::  holds the frames bottom first
+++  test-stack-push-is-top
+  |.  =/  s=state:rec  (won (move:rec rcp st0 'b'))
+      (chk-t 'b' step:(head (push:rec ~[st0] s)))
+++  test-stack-tick-spends-every-frame
+  |.  =/  s2=stack:rec  (tick-all:rec ~[st0 st0])
+      (chk-ud 2 (add run:(head s2) run:(rear s2)))
+++  test-stack-round-trip
+  |.  =/  s=state:rec  (won (move:rec rcp (tik 1 st0) 'b'))
+      =/  stk=stack:rec  ~[s st0]
+      (expect-eq:test !>(stk) !>((stack-from-json:rec (stack-to-json:rec stk))))
+++  test-stack-from-plain-state-is-none
+  |.((expect-eq:test !>(*stack:rec) !>((stack-from-json:rec (state-to-json:rec st0)))))
+++  test-tip-in-names-outer
+  |.((chk-lo & (has "WITHIN  demo at a" (tip-in:rec fr rcp st0 ~[st0]))))
+++  test-tip-alone-has-no-within
+  |.((chk-lo | (has "WITHIN" (tip rcp st0))))
 ::  a run that knows neither where it is nor which recipe is not a run
 ++  test-state-rejects-stepless
   |.  %+  chk-state  ~

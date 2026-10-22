@@ -1,0 +1,1 @@
+<recipe-event>{body}</recipe-event>

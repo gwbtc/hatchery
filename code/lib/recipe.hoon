@@ -6,9 +6,13 @@
 ::  The agent names the intention it adopts next; staying is re-choosing
 ::  the same step, so `self` is an ordinary arrow.
 ::
-::  `done` is a reserved arrow target, never a step. `abort` is not in
-::  the file at all: it means the same thing in every recipe, so the
-::  system owns its text and guarantees it is always reachable.
+::  Three arrow targets are reserved and never steps: `done` ends the
+::  run, `abort` ends it without its output, `ask` pauses it on the
+::  user (the step is kept; the run waits for the user's next message).
+::  Each is on offer only where the author put it in a step's `next`,
+::  with its condition, like any other arrow: a step with no `abort` is
+::  one the agent may not give up on. Running out of budget is not an
+::  exit the agent takes; it is the run ending under it (+stuck).
 ::
 ::  Budgets live in levels, each a WHOLE budget rather than a scaling of
 ::  some other level. Three kinds: the run total, a per-step lifetime
@@ -19,9 +23,54 @@
 ::  impossible, never mandatory.
 ::
 ::  Everything here is pure. The tip is assembled fresh per request and
-::  never stored in the chat — see +tip's callers.
+::  never stored in the chat — see +tip's callers. Its words are not
+::  in here: the caller hands in the system-prompt fragments (a map of
+::  file name to text, +frags-of over a /& directory import) and +fill
+::  puts the run's facts into them.
 ::
 |%
++$  frags  (map @ta @t)
+::  +frags-of: a /& directory import as fragments by file name.
+::
+++  frags-of
+  |=  raw=(unit (map @ta mime))
+  ^-  frags
+  (~(run by (fall raw ~)) |=(=mime `@t`q.q.mime))
+::  +say: a fragment with its {keys} filled.
+::
+++  say
+  |=  [=frags name=@ta subs=(list [tape tape])]
+  ^-  tape
+  (fill (trip (fall (~(get by frags) name) '')) subs)
+::  +fill: {key} in a template becomes its value; an unknown key stays
+::  as written, so a missing value is visible rather than blank.
+::
+++  fill
+  |=  [tpl=tape subs=(list [k=tape v=tape])]
+  ^-  tape
+  =/  open=@tD  `@tD`123
+  =/  close=@tD  `@tD`125
+  |-  ^-  tape
+  ?~  tpl  ~
+  ?.  =(open i.tpl)  [i.tpl $(tpl t.tpl)]
+  =/  end=(unit @ud)  (find ~[close] t.tpl)
+  ?~  end  [i.tpl $(tpl t.tpl)]
+  =/  key=tape  (scag u.end t.tpl)
+  =/  hit=(unit tape)  (lookup key subs)
+  %+  weld  ?~(hit [open (weld key ~[close])] u.hit)
+  $(tpl (slag +(u.end) t.tpl))
+::
+++  lookup
+  |=  [key=tape subs=(list [k=tape v=tape])]
+  ^-  (unit tape)
+  ?~  subs  ~
+  ?:(=(key k.i.subs) `v.i.subs $(subs t.subs))
+::  +spent: what rides when the budget is gone.
+::
+++  spent
+  |=  =frags
+  ^-  @t
+  (crip (say frags %'spent.txt' ~))
 +$  recipe
   $:  name=@t
       aim=(list @t)
@@ -33,26 +82,70 @@
   ==
 ::  a step: its aim, what it expects to have in hand (input), what it
 ::  leaves behind (output), and its arrows: target -> the condition
-::  under which to take it. targets are a step name, 'self', or 'done'.
-::  input and output are part of the shape at both levels, and +parse
-::  refuses a file that omits either: a recipe that does not say what
-::  it needs and what it hands back is not a function, and a step that
-::  does not is not a step. Empty is a statement; absent is not.
+::  under which to take it. targets are a step name, 'self', or one of
+::  the reserved exits. input and output are part of the shape at both
+::  levels, and +parse refuses a file that omits either: a recipe that
+::  does not say what it needs and what it hands back is not a
+::  function, and a step that does not is not a step. Empty is a
+::  statement; absent is not.
 ::
 +$  step  [aim=(list @t) input=(list @t) output=(list @t) next=(map @t @t)]
 +$  level  [run=@ud caps=(map @t cap)]
 +$  cap   [life=(unit @ud) dwell=(unit @ud)]
-::  run state for one chat. `spent` is lifetime consumed per step,
-::  `dwell` is consumed in the current occupancy, `run` is the total.
+::  run state for one chat. `asked` is set by taking an `ask` arrow and
+::  cleared by the user's next message. `spent` is lifetime consumed per
+::  step, `dwell` is consumed in the current occupancy, `run` the total.
 ::
 +$  state
   $:  name=@t
       level=@t
       step=@t
+      asked=?
       spent=(map @t @ud)
       dwell=@ud
       run=@ud
   ==
+::  a chat's runs, nested: the recipe it is on, inside the recipe that
+::  was on when that one was entered. Top first. Entering pushes; a
+::  run that reaches done or abort is popped by the caller, which is
+::  then back on the frame beneath, at the step it left, with that
+::  step's own arrows to choose from.
+::
++$  stack  (list state)
+::
+++  push
+  |=  [=stack s=state]
+  ^-  ^stack
+  [s stack]
+::  +tick-all: one message spends every frame. The outer step is
+::  occupied for as long as the inner recipe runs, so its dwell, its
+::  life and its run all go down with it.
+::
+++  tick-all
+  |=  =stack
+  ^-  ^stack
+  (turn stack tick)
+::
+++  stack-to-json
+  |=  =stack
+  ^-  json
+  (pairs:enjs:format ~[['frames' a+(turn (flop stack) state-to-json)]])
+::  +stack-from-json: {frames: [...]} bottom first in the file, top
+::  first in hand. Anything else is no run.
+::
+++  stack-from-json
+  |=  jon=json
+  ^-  stack
+  ?.  ?=([%o *] jon)  ~
+  =/  fs=(unit json)  (~(get by p.jon) 'frames')
+  ?.  ?=([~ %a *] fs)  ~
+  (flop (murn p.u.fs state-from-json))
+::  +term: the reserved arrow targets.
+::
+++  term
+  |=  t=@t
+  ^-  ?
+  |(=('done' t) =('abort' t) =('ask' t))
 ::  +parse: a recipe file. ~ when it lacks a start or a steps object,
 ::  since a recipe without those cannot be entered.
 ::
@@ -81,7 +174,7 @@
 ++  enter
   |=  [=recipe level=@t]
   ^-  state
-  [name.recipe level start.recipe ~ 0 0]
+  [name.recipe level start.recipe | ~ 0 0]
 ::  +tick: spend one message. Called once per request, before the tip is
 ::  rendered, so what the agent reads is what it has left.
 ::
@@ -96,7 +189,9 @@
   ==
 ::  +move: adopt an intention. Refuses a target with no arrow from the
 ::  current step, and one whose budget is spent. Staying keeps the dwell
-::  count; going anywhere else resets it.
+::  count; going anywhere else resets it. `ask` keeps the step and marks
+::  the run as waiting; `done` and `abort` become the step, which is
+::  how the run records its ending.
 ::
 ++  move
   |=  [=recipe =state target=@t]
@@ -112,13 +207,20 @@
   ?.  ok.i.opts
     |+(crip "{(trip target)} is out of budget")
   ?:  =('self' target)  &+state
+  ?:  =('ask' target)  &+state(asked &)
   &+state(step target, dwell 0)
-::  +done: has the run reached its terminal.
+::  +answer: the user has spoken; a run paused on an ask goes on.
+::
+++  answer
+  |=  =state
+  ^-  ^state
+  state(asked |)
+::  +done: has the run ended, by either exit.
 ::
 ++  done
   |=  =state
   ^-  ?
-  =('done' step.state)
+  |(=('done' step.state) =('abort' step.state))
 ::  +stuck: nothing reachable and not finished — the graph ran out of
 ::  room, which is a failure exit rather than a halt.
 ::
@@ -132,9 +234,9 @@
 ::  its budget leaves it open.
 ::
 +$  arrow  [target=@t cond=@t ok=?]
-::  +open: this step's arrows in a stable order — stay first, done last,
-::  the rest alphabetical. Spent targets are included and marked, so a
-::  caller can render them or drop them.
+::  +open: this step's arrows in a stable order — stay first, the
+::  reserved exits last, the rest alphabetical. Spent targets are
+::  included and marked, so a caller can render them or drop them.
 ::
 ++  open
   |=  [=recipe =state]
@@ -145,7 +247,7 @@
   |=  [t=@t c=@t]
   ^-  arrow
   :+  t  c
-  ?:  =('done' t)  &
+  ?:  (term t)  &
   ?:  =('self' t)
     =/  d=(unit @ud)  (dwell-left recipe state)
     ?~(d & (gth u.d 0))
@@ -190,27 +292,40 @@
 ::  varies in form reads as commentary rather than state.
 ::
 ++  tip
-  |=  [=recipe =state]
+  |=  [=frags =recipe =state]
+  ^-  @t
+  (tip-in frags recipe state ~)
+::  +tip-in: the tip of a nested run. The frames beneath are named, top
+::  of them first, so the agent knows what it will return to.
+::
+++  tip-in
+  |=  [=frags =recipe =state outer=(list state)]
   ^-  @t
   =/  st=(unit step)  (~(get by steps.recipe) step.state)
   %-  crip
-  ;:  weld
-    "<recipe-state>\0a"
-    "RECIPE  "  (trip name.recipe)  "  (level "  (trip level.state)  ")\0a"
-    (quoted aim.recipe)
-    (labeled "INPUT " input.recipe)
-    (labeled "OUTPUT" output.recipe)
-    "\0a"
-    (step-line recipe state)
-    (quoted ?~(st ~ aim.u.st))
-    (labeled "INPUT " ?~(st ~ input.u.st))
-    (labeled "OUTPUT" ?~(st ~ output.u.st))
-    "\0a"
-    "FROM HERE  (name one to move; staying is naming 'stay')\0a"
-    (arrows-block recipe state)
-    "ALWAYS     abort — leave the recipe, saying what was settled and what stopped it\0a"
-    "</recipe-state>\0a"
+  %^  say  frags  %'tip.txt'
+  :~  ["name" (trip name.recipe)]
+      ["level" (trip level.state)]
+      ["within" (within frags outer)]
+      ["aim" (quoted aim.recipe)]
+      ["input" (labeled "INPUT " input.recipe)]
+      ["output" (labeled "OUTPUT" output.recipe)]
+      ["step-line" (step-line recipe state)]
+      ["step-aim" (quoted ?~(st ~ aim.u.st))]
+      ["step-input" (labeled "INPUT " ?~(st ~ input.u.st))]
+      ["step-output" (labeled "OUTPUT" ?~(st ~ output.u.st))]
+      ["asked" ?:(asked.state (say frags %'asked.txt' ~) "")]
+      ["arrows" (arrows-block recipe state)]
   ==
+::  +within: the frames beneath this run, one line each.
+::
+++  within
+  |=  [=frags outer=(list state)]
+  ^-  tape
+  %-  zing
+  %+  turn  outer
+  |=  o=state
+  (say frags %'within.txt' ~[["name" (trip name.o)] ["step" (trip step.o)] ["level" (trip level.o)]])
 ::  +step-line: the budget readout. A dash is unbudgeted, not zero.
 ::
 ++  step-line
@@ -259,7 +374,7 @@
   ==
 ::  run state as json, so it can live in an ordinary grub beside the
 ::  chat it belongs to. The only thing the protocol persists is where
-::  you are and what you have spent.
+::  you are, whether you are waiting, and what you have spent.
 ::
 ++  state-to-json
   |=  =state
@@ -268,6 +383,7 @@
   :~  ['recipe' s+name.state]
       ['level' s+level.state]
       ['step' s+step.state]
+      ['asked' b+asked.state]
       ['dwell' (numb:enjs:format dwell.state)]
       ['run' (numb:enjs:format run.state)]
       :-  'spent'
@@ -290,6 +406,7 @@
   :*  nm
       (jstr jon 'level')
       sp
+      (jflag jon 'asked')
       (spent-of (~(get by p.jon) 'spent'))
       (jnum jon 'dwell' 0)
       (jnum jon 'run' 0)
@@ -341,22 +458,31 @@
   ^-  tape
   ?:  (gte (lent t) n)  t
   (weld t (reap (sub n (lent t)) ' '))
-::  +arrow-order: stay first, done last, the rest alphabetical. JSON
-::  objects are unordered, so the render order is imposed here rather
-::  than taken from the file.
+::  +arrow-order: stay first, then steps alphabetical, then the exits
+::  in the order ask, abort, done. JSON objects are unordered, so the
+::  render order is imposed here rather than taken from the file.
 ::
 ++  arrow-order
   |=  [a=[t=@t c=@t] b=[t=@t c=@t]]
   ^-  ?
   ?:  =('self' t.a)  &
   ?:  =('self' t.b)  |
-  ?:  =('done' t.a)  |
-  ?:  =('done' t.b)  &
+  =/  ra=@ud  (exit-rank t.a)
+  =/  rb=@ud  (exit-rank t.b)
+  ?.  =(ra rb)  (lth ra rb)
   (lth t.a t.b)
 ::
+++  exit-rank
+  |=  t=@t
+  ^-  @ud
+  ?:  =('done' t)  3
+  ?:  =('abort' t)  2
+  ?:  =('ask' t)  1
+  0
 ::  +steps-of: the steps object. ~ when any step omits input or output
 ::  — the whole recipe is refused, since a step without a stated shape
-::  cannot be entered any more than a recipe without a start.
+::  cannot be entered any more than a recipe without a start. A step
+::  named like a reserved exit is dropped.
 ::
 ++  steps-of
   |=  jon=json
@@ -367,7 +493,7 @@
   |-  ^-  (unit (map @t step))
   ?~  all  `out
   ?.  ?=([%o *] v.i.all)  $(all t.all)
-  ?:  |(=('done' k.i.all) =('abort' k.i.all))  $(all t.all)
+  ?:  (term k.i.all)  $(all t.all)
   =/  v  v.i.all
   ?.  &((~(has by p.v) 'input') (~(has by p.v) 'output'))  ~
   =/  st=step
@@ -424,6 +550,13 @@
   ?.  ?=([%o *] jon)  ''
   =/  v=(unit json)  (~(get by p.jon) key)
   ?:(?=([~ %s *] v) p.u.v '')
+::
+++  jflag
+  |=  [jon=json key=@t]
+  ^-  ?
+  ?.  ?=([%o *] jon)  |
+  =/  v=(unit json)  (~(get by p.jon) key)
+  ?:(?=([~ %b *] v) p.u.v |)
 ::
 ++  jnum
   |=  [jon=json key=@t def=@ud]

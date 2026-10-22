@@ -36,6 +36,8 @@
 ::
 /<  nex-tools  /lib/tools.hoon
 /<  rcp-lib    /lib/recipe.hoon
+::  the tip's words: the clanker's system-prompt fragments
+/&  sp-raw     /nex/clanker/system-prompt/
 |%
 +$  config
   $:  tag=@tas             ::  log prefix, e.g. %itinerary-agent
@@ -406,7 +408,7 @@
     =/  tip-text=@t
       ?~  rcf  ''
       ?~  rst  ''
-      ?.  over  (tip:rcp-lib u.rcf u.rst)
+      ?.  over  (tip:rcp-lib (frags-of:rcp-lib fil.sp-raw) u.rcf u.rst)
       %-  crip
       ;:  weld
         "<recipe-state>\0a"

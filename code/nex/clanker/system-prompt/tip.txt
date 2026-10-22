@@ -1,0 +1,6 @@
+<recipe-state>
+RECIPE  {name}  (level {level})
+{within}{aim}{input}{output}
+{step-line}{step-aim}{step-input}{step-output}
+{asked}FROM HERE  (name one to move; staying is naming 'stay')
+{arrows}</recipe-state>

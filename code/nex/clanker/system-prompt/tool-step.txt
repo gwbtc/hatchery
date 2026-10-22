@@ -1,0 +1,1 @@
+Adopt the next intention in the recipe you are following. Name the target exactly as the tip lists it: a step, stay (re-choose the current step), or one of the exits the step offers — done, ask, abort (leave the recipe). For ask: write the question in your text first, then call step with ask; the turn ends there and the user answers.
