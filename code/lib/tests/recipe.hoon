@@ -1,6 +1,6 @@
 /<  test  /lib/test.hoon
 /<  rec   /lib/recipe.hoon
-/&  raw   /nex/clanker/system-prompt/
+/&  raw   /nex/clanker/prompts/
 ::  tests for lib/recipe: parse, budget arithmetic, transitions, render
 ::
 ::  The demo recipe is two steps. `a` may stay (dwell 2, life 4), go to
@@ -26,7 +26,7 @@
   '{"aim":["x"],"input":[],"output":[],"start":"a","steps":{"a":{"aim":["A"],"output":[],"next":{"done":"ok"}}}}'
 =/  rcp=recipe:rec  (need (parse:rec 'demo' (need (de:json:html src))))
 =/  st0=state:rec   (enter:rec rcp 'normal')
-::  the tip's words come from the clanker's system-prompt directory
+::  the tip's words come from the clanker's prompts/ directory
 =/  fr=frags:rec    (frags-of:rec fil.raw)
 =/  tip  |=([r=recipe:rec s=state:rec] (tip:rec fr r s))
 %-  run-tests:test
@@ -162,19 +162,25 @@
   |.((chk-ud 1 dwell:(won (move:rec rcp (tik 1 st0) 'ask'))))
 ++  test-answer-clears-waiting
   |.((chk-lo | asked:(answer:rec (won (move:rec rcp st0 'ask')))))
-++  test-ask-refused-where-not-offered
+::  ask and abort are open at every step, listed or not
+++  test-ask-open-where-not-listed
   |.  =/  s=state:rec  (won (move:rec rcp st0 'b'))
-      (chk-lo & (fail (move:rec rcp s 'ask')))
+      (chk-lo & asked:(won (move:rec rcp s 'ask')))
 ++  test-abort-is-terminal
   |.((chk-lo & (done:rec (won (move:rec rcp st0 'abort')))))
-++  test-abort-refused-where-not-offered
+++  test-abort-open-where-not-listed
   |.  =/  s=state:rec  (won (move:rec rcp st0 'b'))
-      (chk-lo & (fail (move:rec rcp s 'abort')))
+      (chk-lo & (done:rec (won (move:rec rcp s 'abort'))))
 ::  the open set, in render order: stay first, steps, then the exits
 ::
 ++  test-open-order
   |.  %+  chk-list  ~['self' 'b' 'ask' 'abort']
       (turn (open:rec rcp st0) |=(a=arrow:rec target.a))
+::  a step that lists no exits still has ask and abort, before done
+++  test-open-adds-exits
+  |.  =/  s=state:rec  (won (move:rec rcp st0 'b'))
+      %+  chk-list  ~['ask' 'abort' 'done']
+      (turn (open:rec rcp s) |=(a=arrow:rec target.a))
 ::  a spent arrow drops out of the open set rather than erroring
 ++  test-open-drops-spent-stay
   |.  %+  chk-list  ~['b' 'ask' 'abort']
@@ -210,12 +216,12 @@
   |.((chk-lo & (has "| the question" (tip rcp st0))))
 ++  test-tip-dash-for-empty-output
   |.((chk-lo & (has "OUTPUT  -" (tip rcp st0))))
-::  the exits show only where the step offers them
-++  test-tip-lists-abort-where-offered
-  |.((chk-lo & (has "abort" (tip rcp st0))))
-++  test-tip-omits-abort-where-not-offered
+::  a step's own note on an exit shows; without one the standing note does
+++  test-tip-shows-step-exit-note
+  |.((chk-lo & (has "no way forward" (tip rcp st0))))
+++  test-tip-shows-exits-where-not-listed
   |.  =/  s=state:rec  (won (move:rec rcp st0 'b'))
-      (chk-lo | (has "abort" (tip rcp s)))
+      (chk-lo & (has "abort" (tip rcp s)))
 ++  test-tip-says-asked
   |.((chk-lo & (has "ASKED" (tip rcp (won (move:rec rcp st0 'ask'))))))
 ++  test-tip-silent-when-not-asked

@@ -32,7 +32,6 @@
 /&  chats-js    ./chats.js
 /&  recipe-js   ./recipe.js
 /<  rcp-lib     /lib/recipe.hoon
-/&  sp-raw      /nex/clanker/system-prompt/
 /&  icon        ./icon.svg
 ::  the layouts the explorer opens the collection's dirs as ('./' paths
 ::  resolve against the dir opened): the collection root or a category
@@ -185,8 +184,12 @@
   =/  cfg=json  (clanker-config name bundle extra)
   =|  files=(map @ta [=bask:tarball gain=?])
   =.  files  (~(put by files) %'config.json' [[[/ %json] cfg] %.n])
-  =.  files  (~(put by files) %'system.md' [[[/ %mime] [/text/markdown (as-octs:mimes:html system)]] %.n])
-  [`[`[/clanker %agent] `weir %.n files] ~]
+  ::  the standing prompt lives under prompts/, beside the harness's
+  ::  words that the agent's on-load seeds there
+  =/  prompts=bole:tarball
+    :-  `[~ ~ %.n (malt ~[[%'main.md' [[[/ %mime] [/text/markdown (as-octs:mimes:html system)]] %.n]]])]
+    ~
+  [`[`[/clanker %agent] `weir %.n files] (malt ~[[%prompts prompts]])]
 ::  +default-weir: what any clanker may reach outside its own tree: time,
 ::  the model proxy. Its own tree, its tools and its nested clankers are
 ::  inside it and need no grant, with one exception: a peek at the
@@ -595,7 +598,7 @@
       %+  send-json  eyre-id
       (en:json:html (pairs:enjs:format ~[['path' s+(spat u.proj)] ['chat' s+chat] ['record' [%o ~]] ['system' s+sys]]))
     ;<  cfg=json  bind:m  (read-json [%| 1 %& (welp /projects u.proj) %'config.json'])
-    ;<  sys=@t  bind:m  (read-text [%| 1 %& (welp /projects u.proj) %'system.md'])
+    ;<  sys=@t  bind:m  (read-text [%| 1 %& (welp /projects (snoc u.proj %prompts)) %'main.md'])
     %+  send-json  eyre-id
     (en:json:html (pairs:enjs:format ~[['path' s+(spat u.proj)] ['record' cfg] ['system' s+sys]]))
   ?:  ?&(=(%'POST' method) =([%api %record ~] suffix))
@@ -631,7 +634,7 @@
       =/  s=(unit json)  ?.(?=([%o *] body) ~ (~(get by p.body) 'system'))
       ?.  ?=([~ %s *] s)  (pure:m ~)
       %-  over:io
-      :-  [%| 1 %& (welp /projects u.proj) %'system.md']
+      :-  [%| 1 %& (welp /projects (snoc u.proj %prompts)) %'main.md']
       [[/ %mime] [/text/markdown (as-octs:mimes:html p.u.s)]]
     (send-json eyre-id '{"ok":true}')
   ::  the tool policy editor's data: the tool names this clanker's tools
@@ -672,6 +675,19 @@
     =/  cdir=path  (welp pdir [%chats `@ta`chat ~])
     ;<  rj=(unit json)  bind:m  (read-json-maybe [%| 1 %& cdir %'run.json'])
     =/  stk=stack:rcp-lib  ?~(rj ~ (stack-from-json:rcp-lib u.rj))
+    ::  the tip's words: the clanker's own prompts/ files
+    ;<  frags=frags:rcp-lib  bind:m
+      =/  mf  (fiber:fiber:nexus ,frags:rcp-lib)
+      =/  sdir=path  (snoc pdir %prompts)
+      ;<  dv=view:nexus  bind:mf  (peek-shallow:io [%| 1 %| sdir] ~)
+      ?.  ?=([%ball *] dv)  (pure:mf ~)
+      ?~  fil.ball.dv  (pure:mf ~)
+      =/  names=(list @ta)  ~(tap in ~(key by contents.u.fil.ball.dv))
+      =|  acc=(list [@ta @t])
+      |-  ^-  form:mf
+      ?~  names  (pure:mf (frags-of-texts:rcp-lib acc))
+      ;<  t=@t  bind:mf  (read-text [%| 1 %& sdir i.names])
+      $(names t.names, acc [[i.names t] acc])
     ::  frames, bottom first. Each carries its run state and the recipe
     ::  file itself, so the pane renders the step from the source rather
     ::  than parsing the tip; the tip rides along as the model reads it
@@ -697,7 +713,7 @@
             ['asked' b+asked.st]
             ['run' (state-to-json:rcp-lib st)]
             ['recipe' u.raw]
-            ['tip' s+(tip-in:rcp-lib (frags-of:rcp-lib fil.sp-raw) u.rcp st outer)]
+            ['tip' s+(tip-in:rcp-lib frags u.rcp st outer)]
         ==
       $(todo t.todo, acc [fj acc])
     %+  send-json  eyre-id
@@ -920,7 +936,7 @@
 ::  status yet (never written since it was made) falls back to its log.
 ::  the tools the agent loop runs itself rather than sending to the tools
 ::  nexus (+run-tools in agent.hoon); policy applies to them by name
-++  runtime-tools  ^-((list @t) ~['enter' 'step' 'spawn'])
+++  runtime-tools  ^-((list @t) ~['recipe_enter' 'recipe_step' 'spawn'])
 ++  chats-of
   |=  chats-dir=path
   =/  m  (fiber:fiber:nexus ,(list json))
@@ -934,6 +950,18 @@
   =/  cdir=path  (snoc chats-dir i.names)
   ;<  st=(unit json)  bind:m  (read-json-maybe [%| 1 %& cdir %'status.json'])
   ;<  sys=@t  bind:m  (read-text [%| 1 %& cdir %'system.md'])
+  ::  the recipe state is read from run.json here, not from the copy in
+  ::  status.json: the copy is as old as the log's last write
+  ;<  rj=(unit json)  bind:m  (read-json-maybe [%| 1 %& cdir %'run.json'])
+  =/  stk=stack:rcp-lib  ?~(rj ~ (stack-from-json:rcp-lib u.rj))
+  =/  recipe=json
+    ?~  stk  ~
+    %-  pairs:enjs:format
+    :~  ['name' s+name.i.stk]
+        ['step' s+step.i.stk]
+        ['asked' b+asked.i.stk]
+        ['depth' (numb:enjs:format (lent stk))]
+    ==
   ;<  row=json  bind:m
     =/  mj  (fiber:fiber:nexus ,json)
     ^-  form:mj
@@ -947,7 +975,7 @@
           ['busy' b+=('busy' state)]
           ['asking' b+=('asking' state)]
           ['prompt' b+!=('' sys)]
-          ['recipe' (fall (~(get by p.u.st) 'recipe') ~)]
+          ['recipe' recipe]
       ==
     ;<  log=json  bind:mj  (read-json [%| 1 %& cdir %'log.chat-log'])
     =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
@@ -1202,7 +1230,7 @@
       ~[(fol (snoc pdir %'config.json') & |)]
     %-  ans
     :^  'record'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
-    ~[(fol (snoc pdir %'system.md') | |)]
+    ~[(fol (snoc (snoc pdir %prompts) %'main.md') | |)]
   ::  a clanker's chats/ directory is its list of chats, live on the dir
   ?:  ?=([%chats @ *] f)
     =/  proj=path  (flop t.f)

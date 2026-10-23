@@ -9,10 +9,11 @@
 ::  Three arrow targets are reserved and never steps: `done` ends the
 ::  run, `abort` ends it without its output, `ask` pauses it on the
 ::  user (the step is kept; the run waits for the user's next message).
-::  Each is on offer only where the author put it in a step's `next`,
-::  with its condition, like any other arrow: a step with no `abort` is
-::  one the agent may not give up on. Running out of budget is not an
-::  exit the agent takes; it is the run ending under it (+stuck).
+::  `done` is on offer only where a step's `next` names it. `ask` and
+::  `abort` are open at every step; a step's `next` may carry a note on
+::  when they are unwise, and the recipe's aim speaks for all steps.
+::  Running out of budget is not an exit the agent takes; it is the run
+::  ending under it (+stuck).
 ::
 ::  Budgets live in levels, each a WHOLE budget rather than a scaling of
 ::  some other level. Three kinds: the run total, a per-step lifetime
@@ -24,18 +25,36 @@
 ::
 ::  Everything here is pure. The tip is assembled fresh per request and
 ::  never stored in the chat — see +tip's callers. Its words are not
-::  in here: the caller hands in the system-prompt fragments (a map of
-::  file name to text, +frags-of over a /& directory import) and +fill
-::  puts the run's facts into them.
+::  in here: the caller hands in the prompt fragments (a map of file
+::  name to text) and +fill puts the run's facts into them.
 ::
 |%
 +$  frags  (map @ta @t)
-::  +frags-of: a /& directory import as fragments by file name.
+::  +frags-of: a /& directory import as fragments: the files by name,
+::  and the entries of lines.json by key.
 ::
 ++  frags-of
   |=  raw=(unit (map @ta mime))
   ^-  frags
-  (~(run by (fall raw ~)) |=(=mime `@t`q.q.mime))
+  (frags-of-texts (turn ~(tap by (fall raw ~)) |=([n=@ta =mime] [n `@t`q.q.mime])))
+::  +frags-of-texts: the same from [name text] pairs. lines.json, when
+::  present, is a json object whose string values are fragments too,
+::  keyed by their names; it holds the one-liners.
+::
+++  frags-of-texts
+  |=  files=(list [n=@ta t=@t])
+  ^-  frags
+  =/  base=frags  (~(gas by *frags) files)
+  =/  lines=(unit @t)  (~(get by base) %'lines.json')
+  ?~  lines  base
+  =/  j=(unit json)  (de:json:html u.lines)
+  ?.  ?=([~ %o *] j)  base
+  %-  ~(gas by base)
+  %+  murn  ~(tap by p.u.j)
+  |=  [k=@t v=json]
+  ^-  (unit [@ta @t])
+  ?.  ?=([%s *] v)  ~
+  `[`@ta`k p.v]
 ::  +say: a fragment with its {keys} filled.
 ::
 ++  say
@@ -261,7 +280,14 @@
   ^-  (list arrow)
   =/  st=(unit step)  (~(get by steps.recipe) step.state)
   ?~  st  ~
-  %+  turn  (sort ~(tap by next.u.st) arrow-order)
+  ::  ask and abort are open at every step. A step's own entry carries
+  ::  the note shown with them; else the standing note (+arrows-block)
+  =/  arrows=(map @t @t)
+    =/  n=(map @t @t)  next.u.st
+    =?  n  !(~(has by n) 'ask')  (~(put by n) 'ask' '')
+    =?  n  !(~(has by n) 'abort')  (~(put by n) 'abort' '')
+    n
+  %+  turn  (sort ~(tap by arrows) arrow-order)
   |=  [t=@t c=@t]
   ^-  arrow
   :+  t  c
@@ -332,8 +358,8 @@
       ["step-aim" (quoted ?~(st ~ aim.u.st))]
       ["step-input" (labeled "INPUT " ?~(st ~ input.u.st))]
       ["step-output" (labeled "OUTPUT" ?~(st ~ output.u.st))]
-      ["asked" ?:(asked.state (say frags %'asked.txt' ~) "")]
-      ["arrows" (arrows-block recipe state)]
+      ["asked" ?:(asked.state (say frags %'asked' ~) "")]
+      ["arrows" (arrows-block frags recipe state)]
   ==
 ::  +within: the frames beneath this run, one line each.
 ::
@@ -343,7 +369,7 @@
   %-  zing
   %+  turn  outer
   |=  o=state
-  (say frags %'within.txt' ~[["name" (trip name.o)] ["step" (trip step.o)] ["level" (trip level.o)]])
+  (say frags %'within' ~[["name" (trip name.o)] ["step" (trip step.o)] ["level" (trip level.o)]])
 ::  +step-line: the budget readout. A dash is unbudgeted, not zero.
 ::
 ++  step-line
@@ -362,7 +388,7 @@
 ::  budget.
 ::
 ++  arrows-block
-  |=  [=recipe =state]
+  |=  [=frags =recipe =state]
   ^-  tape
   %-  zing
   %+  turn  (open recipe state)
@@ -370,7 +396,13 @@
   ^-  tape
   ?.  ok.arrow  ""
   =/  label=tape  ?:(=('self' target.arrow) "stay" (trip target.arrow))
-  ;:(weld "  " (pad label 11) " " (trip cond.arrow) "\0a")
+  ::  an exit with no note of its own shows the standing one
+  =/  cond=tape
+    ?.  =('' cond.arrow)  (trip cond.arrow)
+    ?:  =('ask' target.arrow)  (say frags %'ask-default' ~)
+    ?:  =('abort' target.arrow)  (say frags %'abort-default' ~)
+    ""
+  ;:(weld "  " (pad label 11) " " cond "\0a")
 ::  +catalog: the recipes on offer, one line each. The aim's title line
 ::  is what sells a recipe before it has been entered, so it is all that
 ::  shows here.

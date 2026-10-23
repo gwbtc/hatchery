@@ -3,7 +3,9 @@
 ::  clanker's scope. Everything the clanker is lives in its own tree:
 ::
 ::    config.json         {name, model, max_tokens, bundle}
-::    system.md           the standing prompt
+::    prompts/main.md     the standing prompt; beside it the words of the
+::                        harness (recipes.md, skills.md, tip.txt,
+::                        spent.txt, lines.json), the clanker's to edit
 ::    memories/*.md       what it has learned (its tools write here)
 ::    skills/*.md         standing instructions, one per file
 ::    tools.json          the tool policy (optional): which tools run
@@ -17,8 +19,8 @@
 ::    chats/<c>/<sub>.clanker/   a clanker this chat spawned (nested)
 ::    tools/              its own tools nexus, seeded from a bundle
 ::
-::  Every turn assembles the request from those files: system.md, then
-::  the chat's own system.md if it has one, then the skills, then the
+::  Every turn assembles the request from those files: prompts/main.md,
+::  then the chat's own system.md if it has one, then the skills, then the
 ::  memories, then the chat's events. Tools and memories are the
 ::  clanker's; a chat narrows the tools by policy, never widens them (a
 ::  chat that needs MORE is a different clanker, with its own weir). The
@@ -47,11 +49,13 @@
 /<  clanker    /lib/clanker.hoon
 /<  nex-tools  /lib/tools.hoon
 /<  rcp-lib    /lib/recipe.hoon
-::  every sentence the model reads from this agent, one file each: the
-::  standing section on recipes, the runtime tools' descriptions, the
-::  step results, the lines the log records, the tip. None of it is in
-::  here; +say fills a fragment with the run's facts
-/&  sp-raw     /nex/clanker/system-prompt/
+::  every sentence the model reads from this agent: the standing
+::  sections (recipes.md, skills.md), the tip (tip.txt, spent.txt) and
+::  the one-liners (lines.json: tool descriptions, step results, the
+::  lines the log records). These seed each clanker's prompts/ once,
+::  beside its main.md; the clanker's own files are what is read, per
+::  request (+read-frags), and +say fills one with the run's facts
+/&  prompts-raw  /nex/clanker/prompts/
 ::  the skills every clanker starts with, seeded into its skills/ once
 /&  skills-raw  /nex/clanker/skills/
 /&  bundle         /lib/clanker-bundle/
@@ -72,7 +76,15 @@
       :~  (manifest:loader 0)
           [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'config.json'] [[/ %json] default-config]]
-          [%fall %& [/ %'system.md'] [[/ %mime] [/text/markdown (as-octs:mimes:html '')]]]
+          ::  prompts/: main.md is the standing prompt, the clanker's own
+          ::  from the start; the rest are the words of the harness, seeded
+          ::  once and then the clanker's too
+          [%fall %& [/prompts %'main.md'] [[/ %mime] [/text/markdown (as-octs:mimes:html '')]]]
+          [%fall %& [/prompts %'recipes.md'] [[/ %mime] (prompt-file %'recipes.md')]]
+          [%fall %& [/prompts %'skills.md'] [[/ %mime] (prompt-file %'skills.md')]]
+          [%fall %& [/prompts %'tip.txt'] [[/ %mime] (prompt-file %'tip.txt')]]
+          [%fall %& [/prompts %'spent.txt'] [[/ %mime] (prompt-file %'spent.txt')]]
+          [%fall %& [/prompts %'lines.json'] [[/ %mime] (prompt-file %'lines.json')]]
           [%fall %| /memories empty-dir:loader]
           ::  skills/: read on demand (the standing prompt lists them, the
           ::  model reads one when it applies). The defaults are seeded
@@ -110,17 +122,30 @@
     --
 |%
 ++  ck  ~(. clanker:clanker [%clanker [%a ~] '' [%o ~]])
+::  +prompt-file: one of the shipped prompt files, as the mime its seed
+::  row writes
+++  prompt-file
+  |=  name=@ta
+  ^-  mime
+  (fall (~(get by (fall fil.prompts-raw ~)) name) [/text/plain (as-octs:mimes:html '')])
 ::  +default-skill: one of the shipped skills, as the mime its seed row writes
 ++  default-skill
   |=  name=@ta
   ^-  mime
   (fall (~(get by (fall fil.skills-raw ~)) name) [/text/markdown (as-octs:mimes:html '')])
-::  the system-prompt fragments, and one of them with its {keys} filled
-++  frags  ^-(frags:rcp-lib (frags-of:rcp-lib fil.sp-raw))
+::  +say: one system-prompt fragment with its {keys} filled
 ++  say
-  |=  [name=@ta subs=(list [tape tape])]
+  |=  [=frags:rcp-lib name=@ta subs=(list [tape tape])]
   ^-  @t
   (crip (say:rcp-lib frags name subs))
+::  +read-frags: the clanker's prompts/ directory as fragments: its files
+::  by name, and the entries of lines.json by key
+++  read-frags
+  |=  =rail:tarball
+  =/  m  (fiber:fiber:nexus ,frags:rcp-lib)
+  ^-  form:m
+  ;<  files=(list [@ta @t])  bind:m  (read-dir-texts rail /prompts)
+  (pure:m (frags-of-texts:rcp-lib files))
 ++  default-config
   ^-  json
   %-  pairs:enjs:format
@@ -225,6 +250,7 @@
   ?~  held  (pure:m ~)
   ;<  [road=road:tarball existed=? log=(list json)]  bind:m  (chat-log rail chat)
   ?:  (open-turn log)  (pure:m ~)
+  ;<  frags=frags:rcp-lib  bind:m  (read-frags rail)
   ::  `all` is held before ?~ narrowed it: scag and slag return ^+ their
   ::  list, and ~ does not nest in a lest
   =/  all=stack:rcp-lib  held
@@ -235,7 +261,7 @@
   =/  lines=(list json)
     %+  turn  gone
     |=  s=state:rcp-lib
-    (event-recipe (say %'left-by-user.txt' ~[["name" (trip name.s)] ["step" (trip step.s)]]))
+    (event-recipe (say frags %'left-by-user' ~[["name" (trip name.s)] ["step" (trip step.s)]]))
   (write-log road existed (weld log lines))
 ::  +chat-log: a chat's log road and its events (~ when there is none).
 ++  chat-log
@@ -298,7 +324,8 @@
   ;<  ~  bind:m  (write-run rail chat (push:rcp-lib held (enter:rcp-lib u.r lvl)))
   ::  a start step that is itself a recipe enters that one too
   ;<  ~  bind:m  (descend rail chat u.r start.u.r lvl 0)
-  (pure:m `(entering-line want start.u.r lvl held))
+  ;<  frags=frags:rcp-lib  bind:m  (read-frags rail)
+  (pure:m `(entering-line frags want start.u.r lvl held))
 ::  +descend: landing on a recipe-step pushes its recipe, from its own
 ::  start step, as deep as that goes. The lines are written by +run
 ::  from the stack, so nothing is said here. Eight deep is a loop.
@@ -318,12 +345,12 @@
 ::  +entering-line: the one line a push writes to the log.
 ::
 ++  entering-line
-  |=  [name=@t step=@t lvl=@t outer=stack:rcp-lib]
+  |=  [=frags:rcp-lib name=@t step=@t lvl=@t outer=stack:rcp-lib]
   ^-  @t
   =/  within=tape
     ?~  outer  ""
-    (trip (say %'entering-within.txt' ~[["name" (trip name.i.outer)] ["step" (trip step.i.outer)]]))
-  (say %'entering.txt' ~[["name" (trip name)] ["step" (trip step)] ["level" (trip lvl)] ["within" within]])
+    (trip (say frags %'entering-within' ~[["name" (trip name.i.outer)] ["step" (trip step.i.outer)]]))
+  (say frags %'entering' ~[["name" (trip name)] ["step" (trip step)] ["level" (trip lvl)] ["within" within]])
 ::  +recipe-names: the recipes this clanker holds, by file stem.
 ::
 ++  recipe-names
@@ -344,19 +371,19 @@
 ::  +enter-schema: offered only while no run is live. The names ride in
 ::  the description, so the model knows what it may enter without a
 ::  separate catalog. The tool policy governs it like any other tool,
-::  by the name `enter`.
+::  by the name `recipe_enter`.
 ::
 ++  enter-schema
-  |=  names=(list @t)
+  |=  [=frags:rcp-lib names=(list @t)]
   ^-  json
   =/  listed=tape
     %-  zing
     %+  join  ", "
     (turn names |=(n=@t (trip n)))
-  %:  mk-tool-typed:clanker  'enter'
-    (say %'tool-enter.txt' ~[["recipes" listed]])
-    :~  ['recipe' 'string' (say %'tool-enter-recipe.txt' ~)]
-        ['level' 'string' (say %'tool-enter-level.txt' ~)]
+  %:  mk-tool-typed:clanker  'recipe_enter'
+    (say frags %'tool-enter' ~[["recipes" listed]])
+    :~  ['recipe' 'string' (say frags %'tool-enter-recipe' ~)]
+        ['level' 'string' (say frags %'tool-enter-level' ~)]
     ==
     ~['recipe']
   ==
@@ -368,17 +395,19 @@
   |=  [=rail:tarball chat=@t input=json]
   =/  m  (fiber:fiber:nexus ,(unit [json @t]))
   ^-  form:m
+  ;<  frags=frags:rcp-lib  bind:m  (read-frags rail)
   ;<  line=(unit @t)  bind:m  (engage rail chat input)
-  ?~  line  (pure:m `[s+(say %'no-such-recipe.txt' ~) 'error'])
+  ?~  line  (pure:m `[s+(say frags %'no-such-recipe' ~) 'error'])
   (pure:m `[s+u.line 'entered'])
 ::  +step-schema: offered only while a run is live and still movable.
 ::
 ++  step-schema
+  |=  =frags:rcp-lib
   ^-  json
-  %:  mk-tool-typed:clanker  'step'
-    (say %'tool-step.txt' ~)
-    :~  ['target' 'string' (say %'tool-step-target.txt' ~)]
-        ['note' 'string' (say %'tool-step-note.txt' ~)]
+  %:  mk-tool-typed:clanker  'recipe_step'
+    (say frags %'tool-step' ~)
+    :~  ['target' 'string' (say frags %'tool-step-target' ~)]
+        ['note' 'string' (say frags %'tool-step-note' ~)]
     ==
     ~['target']
   ==
@@ -390,11 +419,12 @@
   |=  [=rail:tarball chat=@t input=json]
   =/  m  (fiber:fiber:nexus ,(unit [json @t]))
   ^-  form:m
+  ;<  frags=frags:rcp-lib  bind:m  (read-frags rail)
   =/  target=@t  (jstr:clanker input 'target')
   ;<  held=stack:rcp-lib  bind:m  (read-run rail chat)
-  ?~  held  (pure:m `[s+(say %'no-recipe-engaged.txt' ~) 'error'])
+  ?~  held  (pure:m `[s+(say frags %'no-recipe-engaged' ~) 'error'])
   ;<  rcf=(unit recipe:rcp-lib)  bind:m  (read-recipe rail name.i.held)
-  ?~  rcf  (pure:m `[s+(say %'recipe-missing.txt' ~) 'error'])
+  ?~  rcf  (pure:m `[s+(say frags %'recipe-missing' ~) 'error'])
   =/  e=(each state:rcp-lib @t)  (move:rcp-lib u.rcf i.held target)
   ?:  ?=(%| -.e)  (pure:m `[s+p.e 'refused'])
   ::  the moved frame stays on the stack even when it has ended: +run
@@ -402,16 +432,16 @@
   ::  told where that leaves it
   ;<  ~  bind:m  (write-run rail chat [p.e t.held])
   ?:  asked.p.e
-    (pure:m `[s+(say %'step-ask.txt' ~) 'ask'])
+    (pure:m `[s+(say frags %'step-ask' ~) 'ask'])
   ?.  (done:rcp-lib p.e)
     ::  a recipe-step: the step is entered by entering its recipe
     ;<  ~  bind:m  (descend rail chat u.rcf step.p.e level.p.e 0)
-    (pure:m `[s+(say %'step-now.txt' ~[["step" (trip step.p.e)]]) step.p.e])
+    (pure:m `[s+(say frags %'step-now' ~[["step" (trip step.p.e)]]) step.p.e])
   =/  how=tape  ?:(=('abort' step.p.e) "left" "finished")
   =/  back=tape
-    ?~  t.held  (trip (say %'step-none-left.txt' ~))
-    (trip (say %'step-back.txt' ~[["name" (trip name.i.t.held)] ["step" (trip step.i.t.held)]]))
-  (pure:m `[s+(say %'step-ended.txt' ~[["how" how] ["name" (trip name.p.e)] ["back" back]]) step.p.e])
+    ?~  t.held  (trip (say frags %'step-none-left' ~))
+    (trip (say frags %'step-back' ~[["name" (trip name.i.t.held)] ["step" (trip step.i.t.held)]]))
+  (pure:m `[s+(say frags %'step-ended' ~[["how" how] ["name" (trip name.p.e)] ["back" back]]) step.p.e])
 ::  +answer-run: the user's message answers a run paused on an ask.
 ::
 ++  answer-run
@@ -718,11 +748,12 @@
   |=  [=rail:tarball chat=@t]
   =/  m  (fiber:fiber:nexus ,@t)
   ^-  form:m
-  ;<  sys=@t  bind:m  (read-text rail [%& / %'system.md'])
+  ;<  sys=@t  bind:m  (read-text rail [%& /prompts %'main.md'])
   ;<  chat-sys=@t  bind:m  (read-text rail [%& [%chats `@ta`chat ~] %'system.md'])
   ;<  skills=(list [@ta @t])  bind:m  (read-dir-texts rail /skills)
   ;<  memories=(list [@ta @t])  bind:m  (read-dir-texts rail /memories)
   ;<  recipes=(list @t)  bind:m  (recipe-names rail)
+  ;<  frags=frags:rcp-lib  bind:m  (read-frags rail)
   =/  section
     |=  [title=tape files=(list [n=@ta body=@t])]
     ^-  tape
@@ -737,24 +768,24 @@
   ;:  weld
     (trip sys)
     ?:(=('' chat-sys) "" "\0a\0a# This chat\0a{(trip chat-sys)}\0a")
-    (skills-section skills)
+    (skills-section frags skills)
     (section "Memories" memories)
-    (recipes-section recipes)
+    (recipes-section frags recipes)
   ==
 ::  +skills-section: the skills by name and first line. The standing
 ::  prompt carries only this list; the model reads a skill's body with
 ::  read_file when it applies.
 ::
 ++  skills-section
-  |=  files=(list [n=@ta body=@t])
+  |=  [=frags:rcp-lib files=(list [n=@ta body=@t])]
   ^-  tape
   ?~  files  ""
   =/  rows=tape
     %-  zing
     %+  turn  files
     |=  [n=@ta body=@t]
-    (trip (say %'skill-row.txt' ~[["name" (trip n)] ["about" (first-line body)]]))
-  (trip (say %'skills.md' ~[["skills" rows]]))
+    (trip (say frags %'skill-row' ~[["name" (trip n)] ["about" (first-line body)]]))
+  (trip (say frags %'skills.md' ~[["skills" rows]]))
 ::  +first-line: a file's first non-empty line, without a leading '# '
 ++  first-line
   |=  body=@t
@@ -773,11 +804,11 @@
 ::  the recipes themselves are read through the tip once entered.
 ::
 ++  recipes-section
-  |=  names=(list @t)
+  |=  [=frags:rcp-lib names=(list @t)]
   ^-  tape
   ?~  names  ""
   =/  listed=tape  (zing (join ", " (turn names |=(n=@t (trip n)))))
-  (trip (say %'recipes.md' ~[["recipes" listed]]))
+  (trip (say frags %'recipes.md' ~[["recipes" listed]]))
 ::  +list-tools: what this clanker's tools nexus advertises, as an
 ::  Anthropic tool schema array, plus the engine's own `spawn`. The tools
 ::  nexus answers a {cmd:'list'} poke by poking the array back to us.
@@ -867,6 +898,7 @@
   |=  [=rail:tarball chat=@t road=road:tarball log=(list json) sys=@t model=@t max=@ud schema=json pol=policy pro=provider:clanker]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ;<  frags=frags:rcp-lib  bind:m  (read-frags rail)
   |-  ^-  form:m
   =/  last=json  ?~(log [%o ~] (rear log))
   =/  k=@t  (jstr:clanker last 'k')
@@ -919,7 +951,7 @@
       %=  $
         new  t.new
         i    (dec i)
-        log  (snoc log (event-recipe (entering-line name.i.new step.i.new level.i.new outer)))
+        log  (snoc log (event-recipe (entering-line frags name.i.new step.i.new level.i.new outer)))
       ==
     =/  settled=[stk=stack:rcp-lib lines=(list json)]
       =/  stk=stack:rcp-lib  after
@@ -930,8 +962,8 @@
       =/  how=tape  ?:(=('abort' step.i.stk) "left" "finished")
       =/  back=tape
         ?~  t.stk  ""
-        (trip (say %'ended-back.txt' ~[["name" (trip name.i.t.stk)] ["step" (trip step.i.t.stk)]]))
-      =/  line=@t  (say %'ended.txt' ~[["how" how] ["name" (trip name.i.stk)] ["back" back]])
+        (trip (say frags %'ended-back' ~[["name" (trip name.i.t.stk)] ["step" (trip step.i.t.stk)]]))
+      =/  line=@t  (say frags %'ended' ~[["how" how] ["name" (trip name.i.stk)] ["back" back]])
       $(stk t.stk, lines [(event-recipe line) lines])
     ;<  ~  bind:m
       ?:  =(stk.settled after)  (pure:(fiber:fiber:nexus ,~) ~)
@@ -948,11 +980,11 @@
       !asked.i.before
     ?:  asked
       =/  top=state:rcp-lib  (head stk.settled)
-      =/  line=@t  (say %'waiting.txt' ~[["name" (trip name.top)] ["step" (trip step.top)]])
+      =/  line=@t  (say frags %'waiting' ~[["name" (trip name.top)] ["step" (trip step.top)]])
       (write-log road %.y (snoc log (event-recipe line)))
     ;<  ~  bind:m  (write-log road %.y log)
     $
-  ;<  messages=(list json)  bind:m  (inline-blobs rail (assemble log))
+  ;<  messages=(list json)  bind:m  (inline-blobs rail (assemble frags log))
   ::  a chat following a recipe carries its tip on the END of the last
   ::  message, rendered from the run AFTER this message is spent, so what
   ::  it reads is what it has left. The tip never enters the log: the log
@@ -981,8 +1013,8 @@
   =/  kit=json
     ?.  ?=([%a *] schema)  schema
     =/  ts=(list json)  p.schema
-    =?  ts  !=('' tip-text)  (snoc ts step-schema)
-    =?  ts  ?=(^ names)  (snoc ts (enter-schema names))
+    =?  ts  !=('' tip-text)  (snoc ts (step-schema frags))
+    =?  ts  ?=(^ names)  (snoc ts (enter-schema frags names))
     [%a ts]
   ;<  answered=(unit json)  bind:m
     %+  call-proxy:ck  link.pro
@@ -1018,8 +1050,8 @@
       =/  mo  (fiber:fiber:nexus ,(unit [json @t]))
       (pure:mo `[s+'The user declined to run this tool. Do not retry it; ask, or go on without it.' 'declined'])
     ?:  =('spawn' name)  (spawn rail chat input)
-    ?:  =('step' name)  (take-step rail chat input)
-    ?:  =('enter' name)  (take-enter rail chat input)
+    ?:  =('recipe_step' name)  (take-step rail chat input)
+    ?:  =('recipe_enter' name)  (take-enter rail chat input)
     (call-tool rail name input tid)
   ?~  outcome  (pure:m ~)
   =/  result=json
@@ -1056,7 +1088,7 @@
     ?:  ?=([%ball *] dv)  (pure:mu ~)
     =/  b=bole:tarball  [`[`[/clanker %agent] ~ %.n ~] ~]
     =.  b  (~(put bo:tarball b) [/ %'config.json'] [[/ %json] default-config])
-    =.  b  (~(put bo:tarball b) [/ %'system.md'] [[/ %mime] [/text/markdown (as-octs:mimes:html sys)]])
+    =.  b  (~(put bo:tarball b) [/prompts %'main.md'] [[/ %mime] [/text/markdown (as-octs:mimes:html sys)]])
     (make:io (nex-road:io rail [%| dir]) &+b)
   =/  child-log=road:tarball  (nex-road:io rail [%& (weld dir /chats/main) log-name])
   ;<  *  bind:m  (keep:io /spawn child-log ~)
@@ -1380,7 +1412,7 @@
 ::  results event after it is answered here with a synthetic result
 ::  saying it was stopped, folded into the next user turn.
 ++  assemble
-  |=  log=(list json)
+  |=  [=frags:rcp-lib log=(list json)]
   ^-  (list json)
   =/  stopped
     |=  ids=(list @t)
@@ -1417,7 +1449,7 @@
     =/  text=json
       %-  pairs:enjs:format
       :~  ['type' s+'text']
-          ['text' s+(say %'event.txt' ~[["body" (trip (jstr:clanker ev 'body'))]])]
+          ['text' s+(say frags %'event' ~[["body" (trip (jstr:clanker ev 'body'))]])]
       ==
     =/  content=json
       ?~  pending  a+~[text]

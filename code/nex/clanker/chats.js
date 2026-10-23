@@ -372,7 +372,7 @@
     var box = el('div', 'ck-rec');
     box.appendChild(el('h2', null, chat ? short(proj) + ' / ' + chat : short(proj)));
     var sys = el('textarea'); sys.spellcheck = false;
-    var l3 = el('label', 'grow'); l3.appendChild(el('span', null, chat ? 'this chat’s prompt, on top of ' + short(proj) + '’s' : 'standing prompt (system.md)')); l3.appendChild(sys); box.appendChild(l3);
+    var l3 = el('label', 'grow'); l3.appendChild(el('span', null, chat ? 'this chat’s prompt, on top of ' + short(proj) + '’s' : 'standing prompt (prompts/main.md)')); l3.appendChild(sys); box.appendChild(l3);
     var foot = el('div', 'foot'), save = el('button', null, 'save'), note = el('span', 'note', '');
     foot.appendChild(save); foot.appendChild(note); box.appendChild(foot);
     root.appendChild(box);

@@ -67,12 +67,16 @@ The seam tells you what the new step is.
 
 ## Exits
 
-A step offers an exit only if it is listed in the step's arrows.
-
-- `done`: the recipe's output is ready.
+- `done`: the recipe's output is ready. A step offers it only if it is
+  listed in the step's arrows.
 - `ask`: the step cannot continue without the user. The agent writes
   its question, names `ask`, and the turn ends.
-- `abort`: giving up is a valid outcome for this step.
+- `abort`: the agent gives up on the recipe.
+
+`ask` and `abort` are available at every step. To say when they are a
+bad idea, say it in the recipe's aim (for example: "this recipe runs
+unattended; an answer may take days, so prefer a best guess") or, for
+one step, as an `ask` or `abort` entry in that step's arrows.
 
 ## Budgets
 
