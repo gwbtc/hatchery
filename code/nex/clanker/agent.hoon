@@ -52,6 +52,8 @@
 ::  step results, the lines the log records, the tip. None of it is in
 ::  here; +say fills a fragment with the run's facts
 /&  sp-raw     /nex/clanker/system-prompt/
+::  the skills every clanker starts with, seeded into its skills/ once
+/&  skills-raw  /nex/clanker/skills/
 /&  bundle         /lib/clanker-bundle/
 /&  kernel-bundle  /lib/clanker-kernel-bundle/
 /&  repo-bundle    /lib/clanker-repo-bundle/
@@ -72,7 +74,11 @@
           [%fall %& [/ %'config.json'] [[/ %json] default-config]]
           [%fall %& [/ %'system.md'] [[/ %mime] [/text/markdown (as-octs:mimes:html '')]]]
           [%fall %| /memories empty-dir:loader]
+          ::  skills/: read on demand (the standing prompt lists them, the
+          ::  model reads one when it applies). The defaults are seeded
+          ::  once; a clanker may edit or remove them
           [%fall %| /skills empty-dir:loader]
+          [%fall %& [/skills %'recipes.md'] [[/ %mime] (default-skill %'recipes.md')]]
           ::  recipes/*.json: thought processes a chat can follow. A run's
           ::  position lives beside that chat's log, as chats/<c>/run.json
           [%fall %| /recipes empty-dir:loader]
@@ -104,6 +110,11 @@
     --
 |%
 ++  ck  ~(. clanker:clanker [%clanker [%a ~] '' [%o ~]])
+::  +default-skill: one of the shipped skills, as the mime its seed row writes
+++  default-skill
+  |=  name=@ta
+  ^-  mime
+  (fall (~(get by (fall fil.skills-raw ~)) name) [/text/markdown (as-octs:mimes:html '')])
 ::  the system-prompt fragments, and one of them with its {keys} filled
 ++  frags  ^-(frags:rcp-lib (frags-of:rcp-lib fil.sp-raw))
 ++  say
@@ -285,7 +296,25 @@
   =/  lvl=@t  =/(l=@t (jstr:clanker jon 'level') ?:(=('' l) 'normal' l))
   ;<  held=stack:rcp-lib  bind:m  (read-run rail chat)
   ;<  ~  bind:m  (write-run rail chat (push:rcp-lib held (enter:rcp-lib u.r lvl)))
+  ::  a start step that is itself a recipe enters that one too
+  ;<  ~  bind:m  (descend rail chat u.r start.u.r lvl 0)
   (pure:m `(entering-line want start.u.r lvl held))
+::  +descend: landing on a recipe-step pushes its recipe, from its own
+::  start step, as deep as that goes. The lines are written by +run
+::  from the stack, so nothing is said here. Eight deep is a loop.
+::
+++  descend
+  |=  [=rail:tarball chat=@t =recipe:rcp-lib step=@t lvl=@t depth=@ud]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?:  (gte depth 8)  (pure:m ~)
+  =/  sub=(unit @t)  (sub-of:rcp-lib recipe step)
+  ?~  sub  (pure:m ~)
+  ;<  r=(unit recipe:rcp-lib)  bind:m  (read-recipe rail u.sub)
+  ?~  r  (pure:m ~)
+  ;<  held=stack:rcp-lib  bind:m  (read-run rail chat)
+  ;<  ~  bind:m  (write-run rail chat (push:rcp-lib held (enter:rcp-lib u.r lvl)))
+  $(recipe u.r, step start.u.r, depth +(depth))
 ::  +entering-line: the one line a push writes to the log.
 ::
 ++  entering-line
@@ -375,6 +404,8 @@
   ?:  asked.p.e
     (pure:m `[s+(say %'step-ask.txt' ~) 'ask'])
   ?.  (done:rcp-lib p.e)
+    ::  a recipe-step: the step is entered by entering its recipe
+    ;<  ~  bind:m  (descend rail chat u.rcf step.p.e level.p.e 0)
     (pure:m `[s+(say %'step-now.txt' ~[["step" (trip step.p.e)]]) step.p.e])
   =/  how=tape  ?:(=('abort' step.p.e) "left" "finished")
   =/  back=tape
@@ -706,10 +737,37 @@
   ;:  weld
     (trip sys)
     ?:(=('' chat-sys) "" "\0a\0a# This chat\0a{(trip chat-sys)}\0a")
-    (section "Skills" skills)
+    (skills-section skills)
     (section "Memories" memories)
     (recipes-section recipes)
   ==
+::  +skills-section: the skills by name and first line. The standing
+::  prompt carries only this list; the model reads a skill's body with
+::  read_file when it applies.
+::
+++  skills-section
+  |=  files=(list [n=@ta body=@t])
+  ^-  tape
+  ?~  files  ""
+  =/  rows=tape
+    %-  zing
+    %+  turn  files
+    |=  [n=@ta body=@t]
+    (trip (say %'skill-row.txt' ~[["name" (trip n)] ["about" (first-line body)]]))
+  (trip (say %'skills.md' ~[["skills" rows]]))
+::  +first-line: a file's first non-empty line, without a leading '# '
+++  first-line
+  |=  body=@t
+  ^-  tape
+  =/  lines=(list tape)  (turn (to-wain:format body) trip)
+  |-  ^-  tape
+  ?~  lines  ""
+  =/  l=tape  i.lines
+  ?:  =("" l)  $(lines t.lines)
+  |-  ^-  tape
+  ?:  ?=([%'#' *] l)  $(l t.l)
+  ?:  ?=([%' ' *] l)  $(l t.l)
+  l
 ::  +recipes-section: what a recipe is and how it is engaged, in the
 ::  standing prompt of a clanker that holds any. The names are listed;
 ::  the recipes themselves are read through the tip once entered.

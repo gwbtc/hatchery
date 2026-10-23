@@ -117,13 +117,14 @@
     Object.keys(steps).forEach(function (name) {
       var cap = caps[name] || {};
       out.push({ data: {
-        id: name, label: name,
+        id: name, label: steps[name].recipe ? name + ' ↳ ' + steps[name].recipe : name,
         life: cap.life == null ? 6 : cap.life,
         stay: !!(steps[name].next && (steps[name].next.self || steps[name].next.stay))
       }, classes: [
         run && run.step === name ? 'here' : '',
         visited[name] ? 'visited' : '',
-        cap.life === 0 ? 'retired' : ''
+        cap.life === 0 ? 'retired' : '',
+        steps[name].recipe ? 'sub' : ''
       ].filter(Boolean).join(' ') });
     });
     Object.keys(steps).forEach(function (from) {
@@ -155,6 +156,8 @@
     { selector: 'node.here', style: { 'background-color': '#dafbe1', 'border-color': '#116329', 'border-width': 2.5 } },
     { selector: 'node.retired', style: { 'border-color': '#d0d7de', 'color': '#8b949e', 'border-style': 'dashed' } },
     { selector: 'node[?stay]', style: { 'border-style': 'double', 'border-width': 3 } },
+    // a step that is a recipe: a box in a box
+    { selector: 'node.sub', style: { 'border-style': 'double', 'border-width': 4, 'background-color': '#f6f8fa', 'color': '#0969da' } },
     { selector: 'node.term', style: {
       'shape': 'round-rectangle', 'background-color': '#dafbe1', 'border-color': '#116329',
       'color': '#116329', 'height': 22, 'padding': '10px'
@@ -307,15 +310,24 @@
         var nm = el('div', 'cname');
         nm.textContent = name;
         card.appendChild(nm);
-        var am = el('div', 'aim');
-        am.textContent = title(st.aim);
-        card.appendChild(am);
-        if (body(st.aim)) {
-          var de = el('div', 'desc');
-          de.textContent = body(st.aim);
-          card.appendChild(de);
+        if (st.recipe) {
+          // a recipe-step: the recipe is the aim and the contract; link to it
+          var rl = el('a', 'aim');
+          rl.textContent = 'runs the recipe ' + st.recipe + ' →';
+          rl.href = '#';
+          rl.addEventListener('click', function (e) { e.preventDefault(); if (opts.onNavigate) opts.onNavigate('./' + st.recipe + '.json', 'file', { name: st.recipe }); });
+          card.appendChild(rl);
+        } else {
+          var am = el('div', 'aim');
+          am.textContent = title(st.aim);
+          card.appendChild(am);
+          if (body(st.aim)) {
+            var de = el('div', 'desc');
+            de.textContent = body(st.aim);
+            card.appendChild(de);
+          }
+          card.appendChild(ioBlock(st.input, st.output));
         }
-        card.appendChild(ioBlock(st.input, st.output));
 
         var ul = el('ul', 'arrows');
         Object.keys(st.next || {}).forEach(function (to) {

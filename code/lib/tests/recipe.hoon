@@ -17,7 +17,7 @@
 ::  rather than a bare literal.
 ::
 =/  src=@t
-  '{"aim":["Test recipe","","A description."],"input":["a question"],"output":["an answer"],"start":"a","steps":{"a":{"aim":["Step A"],"input":["the question"],"output":[],"next":{"self":"more to do","b":"a is settled","ask":"the question is unclear","abort":"no way forward"}},"b":{"aim":["Step B"],"input":[],"output":["the answer"],"next":{"done":"finished"}},"done":{"aim":["must be dropped"]},"ask":{"aim":["must be dropped"]}},"levels":{"normal":{"run":10,"steps":{"a":{"life":4,"dwell":2},"b":{"life":3}}}}}'
+  '{"aim":["Test recipe","","A description."],"input":["a question"],"output":["an answer"],"start":"a","steps":{"a":{"aim":["Step A"],"input":["the question"],"output":[],"next":{"self":"more to do","b":"a is settled","ask":"the question is unclear","abort":"no way forward"}},"b":{"aim":["Step B"],"input":[],"output":["the answer"],"next":{"done":"finished"}},"c":{"recipe":"other","next":{"done":"the other recipe came back"}},"done":{"aim":["must be dropped"]},"ask":{"aim":["must be dropped"]}},"levels":{"normal":{"run":10,"steps":{"a":{"life":4,"dwell":2},"b":{"life":3}}}}}'
 ::  the same recipe missing its own output, and missing a step's input:
 ::  both must be refused whole
 =/  no-out=@t
@@ -74,7 +74,13 @@
   |.((chk-ud 3 (lent aim.rcp)))
 ::  the reserved exits are arrow targets, so steps by those names are dropped
 ++  test-parse-drops-reserved-steps
-  |.((chk-ud 2 ~(wyt by steps.rcp)))
+  |.((chk-ud 3 ~(wyt by steps.rcp)))
+::  a recipe-step names a recipe instead of an aim, and needs no input
+::  or output of its own
+++  test-parse-recipe-step
+  |.((expect-eq:test !>(`(unit @t)``'other') !>((sub-of:rec rcp 'c'))))
+++  test-plain-step-is-not-a-recipe
+  |.((expect-eq:test !>(*(unit @t)) !>((sub-of:rec rcp 'a'))))
 ++  test-parse-rejects-startless
   |.((chk-rcp ~ (parse:rec 'x' (need (de:json:html '{"steps":{}}')))))
 ::  input and output are part of the shape at both levels: a file that

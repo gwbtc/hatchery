@@ -89,7 +89,18 @@
 ::  function, and a step that does not is not a step. Empty is a
 ::  statement; absent is not.
 ::
-+$  step  [aim=(list @t) input=(list @t) output=(list @t) next=(map @t @t)]
+::  a step may be a recipe instead: `recipe` names one, and entering
+::  the step enters it; its done or abort returns the run to this step,
+::  whose `next` says what follows. Such a step carries no aim and
+::  needs no input or output of its own: the recipe's are the contract.
+::
++$  step
+  $:  aim=(list @t)
+      input=(list @t)
+      output=(list @t)
+      next=(map @t @t)
+      recipe=(unit @t)
+  ==
 +$  level  [run=@ud caps=(map @t cap)]
 +$  cap   [life=(unit @ud) dwell=(unit @ud)]
 ::  run state for one chat. `asked` is set by taking an `ask` arrow and
@@ -140,6 +151,13 @@
   =/  fs=(unit json)  (~(get by p.jon) 'frames')
   ?.  ?=([~ %a *] fs)  ~
   (flop (murn p.u.fs state-from-json))
+::  +sub-of: the recipe a step runs, if it is a recipe-step.
+::
+++  sub-of
+  |=  [=recipe name=@t]
+  ^-  (unit @t)
+  =/  st=(unit step)  (~(get by steps.recipe) name)
+  ?~(st ~ recipe.u.st)
 ::  +term: the reserved arrow targets.
 ::
 ++  term
@@ -495,12 +513,16 @@
   ?.  ?=([%o *] v.i.all)  $(all t.all)
   ?:  (term k.i.all)  $(all t.all)
   =/  v  v.i.all
-  ?.  &((~(has by p.v) 'input') (~(has by p.v) 'output'))  ~
+  =/  sub=@t  (jstr v 'recipe')
+  ::  a plain step states its shape; a recipe-step borrows the recipe's
+  ?.  |(!=('' sub) &((~(has by p.v) 'input') (~(has by p.v) 'output')))  ~
   =/  st=step
-    :^    (jlines (~(get by p.v) 'aim'))
+    :*  (jlines (~(get by p.v) 'aim'))
         (jlines (~(get by p.v) 'input'))
-      (jlines (~(get by p.v) 'output'))
-    (jarrows (~(get by p.v) 'next'))
+        (jlines (~(get by p.v) 'output'))
+        (jarrows (~(get by p.v) 'next'))
+        ?:(=('' sub) ~ `sub)
+    ==
   $(all t.all, out (~(put by out) k.i.all st))
 ::
 ++  levels-of
