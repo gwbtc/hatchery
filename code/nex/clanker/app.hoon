@@ -1165,7 +1165,23 @@
     `(pairs:enjs:format ~[['view' s+v] ['script' s+script] ['args' a] ['follow' a+f]])
   =/  lay  |=(u=@t ^-((unit json) `(pairs:enjs:format ~[['layout' s+u]])))
   =/  panes=@t  '/grubbery/clanker/chats.js'
+  ::  the shell's tools panes: a tools nexus, and one tool on its source
+  =/  tools-panes=@t  '/grubbery/tools/pane.js'
   =/  f=path  (flop pax)
+  ::  a tool's source under a clanker's tools nexus: the clanker, and the
+  ::  file's path under code/lib/tools
+  =/  tool-file
+    |=  p=path
+    ^-  (unit [proj=path rel=path])
+    =|  proj=path
+    |-  ^-  (unit [path path])
+    ?~  p  ~
+    ?:  ?&  ?=([%tools %code %lib %tools ^] p)
+            ?=(^ proj)
+            (is-clanker (rear proj))
+        ==
+      `[proj t.t.t.t.p]
+    $(p t.p, proj (snoc proj i.p))
   ::  a chat: its log file, or its directory. The pane follows the log
   ::  with its body (the mark grows to json) and the status beside it.
   =/  chat-ans
@@ -1201,6 +1217,15 @@
       ?:  =('tools' view)
         (ans 'tools' panes a ~[(fol (snoc cdir %'tools.json') | |) (fol (snoc pdir %'tools.json') | |)])
       (ans 'record' panes a ~[(fol (snoc cdir %'system.md') | |)])
+    ::  a tool: the shell's tool pane (description, schema, a form to run
+    ::  it, the source), following the file so an edit redraws it
+    =/  tf=(unit [proj=path rel=path])  (tool-file pax)
+    ?^  tf
+      =/  tdir=path  (welp coll (snoc proj.u.tf %tools))
+      %-  ans
+      :^  'tool'  tools-panes
+        (pairs:enjs:format ~[['at' s+(spat tdir)] ['file' s+(spat rel.u.tf)]])
+      ~[(fol (welp tdir (welp /code/lib/tools rel.u.tf)) & |)]
     ::  a recipe: its graph beside its aims. The pane follows the file
     ::  with its body, so editing the json redraws the graph.
     ?:  ?=([@ %recipes @ *] f)
@@ -1231,6 +1256,16 @@
     %-  ans
     :^  'record'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
     ~[(fol (snoc (snoc pdir %prompts) %'main.md') | |)]
+  ::  a clanker's tools/ directory is its tools nexus: the shell's tools
+  ::  pane, live on the tools' code and on the runs
+  ?:  ?=([%tools @ *] f)
+    ?.  (is-clanker i.t.f)  ~
+    ?.  =('' view)  ~
+    =/  tdir=path  (welp coll (snoc (flop t.f) %tools))
+    %-  ans
+    :^  'tools-nexus'  tools-panes
+      (pairs:enjs:format ~[['at' s+(spat tdir)]])
+    ~[(fol (welp tdir /code/lib/tools) | &) (fol (welp tdir /runs) | &)]
   ::  a clanker's chats/ directory is its list of chats, live on the dir
   ?:  ?=([%chats @ *] f)
     =/  proj=path  (flop t.f)
