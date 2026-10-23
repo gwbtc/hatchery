@@ -351,6 +351,26 @@
     ?~  outer  ""
     (trip (say frags %'entering-within' ~[["name" (trip name.i.outer)] ["step" (trip step.i.outer)]]))
   (say frags %'entering' ~[["name" (trip name)] ["step" (trip step)] ["level" (trip lvl)] ["within" within]])
+::  +entering-lines: a log line for every frame the stack gained,
+::  outermost first, each naming the frame beneath it. The stack is
+::  the record of what was entered; a push and the descent it set off
+::  are read from it alike.
+::
+++  entering-lines
+  |=  [=frags:rcp-lib before=stack:rcp-lib after=stack:rcp-lib]
+  ^-  (list json)
+  =/  grew=@ud  ?:((gth (lent after) (lent before)) (sub (lent after) (lent before)) 0)
+  =/  new=stack:rcp-lib  (flop (scag grew after))
+  =/  i=@ud  grew
+  =|  lines=(list json)
+  |-  ^-  (list json)
+  ?~  new  (flop lines)
+  =/  outer=stack:rcp-lib  (slag i after)
+  %=  $
+    new    t.new
+    i      (dec i)
+    lines  [(event-recipe (entering-line frags name.i.new step.i.new level.i.new outer)) lines]
+  ==
 ::  +recipe-names: the recipes this clanker holds, by file stem.
 ::
 ++  recipe-names
@@ -509,13 +529,16 @@
   ;<  ~  bind:m
     ?:  ?=([%ball *] dv)  (pure:m ~)
     (make:io (nex-road:io rail [%| chat-dir]) &+empty-dir:loader)
-  ;<  entered=(unit @t)  bind:m  (engage rail chat jon)
+  ;<  before=stack:rcp-lib  bind:m  (read-run rail chat)
+  ;<  *  bind:m  (engage rail chat jon)
   ;<  ~  bind:m  (answer-run rail chat)
+  ;<  after=stack:rcp-lib  bind:m  (read-run rail chat)
+  ;<  frags=frags:rcp-lib  bind:m  (read-frags rail)
   ;<  [road=road:tarball existed=? log=(list json)]  bind:m  (chat-log rail chat)
   ::  a chat paused on an ask takes no new message until it is answered
   ::  (the model's pending tool uses must be answered first)
   ?:  =('ask' (last-kind log))  (pure:m ~)
-  =?  log  ?=(^ entered)  (snoc log (event-recipe u.entered))
+  =.  log  (weld log (entering-lines frags before after))
   =.  log  (snoc log (event-input u.msg))
   ;<  ~  bind:m  (write-log road existed log)
   ;<  cfg=json  bind:m  (read-json rail [%& / %'config.json'])
@@ -941,18 +964,7 @@
     ::  not from their results: frames that appeared are entries, a top
     ::  frame that has ended is popped, and each is a line in the log
     ;<  after=stack:rcp-lib  bind:m  (read-run rail chat)
-    =/  grew=@ud  ?:((gth (lent after) (lent before)) (sub (lent after) (lent before)) 0)
-    =.  log
-      =/  new=stack:rcp-lib  (flop (scag grew after))
-      =/  i=@ud  grew
-      |-  ^-  _log
-      ?~  new  log
-      =/  outer=stack:rcp-lib  (slag i after)
-      %=  $
-        new  t.new
-        i    (dec i)
-        log  (snoc log (event-recipe (entering-line frags name.i.new step.i.new level.i.new outer)))
-      ==
+    =.  log  (weld log (entering-lines frags before after))
     =/  settled=[stk=stack:rcp-lib lines=(list json)]
       =/  stk=stack:rcp-lib  after
       =|  lines=(list json)
