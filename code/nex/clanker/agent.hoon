@@ -80,6 +80,7 @@
           ::  from the start; the rest are the words of the harness, seeded
           ::  once and then the clanker's too
           [%fall %& [/prompts %'main.md'] [[/ %mime] [/text/markdown (as-octs:mimes:html '')]]]
+          [%fall %& [/prompts %'reading.md'] [[/ %mime] (prompt-file %'reading.md')]]
           [%fall %& [/prompts %'recipes.md'] [[/ %mime] (prompt-file %'recipes.md')]]
           [%fall %& [/prompts %'skills.md'] [[/ %mime] (prompt-file %'skills.md')]]
           [%fall %& [/prompts %'tip.txt'] [[/ %mime] (prompt-file %'tip.txt')]]
@@ -772,6 +773,7 @@
   =/  m  (fiber:fiber:nexus ,@t)
   ^-  form:m
   ;<  sys=@t  bind:m  (read-text rail [%& /prompts %'main.md'])
+  ;<  reading=@t  bind:m  (read-text rail [%& /prompts %'reading.md'])
   ;<  chat-sys=@t  bind:m  (read-text rail [%& [%chats `@ta`chat ~] %'system.md'])
   ;<  skills=(list [@ta @t])  bind:m  (read-dir-texts rail /skills)
   ;<  memories=(list [@ta @t])  bind:m  (read-dir-texts rail /memories)
@@ -790,6 +792,7 @@
   %-  crip
   ;:  weld
     (trip sys)
+    ?:(=('' reading) "" "\0a\0a{(trip reading)}")
     ?:(=('' chat-sys) "" "\0a\0a# This chat\0a{(trip chat-sys)}\0a")
     (skills-section frags skills)
     (section "Memories" memories)
@@ -1497,17 +1500,67 @@
       out      [(pairs:enjs:format ~[['role' s+'assistant'] ['content' u.c]]) out]
     ==
   $(log t.log)
-::  +encode: the anthropic codec, request side.
+::  +encode: the anthropic codec, request side. Cache breakpoints sit
+::  on what repeats from round to round: the last tool, the system
+::  prompt, and the last block of the message before the final one. The
+::  final message carries the tip, which changes every round, so the
+::  breakpoint stops short of it and the whole prefix reads from cache.
 ++  encode
   |=  [model=@t max=@ud sys=@t schema=json messages=(list json)]
   ^-  json
   %-  pairs:enjs:format
   :~  ['model' s+model]
       ['max_tokens' (numb:enjs:format max)]
-      ['system' s+sys]
-      ['tools' schema]
-      ['messages' [%a messages]]
+      ['system' [%a ~[(mark-block (text-block sys))]]]
+      ['tools' (mark-last-tool schema)]
+      ['messages' [%a (mark-prefix messages)]]
   ==
+::
+++  ephemeral  ^-(json (pairs:enjs:format ~[['type' s+'ephemeral']]))
+++  text-block
+  |=  t=@t
+  ^-  json
+  (pairs:enjs:format ~[['type' s+'text'] ['text' s+t]])
+++  mark-block
+  |=  b=json
+  ^-  json
+  ?.  ?=([%o *] b)  b
+  [%o (~(put by p.b) 'cache_control' ephemeral)]
+++  mark-last-tool
+  |=  schema=json
+  ^-  json
+  ?.  ?=([%a ^] schema)  schema
+  =/  ts=(list json)  p.schema
+  [%a (snoc (snip ts) (mark-block (rear ts)))]
+::  a message's content as blocks: a string is one text block
+++  as-blocks
+  |=  con=json
+  ^-  (list json)
+  ?:  ?=([%a *] con)  p.con
+  ?:  ?=([%s *] con)  ~[(text-block p.con)]
+  ~
+++  mark-last-block
+  |=  mj=json
+  ^-  json
+  ?.  ?=([%o *] mj)  mj
+  =/  con=(unit json)  (~(get by p.mj) 'content')
+  ?~  con  mj
+  =/  blocks=(list json)  (as-blocks u.con)
+  ?~  blocks  mj
+  =/  bs=(list json)  blocks
+  [%o (~(put by p.mj) 'content' [%a (snoc (snip bs) (mark-block (rear bs)))])]
+::  +mark-prefix: the breakpoint on the message before the last
+++  mark-prefix
+  |=  msgs=(list json)
+  ^-  (list json)
+  =/  n=@ud  (lent msgs)
+  ?:  (lth n 2)  msgs
+  =/  at=@ud  (sub n 2)
+  =/  idx=@ud  0
+  |-  ^-  (list json)
+  ?~  msgs  ~
+  :-  ?:(=(idx at) (mark-last-block i.msgs) i.msgs)
+  $(msgs t.msgs, idx +(idx))
 ++  resp-content
   |=  resp=json
   ^-  (list json)
@@ -1602,7 +1655,14 @@
 ++  encode-oai
   |=  [model=@t max=@ud sys=@t schema=json messages=(list json)]
   ^-  json
-  =/  sysm=json  (pairs:enjs:format ~[['role' s+'system'] ['content' s+sys]])
+  ::  an anthropic model through openrouter takes the same cache
+  ::  breakpoint on the system prompt; other models cache on their own
+  =/  anthropic=?  ?=(^ (find "claude" (trip model)))
+  =/  sysm=json
+    %-  pairs:enjs:format
+    :~  ['role' s+'system']
+        ['content' ?.(anthropic s+sys [%a ~[(mark-block (text-block sys))]])]
+    ==
   %-  pairs:enjs:format
   :~  ['model' s+model]
       ['max_tokens' (numb:enjs:format max)]
