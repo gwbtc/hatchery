@@ -174,7 +174,8 @@
     ?.  ?=(%finished -.resp)
       (pairs:enjs:format ~[['error' s+'HTTP request did not finish']])
     ?~  full-file.resp
-      (pairs:enjs:format ~[['error' s+'empty response']])
+      =/  status=@ud  status-code.response-header.resp
+      (pairs:enjs:format ~[['error' s+(crip "empty response, HTTP status {(a-co:co status)}")]])
     %+  fall  (de:json:html q.data.u.full-file.resp)
     (pairs:enjs:format ~[['error' s+'JSON parse failed']])
   ;<  ~  bind:m  (accumulate-usage resp-json caller)
