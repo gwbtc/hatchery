@@ -166,10 +166,24 @@
         ['x-api-key' key.cfg]
         ['anthropic-version' '2023-06-01']
     ==
-  ;<  ~  bind:m
-    %-  send-request:io
+  =/  req=request:http
     [%'POST' url.cfg hed `(as-octs:mimes:html (en:json:html u.request))]
+  ::  a gateway timeout (an empty body with a 5xx status) on a long
+  ::  request is retried, three attempts in all: the request is the
+  ::  same each time and nothing has been spent on it
+  =/  attempts=@ud  3
+  |-
+  ;<  ~  bind:m  (send-request:io req)
   ;<  resp=client-response:iris  bind:m  take-client-response:io
+  =/  code=@ud
+    ?.  ?=(%finished -.resp)  0
+    status-code.response-header.resp
+  =/  gateway=?
+    ?.  ?=(%finished -.resp)  |
+    &(?=(~ full-file.resp) (gte code 500))
+  ?:  &(gateway (gth attempts 1))
+    ~&  >>  [%anthropic %retry code]
+    $(attempts (dec attempts))
   =/  resp-json=json
     ?.  ?=(%finished -.resp)
       (pairs:enjs:format ~[['error' s+'HTTP request did not finish']])
