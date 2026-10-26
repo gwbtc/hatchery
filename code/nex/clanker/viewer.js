@@ -135,7 +135,7 @@
     var who = proj ? proj.replace(/^.*\//, '').replace(/\.clanker$/, '') : 'clanker';
     root.innerHTML = ''; root.classList.add('cv');
     var dead = false;
-    var handle = { destroy: function () { dead = true; document.removeEventListener('keydown', onEsc); root.innerHTML = ''; root.classList.remove('cv'); }, onUpdate: function (ev) { if (!ev || /log\.chat-log$/.test(ev.path || '')) more(); } };   // the log changed (a bodiless event): fetch what is past our window; nothing else is ours
+    var handle = { destroy: function () { dead = true; document.removeEventListener('keydown', onEsc); document.removeEventListener('keydown', onPage); root.innerHTML = ''; root.classList.remove('cv'); }, onUpdate: function (ev) { if (!ev || /log\.chat-log$/.test(ev.path || '')) more(); } };   // the log changed (a bodiless event): fetch what is past our window; nothing else is ours
     if (!proj || !chat) { root.appendChild(el('div', 'cv-empty', 'no chat here: the collection gave no {proj, chat}')); return handle; }
 
     var logEl = el('div', 'cv-log'), thread = el('div', 'cv-thread'); logEl.appendChild(thread);
@@ -145,7 +145,7 @@
     var stopBtn = el('button', 'stop', 'stop'); stopBtn.type = 'button'; stopBtn.disabled = true; stopBtn.title = 'stop the running turn (Esc Esc)';
     var sendBtn = el('button', 'send', 'send'); sendBtn.type = 'submit';
     inner.appendChild(input); inner.appendChild(stopBtn); inner.appendChild(sendBtn); form.appendChild(inner);
-    form.appendChild(el('div', 'hint', 'Enter sends · Shift+Enter newline · Esc Esc stops'));
+    form.appendChild(el('div', 'hint', 'Enter sends · Shift+Enter newline · Esc Esc stops · fn+↑↓ reads back'));
     root.appendChild(logEl); root.appendChild(form);
 
     // pending: a message sent but not yet in the log, shown at once (faded)
@@ -221,6 +221,22 @@
       if (now - lastEsc < 500) { lastEsc = 0; stopBtn.click(); } else lastEsc = now;
     }
     document.addEventListener('keydown', onEsc);
+    // READING BACK while composing. fn+arrows on a mac are PageUp/PageDown
+    // and Home/End, which is the one pairing that steals nothing from the
+    // textarea: shift+arrows select, cmd+arrows jump within the field, and
+    // both are wanted while typing. Scrolling to the top triggers +earlier
+    // through the scroll listener, so paging back keeps loading the log.
+    function onPage(e) {
+      if (dead || !root.offsetParent || !root.contains(e.target)) return;
+      var page = Math.max(80, logEl.clientHeight - 40);
+      if (e.key === 'PageUp') logEl.scrollTop -= page;
+      else if (e.key === 'PageDown') logEl.scrollTop += page;
+      else if (e.key === 'Home') logEl.scrollTop = 0;
+      else if (e.key === 'End') logEl.scrollTop = logEl.scrollHeight;
+      else return;
+      e.preventDefault();
+    }
+    document.addEventListener('keydown', onPage);
 
     // one tool use, with its result once it has one
     function step(use, res, trace) {
