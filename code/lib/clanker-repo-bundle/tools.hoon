@@ -542,6 +542,15 @@
   |=  [cfg=json pax=@t accept=@t]
   =/  m  (fiber:fiber:nexus ,(each @t @t))
   ^-  form:m
+  (github-call cfg 'GET' pax accept ~)
+::  +github-call: one call against the GitHub API through the proxy:
+::  method, path, Accept ('' = the REST default) and a JSON body for a
+::  POST or PATCH. The response body as text when GitHub answered 2xx,
+::  else why not.
+++  github-call
+  |=  [cfg=json method=@t pax=@t accept=@t body=(unit json)]
+  =/  m  (fiber:fiber:nexus ,(each @t @t))
+  ^-  form:m
   =/  root=(each path @t)  (config-path cfg 'github')
   ?:  ?=(%| -.root)  (pure:m [%| 'this clanker has no github in its config: the forge did not name the proxy'])
   ::  the call's id: entropy, so two tools calling in the same event
@@ -554,10 +563,12 @@
     :~  ['id' s+id]
         :-  'req'
         %-  pairs:enjs:format
-        :~  ['method' s+'GET']
-            ['path' s+pax]
-            ['accept' s+accept]
-        ==
+        %+  weld
+          :~  ['method' s+method]
+              ['path' s+pax]
+              ['accept' s+accept]
+          ==
+        ?~(body ~ ~[['body' u.body]])
     ==
   ;<  err=(unit tang)  bind:m
     (poke-soft:io [%& %& p.root %'main.sig'] [/ %json] req)
@@ -583,7 +594,7 @@
     =/  v  (~(get by p.u.got) 'body')
     ?~  v  ''
     ?:(?=([%s *] u.v) p.u.v (en:json:html u.v))
-  ?.  =(200 code)
-    (pure:m [%| (crip "GitHub answered {(a-co:co code)} to GET {(trip pax)}: {(trip (end [3 300] body))}")])
+  ?.  &((gte code 200) (lth code 300))
+    (pure:m [%| (crip "GitHub answered {(a-co:co code)} to {(trip method)} {(trip pax)}: {(trip (end [3 300] body))}")])
   (pure:m [%& body])
 --
