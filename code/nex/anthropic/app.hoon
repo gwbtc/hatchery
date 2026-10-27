@@ -192,23 +192,32 @@
       (pairs:enjs:format ~[['error' s+(crip "empty response, HTTP status {(a-co:co status)}")]])
     %+  fall  (de:json:html q.data.u.full-file.resp)
     (pairs:enjs:format ~[['error' s+'JSON parse failed']])
-  ;<  ~  bind:m  (accumulate-usage resp-json caller)
+  ;<  cost=@t  bind:m  (accumulate-usage resp-json caller)
+  ::  the caller gets the price with the answer: usage.cost, dollars as
+  ::  a decimal string, the same figure the ledger recorded
+  =/  priced=json
+    ?:  =('' cost)  resp-json
+    ?.  ?=([%o *] resp-json)  resp-json
+    =/  u=json  (fall (~(get by p.resp-json) 'usage') [%o ~])
+    ?.  ?=([%o *] u)  resp-json
+    [%o (~(put by p.resp-json) 'usage' [%o (~(put by p.u) 'cost' [%n cost])])]
   ;<  ~  bind:m
     %-  replace:io
-    (pairs:enjs:format ~[['status' s+'done'] ['response' resp-json]])
+    (pairs:enjs:format ~[['status' s+'done'] ['response' priced]])
   stay:m
 ::  +accumulate-usage: fold one response's usage into usage.json,
 ::  attributed to the caller. The call log keeps the most recent 500
-::  entries; the totals are forever.
+::  entries; the totals are forever. Yields the call's cost in dollars,
+::  '' when the response carried no usage.
 ::
 ++  accumulate-usage
   |=  [resp=json caller=@t]
-  =/  m  (fiber:fiber:nexus ,~)
+  =/  m  (fiber:fiber:nexus ,@t)
   ^-  form:m
-  ?.  ?=([%o *] resp)  (pure:m ~)
+  ?.  ?=([%o *] resp)  (pure:m '')
   =/  usage=(unit json)  (~(get by p.resp) 'usage')
-  ?~  usage  (pure:m ~)
-  ?.  ?=(%o -.u.usage)  (pure:m ~)
+  ?~  usage  (pure:m '')
+  ?.  ?=(%o -.u.usage)  (pure:m '')
   =/  in-tok=@ud       (jnum u.usage 'input_tokens' 0)
   =/  out-tok=@ud      (jnum u.usage 'output_tokens' 0)
   =/  cache-read=@ud   (jnum u.usage 'cache_read_input_tokens' 0)
@@ -227,7 +236,7 @@
   =/  usage-road=road:tarball  (cord-to-road:tarball '../usage.json')
   ;<  ucur=(unit json)  bind:m  (peek-as:io usage-road ,json)
   =/  cur=json  (fall ucur [%o ~])
-  ?.  ?=([%o *] cur)  (pure:m ~)
+  ?.  ?=([%o *] cur)  (pure:m cost)
   =/  old-calls=(list json)
     =/  c  (~(get by p.cur) 'calls')
     ?.(?=([~ %a *] c) ~ p.u.c)
@@ -254,7 +263,8 @@
         ['web-searches' (numb:enjs:format (add searches (jnum cur 'web-searches' 0)))]
         ['calls' [%a (scag 500 `(list json)`[entry old-calls])]]
     ==
-  (over:io usage-road [[/ %json] new])
+  ;<  ~  bind:m  (over:io usage-road [[/ %json] new])
+  (pure:m cost)
 ::  +compute-cost: dollars for one call, fixed-point (units of 1e-10
 ::  dollars) so no floats are involved. Rates are $/M-token strings;
 ::  cache reads bill at 0.1x input, cache writes at 1.25x. Server-side

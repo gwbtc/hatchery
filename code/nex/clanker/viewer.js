@@ -40,6 +40,7 @@
       '.cv-msg.bot .body hr{border:0;border-top:1px solid #d0d7de;margin:10px 0}' +
       '.cv-msg.user.pending .body{opacity:.55}' +
       '.cv-meta{font-size:11px;color:#8b949e}' +
+      '.cv-compose .cv-spent{color:#57606a}' +
       '.cv-trace{display:flex;flex-direction:column;gap:2px;max-width:90%}' +
       '.cv-step summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:6px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#57606a}' +
       '.cv-step summary::-webkit-details-marker{display:none}.cv-step summary:hover{background:#f6f8fa}' +
@@ -85,6 +86,20 @@
     return typeof c === 'string' ? c : Array.isArray(c) ? c.map(function (b) { return b.type === 'text' ? b.text : '[' + b.type + ']'; }).join('\n') : JSON.stringify(c);
   }
   function firstString(args) { var ks = Object.keys(args || {}); for (var i = 0; i < ks.length; i++) if (typeof args[ks[i]] === 'string') return args[ks[i]]; return ''; }
+  // dollars as the provider priced them (a decimal string or number): four
+  // places, since most calls are cents; seconds as s / m / h; a stamp as
+  // local time of day
+  function money(c) { var n = Number(c); if (isNaN(n)) return '$' + c; return '$' + (n < 0.01 && n > 0 ? n.toFixed(4) : n.toFixed(n < 1 ? 3 : 2)); }
+  function took(s) { return s < 60 ? s + 's' : s < 3600 ? Math.floor(s / 60) + 'm' + (s % 60 ? ' ' + (s % 60) + 's' : '') : Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm'; }
+  function clock(at) { var d = new Date(at * 1000); return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  function spentLine(sp) {
+    var parts = [];
+    if (sp.calls) parts.push(money(sp.cost) + ' over ' + sp.calls + (sp.calls === 1 ? ' call' : ' calls'));
+    if (sp.input != null) parts.push(sp.input + ' in' + (sp.cache_read ? ' (+' + sp.cache_read + ' cached)' : '') + ' · ' + sp.output + ' out');
+    if (sp.seconds) parts.push('model ' + took(sp.seconds));
+    if (sp.wall) parts.push('wall ' + took(sp.wall));
+    return parts.join(' · ');
+  }
 
   // fenced code in a rendered message gets syntax colour from shiki, the
   // highlighter the explorer's file view uses: loaded on demand from esm.sh
@@ -145,6 +160,9 @@
     var stopBtn = el('button', 'stop', 'stop'); stopBtn.type = 'button'; stopBtn.disabled = true; stopBtn.title = 'stop the running turn (Esc Esc)';
     var sendBtn = el('button', 'send', 'send'); sendBtn.type = 'submit';
     inner.appendChild(input); inner.appendChild(stopBtn); inner.appendChild(sendBtn); form.appendChild(inner);
+    // what the chat has cost and taken, from its status; under the box,
+    // where it stays in view while the thread scrolls
+    var foot = el('div', 'hint cv-spent', ''); form.appendChild(foot);
     form.appendChild(el('div', 'hint', 'Enter sends · Shift+Enter newline · Esc Esc stops · fn+↑↓ reads back'));
     root.appendChild(logEl); root.appendChild(form);
 
@@ -162,8 +180,18 @@
     function settle() {
       var log = state.log, grew = log.length !== state.len;
       if (grew && state.pending != null) state.pending = null;   // the log moved on: our message is in it (or the turn was refused)
-      if (grew) { state.len = log.length; render(log); }
+      if (grew) { state.len = log.length; render(log); spent(); }
       setState(busyAfter(log) || state.pending != null, askingAfter(log));
+    }
+    // the chat's totals ride on its status.json beside the log; read when
+    // the log moved, drawn at the head of the thread
+    function spent() {
+      var u = String(opts.url || '').replace(/log\.chat-log(\?.*)?$/, 'status.json');
+      if (u === String(opts.url || '')) return;
+      getJson(u + '?raw=1').then(function (st) {
+        if (dead || !st || !st.spent) return;
+        foot.textContent = spentLine(st.spent);
+      }).catch(function () {});
     }
     function load() {                                                  // fresh: the tail
       if (dead) return;
@@ -311,8 +339,10 @@
       thread.innerHTML = '';
       if (!log.length) { thread.appendChild(el('div', 'cv-empty', 'A new chat with ' + who + '. Every turn is appended to its event log.')); return; }
       if (state.first > 0) thread.appendChild(el('div', 'cv-meta', state.first + ' earlier · scroll up for more'));
-      var pending = null;
+      var pending = null, prevAt = 0;
       log.forEach(function (ev, i) {
+        var before = prevAt;                                   // the event before this one, for a response's "took"
+        if (ev.at) prevAt = ev.at;
         if (ev.k === 'input') thread.appendChild(msg('user', 'you', ev.body));
         else if (ev.k === 'response') {
           var content = ev.content || [];
@@ -325,8 +355,16 @@
             uses.forEach(function (u) { tr.appendChild(step(u, null, null)); });
             b.appendChild(tr); pending = { el: tr, uses: uses };
           }
+          // what this response cost and took: the provider's price on its
+          // usage, and its stamp against the event before it
           var meta = [];
-          if (ev.usage && ev.usage.input_tokens != null) meta.push(ev.usage.input_tokens + ' in · ' + ev.usage.output_tokens + ' out');
+          if (ev.usage && ev.usage.input_tokens != null) {
+            var u = ev.usage, cached = (u.cache_read_input_tokens || 0);
+            meta.push(u.input_tokens + ' in' + (cached ? ' (+' + cached + ' cached)' : '') + ' · ' + u.output_tokens + ' out');
+            if (u.cost != null) meta.push(money(u.cost));
+          }
+          if (ev.at && before && ev.at >= before) meta.push(took(ev.at - before));
+          if (ev.at) meta.push(clock(ev.at));
           if (ev.stop && ev.stop !== 'end_turn' && ev.stop !== 'tool_use') meta.push(ev.stop);
           if (meta.length) b.appendChild(el('div', 'cv-meta', meta.join(' · ')));
           thread.appendChild(b);

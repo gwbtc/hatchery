@@ -616,11 +616,36 @@
   |=  [road=road:tarball existed=? log=(list json)]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  ::  every event is stamped `at` (unix seconds) as it is first written:
+  ::  the events past what the stored log already holds are the new ones.
+  ::  Events from before stamps were kept stay unstamped
+  ;<  stored=@ud  bind:m
+    =/  ms  (fiber:fiber:nexus ,@ud)
+    ?.  existed  (pure:ms 0)
+    ;<  cur=view:nexus  bind:ms  (peek:io road `[/ %json])
+    ?.  ?=([%file *] cur)  (pure:ms 0)
+    =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.cur)))) [%a ~])
+    (pure:ms ?.(?=([%a *] j) 0 (lent p.j)))
+  ;<  now=@da  bind:m  get-time:io
+  =.  log  (stamp log stored now)
   ;<  ~  bind:m
     ?:  existed  (over:io road [[/ %chat-log] [%a log]])
     ;<  err=(unit tang)  bind:m  (make-soft:io road |+[[[/ %chat-log] [%a log]] ~])
     (pure:m ~)
   (write-status road log)
+::  +stamp: `at` on every event from index `from` on that lacks one
+++  stamp
+  |=  [log=(list json) from=@ud now=@da]
+  ^-  (list json)
+  =/  at=json  (sect:enjs:format now)
+  =/  i=@ud  0
+  |-  ^-  (list json)
+  ?~  log  ~
+  :_  $(log t.log, i +(i))
+  ?:  (lth i from)  i.log
+  ?.  ?=([%o *] i.log)  i.log
+  ?:  (~(has by p.i.log) 'at')  i.log
+  [%o (~(put by p.i.log) 'at' at)]
 ::  +write-status: the chat's state as a sibling status.json, derived from
 ::  the log every time the log is written: {state, asks, last, recipe}.
 ::  The log's own mark is this app's, so a reader elsewhere (a tool,
@@ -701,6 +726,7 @@
       ['asks' [%a asks]]
       ['last' s+last]
       ['input' s+input]
+      ['spent' (spent-of log)]
       ::  the top frame, and how deep the chat is
       :-  'recipe'
       ?~  stk  ~
@@ -711,6 +737,82 @@
           ['depth' (numb:enjs:format (lent stk))]
       ==
   ==
+::  +spent-of: what the chat has spent, summed over its log: dollars, as
+::  the provider priced each response (usage.cost, a decimal string);
+::  tokens by kind; calls; model seconds, each response's time since the
+::  event before it; and wall seconds, first stamped event to last. An
+::  event without a price or a stamp counts nothing.
+++  spent-of
+  |=  log=(list json)
+  ^-  json
+  =/  rs=(list json)  (skim log |=(e=json =('response' (jstr:clanker e 'k'))))
+  =/  usage-of
+    |=  e=json
+    ^-  json
+    ?.  ?=([%o *] e)  [%o ~]
+    (fall (~(get by p.e) 'usage') [%o ~])
+  =/  tokens
+    |=  k=@t
+    ^-  @ud
+    (roll (turn rs |=(e=json (jnum:clanker (usage-of e) k 0))) add)
+  =/  units=@ud
+    %+  roll  rs
+    |=  [e=json acc=@ud]
+    =/  u=json  (usage-of e)
+    ?.  ?=([%o *] u)  acc
+    =/  c  (~(get by p.u) 'cost')
+    ?.  ?=([~ %n *] c)  acc
+    (add acc (dollar-units p.u.c))
+  =/  secs=@ud
+    =/  l=(list json)  log
+    =|  [acc=@ud prev=@ud]
+    |-  ^-  @ud
+    ?~  l  acc
+    =/  at=@ud  (jnum:clanker i.l 'at' 0)
+    =?  acc  ?&  =('response' (jstr:clanker i.l 'k'))
+                 !=(0 prev)
+                 !=(0 at)
+                 (gte at prev)
+             ==
+      (add acc (sub at prev))
+    $(l t.l, prev ?:(=(0 at) prev at))
+  =/  wall=@ud
+    =/  ats=(list @ud)
+      (skip (turn log |=(e=json (jnum:clanker e 'at' 0))) |=(a=@ud =(0 a)))
+    ?~  ats  0
+    =/  end=@ud  (rear ats)
+    ?:((gte end i.ats) (sub end i.ats) 0)
+  %-  pairs:enjs:format
+  :~  ['cost' [%n (dollars units)]]
+      ['input' (numb:enjs:format (tokens 'input_tokens'))]
+      ['output' (numb:enjs:format (tokens 'output_tokens'))]
+      ['cache_read' (numb:enjs:format (tokens 'cache_read_input_tokens'))]
+      ['cache_write' (numb:enjs:format (tokens 'cache_creation_input_tokens'))]
+      ['calls' (numb:enjs:format (lent rs))]
+      ['seconds' (numb:enjs:format secs)]
+      ['wall' (numb:enjs:format wall)]
+  ==
+::  +dollar-units: a decimal dollar string as units of 1e-10 dollars, the
+::  fixed point the providers price in; +dollars, back to the string.
+++  dollar-units
+  |=  s=@ta
+  ^-  @ud
+  =/  t=tape  (trip s)
+  =/  dot=(unit @ud)  (find "." t)
+  =/  int=@ud  (fall (rush (crip ?~(dot t (scag u.dot t))) dem) 0)
+  =/  frac=tape  (scag 10 (weld ?~(dot "" (slag +(u.dot) t)) (reap 10 '0')))
+  (add (mul int 10.000.000.000) (fall (rush (crip frac) dem) 0))
+++  dollars
+  |=  units=@ud
+  ^-  @ta
+  =/  int=@ud   (div units 10.000.000.000)
+  =/  frac=@ud  (mod units 10.000.000.000)
+  ?:  =(0 frac)  (crip (a-co:co int))
+  =/  padded=tape  =/(r (a-co:co frac) (weld (reap (sub 10 (lent r)) '0') r))
+  =/  trimmed=tape
+    =/  r=tape  (flop padded)
+    |-(?:(?&(?=(^ r) =('0' i.r)) $(r t.r) (flop r)))
+  (crip "{(a-co:co int)}.{trimmed}")
 ::  +resume-chat: the restart contract. A chat's process may be restarted
 ::  at any moment (a deploy, a crash); the log is the truth, so a log
 ::  that ends mid-turn (an input or tool results not yet answered, or a

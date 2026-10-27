@@ -1015,6 +1015,7 @@
       %-  pairs:enjs:format
       :~  ['name' s+i.names]
           ['events' (fall (~(get by p.u.st) 'events') (numb:enjs:format 0))]
+          ['spent' (fall (~(get by p.u.st) 'spent') ~)]
           ['last' s+(jstr:clanker u.st 'input')]
           ['busy' b+=('busy' state)]
           ['asking' b+=('asking' state)]

@@ -334,7 +334,10 @@
         list.innerHTML = '';
         if (!rows.length) { list.appendChild(el('div', 'ck-empty', 'No chats yet. Name one above.')); return; }
         rows.forEach(function (c) {
-          var r = row('', chatDot(c), c.name, chatSub(c), c.events ? c.events + (c.events === 1 ? ' event' : ' events') : '');
+          // the right side: what the chat has cost, when it has cost anything, else its size
+          var sp = c.spent, cost = sp && sp.calls ? Number(sp.cost) : 0;
+          var right = cost ? '$' + (cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2)) : c.events ? c.events + (c.events === 1 ? ' event' : ' events') : '';
+          var r = row('', chatDot(c), c.name, chatSub(c), right);
           r.__ck = { kind: 'chat', proj: proj, name: c.name, url: './' + encodeURIComponent(c.name) };   // relative to this chats/ dir, as spelled
           r.addEventListener('click', function () { sb.go('./' + encodeURIComponent(c.name), 'dir', c.name); });
           r._nk = { open: function (beside) { sb.go('./' + encodeURIComponent(c.name), 'dir', c.name, beside); } };
