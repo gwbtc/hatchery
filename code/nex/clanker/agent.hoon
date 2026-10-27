@@ -119,6 +119,8 @@
       ?+    rail  stay:m
           [~ %'main.sig']
         (serve rail prod)
+          [[%chats @ ~] %'turn.sig']
+        (serve-chat rail prod)
       ==
     --
 |%
@@ -199,37 +201,93 @@
   |=  which=@t
   ^-  bole:tarball
   (~(got by dir:(tools-bole which)) %code)
-::  +serve: the main.sig poke loop. {chat, message} runs a turn;
-::  {action:'interrupt'} is swallowed here (it lands mid-await inside a
-::  running turn, which cancels it). The tools nexus's list reply is a
-::  json array poked back here; it is taken inside +list-tools, so a
-::  stray one that arrives idle is dropped.
+::  +serve: the main.sig poke loop, the clanker's front door. Every poke
+::  names a chat ({chat, message}; {action, chat, ...}), and the chat's
+::  own process, chats/<c>/turn.sig, runs it: the poke is forwarded there
+::  and not waited for, so a chat mid-turn queues its own pokes while
+::  every other chat runs on. One chat, one turn at a time; chats, as
+::  many as there are. The tools nexus's list reply is a json array poked
+::  at whoever asked, which is a chat's process; a stray one here is
+::  dropped.
 ++  serve
   |=  [=rail:tarball =prod:fiber:nexus]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  ~  bind:m  (rise-wait:io prod "%clanker agent: failed")
-  ;<  ~  bind:m  (resume rail)
+  ;<  ~  bind:m  (ensure-turns rail)
+  |-
+  ;<  =sage:tarball  bind:m  take-poke:io
+  =/  jon=json  (fall (mole |.(!<(json q.sage))) *json)
+  ?.  ?=([%o *] jon)  $
+  =/  chat=@t  =/(c=@t (jstr:clanker jon 'chat') ?:(=('' c) 'main' c))
+  ;<  ~  bind:m  (forward rail chat jon)
+  $
+::  +ensure-turns: every chat has its process. Run when main.sig rises,
+::  so chats from before this nexus had per-chat processes, and chats a
+::  host made by ensure (the log, not the process), get theirs; each
+::  resumes its own open turn as it rises.
+++  ensure-turns
+  |=  =rail:tarball
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  dv=view:nexus  bind:m  (peek:io (nex-road:io rail [%| /chats]) ~)
+  ?.  ?=([%ball *] dv)  (pure:m ~)
+  =/  chats=(list @ta)  ~(tap in ~(key by dir.ball.dv))
+  |-
+  ?~  chats  (pure:m ~)
+  ;<  ~  bind:m  (ensure-turn rail `@t`i.chats)
+  $(chats t.chats)
+::  +ensure-turn: the chat's dir and its process grub, made if missing.
+++  ensure-turn
+  |=  [=rail:tarball chat=@t]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  chat-dir=path  [%chats `@ta`chat ~]
+  ;<  dv=view:nexus  bind:m  (peek:io (nex-road:io rail [%| chat-dir]) ~)
+  ;<  ~  bind:m
+    ?:  ?=([%ball *] dv)  (pure:m ~)
+    (make:io (nex-road:io rail [%| chat-dir]) &+empty-dir:loader)
+  =/  sig=road:tarball  (nex-road:io rail [%& chat-dir %'turn.sig'])
+  ;<  sv=view:nexus  bind:m  (peek:io sig ~)
+  ?:  ?=([%file *] sv)  (pure:m ~)
+  ;<  *  bind:m  (make-soft:io sig |+[[[/ %sig] ~] ~])
+  (pure:m ~)
+::  +forward: a chat's poke to its process, not waited for: the pack
+::  reaches this fiber later and the loop's take skips it.
+++  forward
+  |=  [=rail:tarball chat=@t jon=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ;<  ~  bind:m  (ensure-turn rail chat)
+  ;<  =wire  bind:m  (nonce:io /turn)
+  =/  sig=road:tarball  (nex-road:io rail [%& [%chats `@ta`chat ~] %'turn.sig'])
+  (send-dart:io %node wire sig %poke [[/ %json] jon])
+::  +serve-chat: a chat's process, chats/<c>/turn.sig. It resumes its
+::  own open turn as it rises, then takes the pokes main.sig forwards:
+::  {message} runs a turn; an interrupt that lands idle cancels a pending
+::  ask (one that lands mid-turn is taken inside the turn, which cancels
+::  it); {action:'resolve', decisions} answers a pending ask; {action:
+::  'leave', depth?} drops the frame at depth (bottom = 0) and every one
+::  above it, the top one when no depth is given.
+++  serve-chat
+  |=  [=rail:tarball =prod:fiber:nexus]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  =/  chat=@t  `@t`(rear path.rail)
+  ;<  ~  bind:m  (rise-wait:io prod "%clanker chat: failed")
+  ;<  ~  bind:m  (resume-chat rail chat)
   |-
   ;<  =sage:tarball  bind:m  take-poke:io
   =/  jon=json  (fall (mole |.(!<(json q.sage))) *json)
   ?.  ?=([%o *] jon)  $
   =/  act=(unit @t)
     (bind (~(get by p.jon) 'action') |=(j=json ?>(?=(%s -.j) p.j)))
-  =/  chat=@t  =/(c=@t (jstr:clanker jon 'chat') ?:(=('' c) 'main' c))
-  ::  an interrupt that lands idle: nothing runs, but a chat paused on an
-  ::  ask is waiting on the user, and stop means no
   ?:  ?=([~ %'interrupt'] act)
     ;<  ~  bind:m  (cancel-ask rail chat)
     $
-  ::  the user's answer to a pending ask: {action:'resolve', chat,
-  ::  decisions:{<tool_use id>: true|false}}
   ?:  ?=([~ %'resolve'] act)
     ;<  ~  bind:m  (resolve-chat rail jon chat)
     $
-  ::  the user takes the chat out of its recipes: {action:'leave', chat,
-  ::  depth?}: the frame at depth (bottom = 0) and every one above it
-  ::  go; no depth means the top one
   ?:  ?=([~ %'leave'] act)
     =/  depth=(unit @ud)
       =/  d=(unit json)  (~(get by p.jon) 'depth')
@@ -653,37 +711,25 @@
           ['depth' (numb:enjs:format (lent stk))]
       ==
   ==
-::  +resume: the restart contract. This fiber may be restarted at any
-::  moment (a deploy, a crash); the log is the truth, so a chat whose log
-::  ends mid-turn (an input or tool results not yet answered, or a
+::  +resume-chat: the restart contract. A chat's process may be restarted
+::  at any moment (a deploy, a crash); the log is the truth, so a log
+::  that ends mid-turn (an input or tool results not yet answered, or a
 ::  response still asking for tools) is picked up where it stopped. A
 ::  model call that was in flight is simply made again. A chat the user
 ::  stopped ends in an %interrupt event and is left alone.
-++  resume
-  |=  =rail:tarball
+++  resume-chat
+  |=  [=rail:tarball chat=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ;<  dv=view:nexus  bind:m  (peek:io (nex-road:io rail [%| /chats]) ~)
-  ?.  ?=([%ball *] dv)  (pure:m ~)
-  =/  chats=(list @ta)  ~(tap in ~(key by dir.ball.dv))
-  |-
-  ?~  chats  (pure:m ~)
-  =/  road=road:tarball  (nex-road:io rail [%& [%chats i.chats ~] log-name])
-  ;<  cur=view:nexus  bind:m  (peek:io road `[/ %json])
-  =/  log=(list json)
-    ?.  ?=([%file *] cur)  ~
-    =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.cur)))) [%a ~])
-    ?.(?=([%a *] j) ~ p.j)
-  ?.  (open-turn log)  $(chats t.chats)
+  ;<  [road=road:tarball existed=? log=(list json)]  bind:m  (chat-log rail chat)
+  ?.  (open-turn log)  (pure:m ~)
   ;<  cfg=json  bind:m  (read-json rail [%& / %'config.json'])
   =/  model=@t  =/(mo=@t (jstr:clanker cfg 'model') ?:(=('' mo) 'claude-sonnet-4-6' mo))
   =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
-  ;<  sys=@t  bind:m  (standing rail `@t`i.chats)
-  ;<  pol=policy  bind:m  (read-policy rail `@t`i.chats)
+  ;<  sys=@t  bind:m  (standing rail chat)
+  ;<  pol=policy  bind:m  (read-policy rail chat)
   ;<  schema=json  bind:m  (list-tools rail pol)
-  ;<  ~  bind:m
-    (run rail `@t`i.chats road log sys model max schema pol (provider-of cfg))
-  $(chats t.chats)
+  (run rail chat road log sys model max schema pol (provider-of cfg))
 ::  +open-turn: does this log end mid-turn? An input or tool results
 ::  await a response; a response that stopped for tool_use awaits its
 ::  results; a resolved ask awaits its tools. Anything else (a finished
@@ -1144,7 +1190,7 @@
 ::  run grub is KEPT, named by the time it was made and the tool_use id
 ::  (<time>..<id>), so a run can be inspected after the fact; +prune-runs
 ::  bounds the history. The id makes the call idempotent across a restart
-::  of this fiber (a deploy, a crash: +resume re-runs the open turn): a
+::  of this fiber (a deploy, a crash: +resume-chat re-runs the open turn): a
 ::  run already made for this use is picked up, never made again. Done,
 ::  its result is read; still running (runs restart with their nexus),
 ::  it is awaited.
