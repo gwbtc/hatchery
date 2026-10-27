@@ -517,4 +517,73 @@
   ?~  s  (flop [(flop cur) acc])
   ?:  =('\0a' i.s)  $(s t.s, acc [(flop cur) acc], cur ~)
   $(s t.s, cur [i.s cur])
+::
+::  GitHub, through the ship's proxy. The host that made this clanker put
+::  the proxy's root in its config ("github") and the repo's owner/name
+::  ("github_repo"), and gave its weir a poke on the proxy's main.sig and
+::  a peek on its calls/. A call is the proxy's own protocol: poke
+::  {id, req} and read calls/<id>.json until its status is done.
+::
+::  +github-repo: the repo's owner/name, or why not.
+++  github-repo
+  |=  cfg=json
+  ^-  (each @t @t)
+  =/  r=@t
+    ?.  ?=([%o *] cfg)  ''
+    =/  v  (~(get by p.cfg) 'github_repo')
+    ?:(?=([~ %s *] v) p.u.v '')
+  ?:  =('' r)  [%| 'this clanker has no github_repo in its config: the forge did not name the repository']
+  [%& r]
+::  +github-get: one GET against the GitHub API through the proxy, the
+::  response body as text (JSON when the API answered JSON, re-encoded).
+::  accept '' asks for the REST default; a media type such as
+::  application/vnd.github.diff asks for that rendering.
+++  github-get
+  |=  [cfg=json pax=@t accept=@t]
+  =/  m  (fiber:fiber:nexus ,(each @t @t))
+  ^-  form:m
+  =/  root=(each path @t)  (config-path cfg 'github')
+  ?:  ?=(%| -.root)  (pure:m [%| 'this clanker has no github in its config: the forge did not name the proxy'])
+  ::  the call's id: entropy, so two tools calling in the same event
+  ::  never share a grub
+  ;<  eny=@uvJ  bind:m  get-entropy:io
+  =/  id=@t  (crip "pr-{(trip (scot %uv (end 5 eny)))}")
+  =/  grub=path  (welp p.root [%calls (crip "{(trip id)}.json") ~])
+  =/  req=json
+    %-  pairs:enjs:format
+    :~  ['id' s+id]
+        :-  'req'
+        %-  pairs:enjs:format
+        :~  ['method' s+'GET']
+            ['path' s+pax]
+            ['accept' s+accept]
+        ==
+    ==
+  ;<  err=(unit tang)  bind:m
+    (poke-soft:io [%& %& p.root %'main.sig'] [/ %json] req)
+  ?^  err
+    =/  why=tape  (trip (of-wain:format (turn (flop u.err) |=(t=tank (crip (zing (wash [0 120] t)))))))
+    (pure:m [%| (crip "the github proxy refused the call: {why}")])
+  =/  tries=@ud  0
+  |-  ^-  form:m
+  ?:  (gte tries 90)
+    (pure:m [%| (crip "no answer from the github proxy after 90 seconds for GET {(trip pax)}")])
+  ;<  ~  bind:m  (sleep:io ~s1)
+  ;<  got=(unit json)  bind:m  (read-json-at grub)
+  ?.  ?=([~ %o *] got)  $(tries +(tries))
+  =/  status=@t
+    =/  v  (~(get by p.u.got) 'status')
+    ?:(?=([~ %s *] v) p.u.v '')
+  ?.  =('done' status)  $(tries +(tries))
+  ;<  *  bind:m  (cull-soft:io [%& %& (snip `path`grub) (rear grub)])
+  =/  code=@ud
+    =/  v  (~(get by p.u.got) 'code')
+    ?:(?=([~ %n *] v) (fall (rush p.u.v dem) 0) 0)
+  =/  body=@t
+    =/  v  (~(get by p.u.got) 'body')
+    ?~  v  ''
+    ?:(?=([%s *] u.v) p.u.v (en:json:html u.v))
+  ?.  =(200 code)
+    (pure:m [%| (crip "GitHub answered {(a-co:co code)} to GET {(trip pax)}: {(trip (end [3 300] body))}")])
+  (pure:m [%& body])
 --
