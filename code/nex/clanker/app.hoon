@@ -378,10 +378,12 @@
 ::  +handle-poke: the collection's poke protocol, for other apps (forge
 ::  makes a repo's clanker this way) and for tools. One action for now:
 ::    {action:'ensure', parent, name, bundle?, system?, repo?,
-::     roads?:{peek:[...]}, config?:{...}, chat?, chat_system?}
+::     roads?:{peek:[...]}, config?:{...}, chat?, chat_system?,
+::     recipes?:[{name, recipe, files?:{name: text}}]}
 ::  makes the category dirs along parent, the clanker <parent>/<name>.clanker
-::  if missing (config, prompt, weir), and the named chat (its log, and
-::  its own prompt) if missing. The HOST'S config fields (bundle, repo,
+::  if missing (config, prompt, weir), the named chat (its log, and
+::  its own prompt) if missing, and the recipes the host ships, each
+::  with the files it ships with, if missing. The HOST'S config fields (bundle, repo,
 ::  roads, and whatever `config` carries) are re-written into an existing
 ::  clanker's config.json and its weir re-sanded, so a host that learns a
 ::  new road or path passes it on; the user's fields (model, max_tokens)
@@ -438,6 +440,17 @@
       [['bundle' s+bundle] extra]
     ;<  ~  bind:m  (over:io cfg-road [[/ %json] merged])
     (sand:io [%| 0 %| dir] `(config-weir merged anth))
+  ::  the recipes the host ships, each with its files, made if missing
+  ;<  ~  bind:m
+    =/  rs=(list json)
+      ?.  ?=([%o *] jon)  ~
+      =/  rj  (~(get by p.jon) 'recipes')
+      ?.  ?=([~ %a *] rj)  ~
+      p.u.rj
+    |-  ^-  form:m
+    ?~  rs  (pure:m ~)
+    ;<  ~  bind:m  (seed-recipe dir i.rs)
+    $(rs t.rs)
   ::  the chats, each with its own prompt and policy, made if missing
   ::  (never overwritten): `chats: [{name, system, policy}]`, or the older
   ::  single `chat` + `chat_system`
@@ -472,6 +485,37 @@
     ?~  policy.i.chats  (pure:(fiber:fiber:nexus ,(unit tang)) ~)
     (make-soft:io [%| 0 %& cdir %'tools.json'] |+[[[/ %json] u.policy.i.chats] ~])
   $(chats t.chats)
+::  +seed-recipe: one recipe a host ships with its clanker, made if
+::  missing (never overwritten): {name, recipe, files: {name: text}} as
+::  recipes/<name>.json and, for each file, recipes/<name>/<file>
+++  seed-recipe
+  |=  [dir=path r=json]
+  =/  m  (fiber:fiber:nexus ,~)
+  ^-  form:m
+  ?.  ?=([%o *] r)  (pure:m ~)
+  =/  n=@t  (jstr:clanker r 'name')
+  =/  rcp=(unit json)  (~(get by p.r) 'recipe')
+  ?~  rcp  (pure:m ~)
+  ?:  =('' n)  (pure:m ~)
+  =/  rdir=path  (welp dir /recipes)
+  ;<  *  bind:m
+    (make-soft:io [%| 0 %& rdir (crip "{(trip n)}.json")] |+[[[/ %mime] [/application/json (as-octs:mimes:html (en:json:html u.rcp))]] ~])
+  =/  fs=(list [p=@t q=json])
+    =/  fj  (~(get by p.r) 'files')
+    ?.  ?=([~ %o *] fj)  ~
+    ~(tap by p.u.fj)
+  ?:  =(~ fs)  (pure:m ~)
+  =/  fdir=path  (snoc rdir `@ta`n)
+  ;<  fv=view:nexus  bind:m  (peek:io [%| 0 %| fdir] ~)
+  ;<  ~  bind:m
+    ?:  ?=([%ball *] fv)  (pure:m ~)
+    (make:io [%| 0 %| fdir] &+empty-dir:loader)
+  |-  ^-  form:m
+  ?~  fs  (pure:m ~)
+  ;<  *  bind:m
+    ?.  ?=([%s *] q.i.fs)  (pure:(fiber:fiber:nexus ,(unit tang)) ~)
+    (make-soft:io [%| 0 %& fdir `@ta`p.i.fs] |+[[[/ %mime] [/text/markdown (as-octs:mimes:html p.q.i.fs)]] ~])
+  $(fs t.fs)
 ::
 ::  Paths. A clanker is addressed by its path under /projects, as the page
 ::  sends it: "/grubbery.clanker", "/work/hatchery.clanker". A category is
