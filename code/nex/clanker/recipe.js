@@ -127,6 +127,12 @@
         steps[name].recipe ? 'sub' : ''
       ].filter(Boolean).join(' ') });
     });
+    // the entrance: a recipe starts at its start step, so an arrow comes
+    // into it from nowhere, the way the exits leave to nowhere
+    if (recipe.start && steps[recipe.start]) {
+      out.push({ data: { id: 'entry', label: '' }, classes: 'entry' });
+      out.push({ data: { id: 'entry>' + recipe.start, source: 'entry', target: recipe.start }, classes: 'entry' });
+    }
     Object.keys(steps).forEach(function (from) {
       var nx = steps[from].next || {};
       Object.keys(nx).forEach(function (to) {
@@ -158,6 +164,9 @@
     { selector: 'node[?stay]', style: { 'border-style': 'double', 'border-width': 3 } },
     // a step that is a recipe: a box in a box
     { selector: 'node.sub', style: { 'border-style': 'double', 'border-width': 4, 'background-color': '#f6f8fa', 'color': '#0969da' } },
+    // the entrance: a dot, no label
+    { selector: 'node.entry', style: { 'shape': 'ellipse', 'width': 10, 'height': 10, 'padding': 0, 'background-color': '#57606a', 'border-width': 0, 'events': 'no' } },
+    { selector: 'edge.entry', style: { 'line-color': '#57606a', 'target-arrow-color': '#57606a' } },
     { selector: 'node.term', style: {
       'shape': 'round-rectangle', 'background-color': '#dafbe1', 'border-color': '#116329',
       'color': '#116329', 'height': 22, 'padding': '10px'
