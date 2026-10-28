@@ -41,6 +41,7 @@
       '.cv-msg.user.pending .body{opacity:.55}' +
       '.cv-meta{font-size:11px;color:#8b949e}' +
       '.cv-compose .cv-spent{color:#57606a}' +
+      '.cv-compose a.cv-stage{color:#0969da;text-decoration:none}.cv-compose a.cv-stage:hover{text-decoration:underline}' +
       '.cv-trace{display:flex;flex-direction:column;gap:2px;max-width:90%}' +
       '.cv-step summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:6px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:#57606a}' +
       '.cv-step summary::-webkit-details-marker{display:none}.cv-step summary:hover{background:#f6f8fa}' +
@@ -163,7 +164,13 @@
     // what the chat has cost and taken, from its status; under the box,
     // where it stays in view while the thread scrolls
     var foot = el('div', 'hint cv-spent', ''); form.appendChild(foot);
-    form.appendChild(el('div', 'hint', 'Enter sends · Shift+Enter newline · Esc Esc stops · fn+↑↓ reads back'));
+    var hint = el('div', 'hint', 'Enter sends · Shift+Enter newline · Esc Esc stops · fn+↑↓ reads back · ');
+    // the chat's staging view (this chat beside the stage it writes), a
+    // link like any other: the pane's routing says where it opens
+    var stageLnk = el('a', 'cv-stage', 'stage ⧉'); stageLnk.href = '#'; stageLnk.title = 'open this chat with its stage';
+    // the link names the chat's DIRECTORY, spelled from the log's own url
+    stageLnk.onclick = function (e) { e.preventDefault(); var u = String(opts.url || '').replace(/\/log\.chat-log(\?.*)?$/, '') + '?view=stage', o = { name: chat + ' stage' }; if (opts.open) opts.open(u, o); else if (opts.onNavigate) opts.onNavigate(u, 'dir', o); };
+    hint.appendChild(stageLnk); form.appendChild(hint);
     root.appendChild(logEl); root.appendChild(form);
 
     // pending: a message sent but not yet in the log, shown at once (faded)
