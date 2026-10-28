@@ -42,7 +42,7 @@ An empty stage is `{"tabs": [{"entries": [], "cursor": -1}], "activeTab": 0}`.
 
 A path names a moment: a place plus optional `?args` saying how it is looked at.
 
-- absolute: `/apps/forge.git_forge/repos`
+- absolute: `/apps/shell.shell/desks/forge.desk/desk/data/forge.git_forge/repos`
 - by name: `@forge/repos`, `@clanker/projects`
 - relative to the stage file's directory (the chat's): `./notes.md`, `../../files/report.md`
 
