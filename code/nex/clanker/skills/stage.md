@@ -49,9 +49,11 @@ A path names a moment: a place plus optional `?args` saying how it is looked at.
 Args: a directory takes `?view=rows` (default), `?view=grid`, `?view=tree`;
 an app's own views only where the app declares them. A directory an app
 opens as a layout (a clanker, a repo, a trip) becomes that layout inside
-your pane. `?view=frame` shows a page of this ship inside the pane: on an
-html file it frames the file as a page; `/?view=frame&url=/grubbery/forge`
-frames that route (any path this ship serves; nothing off the ship).
+your pane.
+
+A moment may also be a page this ship serves, spelled `url:/grubbery/forge`:
+the pane frames that page. Any path on this ship; nothing off the ship (no
+scheme, no host). `?view=frame` on an html file frames the file as a page.
 
 ## Routing
 
