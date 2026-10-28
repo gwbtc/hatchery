@@ -478,11 +478,13 @@
     [%| 'path must not contain empty, "." or ".." segments']
   [%& segs]
 ::  +reserved: the subtrees the engine owns; tools may read them, never
-::  write or delete.
+::  write or delete. One exception: a chat's stage, chats/<c>/stage.layout,
+::  is the model's to write (the stage pane follows it).
 ++  reserved
   |=  p=path
   ^-  ?
   ?~  p  %.n
+  ?:  ?=([%chats @ %'stage.layout' ~] p)  %.n
   |(=(%tools i.p) =(%chats i.p))
 ::  +ensure-dirs: make every missing folder from the clanker root (up
 ::  steps above us) down to `dir`.

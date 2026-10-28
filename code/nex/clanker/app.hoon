@@ -39,6 +39,7 @@
 /&  coll-layout     ./collection-layout.json
 /&  clanker-layout  ./clanker-layout.json
 /&  chat-layout     ./chat-layout.json
+/&  stage-layout    ./stage-layout.json
 ::  the nexus root itself (@clanker) opens as the collection, the way
 ::  @forge opens as the forge: the same selector | tabs, over ./projects
 /&  root-layout     ./root-layout.json
@@ -102,6 +103,7 @@
       [%over %& [/ %'collection-layout.json'] [[/ %mime] coll-layout]]
       [%over %& [/ %'clanker-layout.json'] [[/ %mime] clanker-layout]]
       [%over %& [/ %'chat-layout.json'] [[/ %mime] chat-layout]]
+      [%over %& [/ %'stage-layout.json'] [[/ %mime] stage-layout]]
       [%over %& [/ %'root-layout.json'] [[/ %mime] root-layout]]
       ::  the root declares its own view: the explorer landing ON the nexus
       ::  (by name, @clanker) asks /api/root-viewer and opens the root
@@ -569,7 +571,7 @@
   =/  body=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) *json)
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
-  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'recipe.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix) =(%'root-layout.json' i.suffix)))
+  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'recipe.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix) =(%'stage-layout.json' i.suffix) =(%'root-layout.json' i.suffix)))
     (serve-file eyre-id / i.suffix)
   ::  the root's view: the nexus root itself opens as the root layout
   ::  (the collection over ./projects); anything else at the root keeps
@@ -1316,9 +1318,11 @@
     =/  proj=path  (flop t.f)
     (ans 'chats' panes (pairs:enjs:format ~[['proj' s+(spat proj)]]) ~[(fol (welp coll (snoc proj %chats)) | &)])
   ::  a chat's own directory opens as the chat layout (the chat | its
-  ::  prompt), rooted at it
+  ::  prompt), rooted at it; ?view=stage is the staging view, the chat in
+  ::  the left third and its stage.layout, followed, in the rest
   ?:  ?=([@ %chats @ *] f)
     ?.  (lien pax is-clanker)  ~
+    ?:  =('stage' view)  (lay '/grubbery/clanker/stage-layout.json')
     ?.  =('' view)  ~
     (lay '/grubbery/clanker/chat-layout.json')
   ::  a clanker dir opens as the clanker layout, rooted at it; inside a

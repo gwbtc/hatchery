@@ -1,0 +1,5 @@
+{"div":{"dir":"horizontal","ratio":0.33,
+ "a":{"open":{"to":"#root","mode":"tab"},"bar":true,"nav":false,"activeTab":0,
+  "tabs":[{"label":"chat","entries":[{"path":"./log.chat-log"}],"cursor":0}]},
+ "b":{"bar":true,"nav":false,"activeTab":0,
+  "tabs":[{"label":"stage","entries":[{"path":"./stage.layout?follow=1"}],"cursor":0}]}}}

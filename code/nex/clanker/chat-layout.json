@@ -1,6 +1,7 @@
 {"id":"chat","open":{"to":"#chat","mode":"tab"},"bar":true,"nav":false,"activeTab":0,
  "tabs":[
   {"label":"chat","entries":[{"path":"./log.chat-log"}],"cursor":0},
+  {"label":"stage","entries":[{"path":"./?view=stage"}],"cursor":0},
   {"label":"tip","entries":[{"path":"./log.chat-log?view=tip"}],"cursor":0},
   {"label":"prompt","entries":[{"path":"./log.chat-log?view=prompt"}],"cursor":0},
   {"label":"tools","entries":[{"path":"./log.chat-log?view=tools"}],"cursor":0}]}

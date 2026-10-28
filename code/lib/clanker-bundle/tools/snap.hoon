@@ -1,6 +1,7 @@
 /<  tools  /lib/tools.hoon
 ::  snap: a picture of a gmux session as its attached browser shows it.
-::  Reads the session grub first (no client attached: fail at once), then
+::  Finds the session (named, or the one whose spec shows a chat of this
+::  clanker), reads its grub (no client attached: fail at once), then
 ::  writes a request into the explorer's snaps/ dir ({session, moment}).
 ::  The page attached to that session, the only thing that can see it,
 ::  renders the pane showing that moment (or the whole workspace) to a
@@ -35,6 +36,23 @@
       ^-  ?
       =/  v  (jget j k)
       ?:(?=([~ %b *] v) p.u.v %.n)
+    ::  +clanker-seg: the clanker this tool runs under, by its directory
+    ::  name (the innermost *.clanker segment of the run's rail)
+    ++  clanker-seg
+      |=  pax=path
+      ^-  (unit @ta)
+      =/  hit=(list @ta)
+        %+  skim  pax
+        |=  s=@ta
+        =/  t=tape  (trip s)
+        &((gth (lent t) 8) =(".clanker" (slag (sub (lent t) 8) t)))
+      ?~  hit  ~
+      `(rear hit)
+    ::  +shows-clanker: does a session's spec show a chat of this clanker
+    ++  shows-clanker
+      |=  [spec=json seg=@ta]
+      ^-  ?
+      ?=(^ (find "/{(trip seg)}/chats/" (trip (en:json:html spec))))
     --
 !:
 ^-  tool:tools
@@ -49,21 +67,24 @@
   other tabs on the same session only mirror it and never answer, tabs
   on other sessions never answer, and a session with no tab attached
   cannot be pictured (the call fails at once, naming the session).
-  moment is optional: the moment a pane shows, spelled as in its navbar
-  (a path with its ?args, e.g.
-  "@clanker/projects/stage.clanker/files/stage.layout?follow=1"); that
-  pane alone is pictured, and when no pane in the session shows it the
-  call fails rather than picturing something else. With no moment the
-  whole workspace is pictured, at the size of the attached tab's window.
-  Use it to check your own work when it matters, not on every turn.
+  session is optional: without it the session whose workspace shows a
+  chat of this clanker is pictured; when none or several do, the call
+  fails and names them, and you pass one. moment is optional: the
+  moment a pane shows, spelled as in its navbar (a path with its ?args,
+  e.g. "@clanker/projects/stage.clanker/chats/main/stage.layout?follow=1");
+  that pane alone is pictured, and when no pane in the session shows it
+  the call fails rather than picturing something else. With no moment
+  the whole workspace is pictured, at the size of the attached tab's
+  window. Use it to check your own work when it matters, not on every
+  turn.
   '''
 ++  parameters
   ^-  (map @t parameter-def:tools)
   %-  ~(gas by *(map @t parameter-def:tools))
-  :~  ['session' [%string 'the session to picture, by name (e.g. "staging")']]
+  :~  ['session' [%string 'optional: the session to picture, by name; omitted, the one showing this clanker']]
       ['moment' [%string 'optional: the moment (path?args) a pane shows, as spelled in its navbar']]
   ==
-++  required  ~['session']
+++  required  ~
 ++  handler
   ^-  tool-handler:tools
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
@@ -72,22 +93,48 @@
   =/  moment=@t
     =/  v=(unit json)  (~(get by args.st) 'moment')
     ?:(?=([~ %s *] v) p.u.v '')
-  =/  session=@t
+  =/  asked=@t
     =/  v=(unit json)  (~(get by args.st) 'session')
     ?:(?=([~ %s *] v) p.u.v '')
-  ?:  =('' session)  (pure:m [%error 'session required: the gmux session to picture'])
   ;<  ex=(unit lane:tarball)  bind:m  (resolve-link:io '@explorer')
   ?.  ?=([~ %| *] ex)  (pure:m [%error 'the explorer is not installed'])
-  ::  the session must exist and have a tab attached, or nobody will answer
-  =/  ses-road=road:tarball
-    [%& %& (snoc p.u.ex %sessions) (crip "{(trip session)}.json")]
+  =/  sessions=path  (snoc p.u.ex %sessions)
+  ::  which session: the one named, else the one showing this clanker
+  ;<  session=(each @t @t)  bind:m
+    =/  m  (fiber:fiber:nexus ,(each @t @t))
+    ?.  =('' asked)  (pure:m [%& asked])
+    ;<  here=rail:tarball  bind:m  get-here-abs:io
+    =/  seg=(unit @ta)  (clanker-seg path.here)
+    ?~  seg  (pure:m [%| 'not running inside a clanker; pass session'])
+    ;<  dv=view:nexus  bind:m  (peek:io [%& %| sessions] ~)
+    ?.  ?=([%ball *] dv)  (pure:m [%| 'no sessions exist; open one at /grubbery/explorer'])
+    =/  names=(list @ta)  ~(tap in ~(key by dir.ball.dv))
+    =|  hits=(list @t)
+    |-  ^-  form:m
+    ?~  names
+      ?~  hits
+        (pure:m [%| (crip "no open workspace shows a chat of {(trip u.seg)}; open the chat's stage tab, or pass session")])
+      ?~  t.hits  (pure:m [%& i.hits])
+      (pure:m [%| (crip "several workspaces show {(trip u.seg)}: {(zing (join ", " (turn hits trip)))}; pass session")])
+    =/  nm=tape  (trip i.names)
+    ?.  &((gth (lent nm) 5) =(".json" (slag (sub (lent nm) 5) nm)))  $(names t.names)
+    ;<  sv=view:nexus  bind:m  (peek:io [%& %& sessions i.names] `[/ %json])
+    ?.  &(?=([%file *] sv) !(is-boom:tarball sang.sv))  $(names t.names)
+    =/  ses=json  !<(json (need-vase:tarball sang.sv))
+    =/  spec=json  (fall (jget ses 'spec') ~)
+    ?.  (shows-clanker spec u.seg)  $(names t.names)
+    $(names t.names, hits [(crip (scag (sub (lent nm) 5) nm)) hits])
+  ?:  ?=(%| -.session)  (pure:m [%error p.session])
+  =/  name=@t  p.session
+  ::  the session must have a tab attached, or nobody will answer
+  =/  ses-road=road:tarball  [%& %& sessions (crip "{(trip name)}.json")]
   ;<  sv=view:nexus  bind:m  (peek:io ses-road `[/ %json])
   ?.  &(?=([%file *] sv) !(is-boom:tarball sang.sv))
-    (pure:m [%error (crip "no such session: {(trip session)}")])
+    (pure:m [%error (crip "no such session: {(trip name)}")])
   =/  ses=json  !<(json (need-vase:tarball sang.sv))
   =/  client=json  (fall (jget ses 'client') ~)
   ?:  =('' (jstr client 'id'))
-    (pure:m [%error (crip "no browser tab is attached to session {(trip session)}; open it at /grubbery/explorer/s/{(trip session)}")])
+    (pure:m [%error (crip "no browser tab is attached to session {(trip name)}; open it at /grubbery/explorer/s/{(trip name)}")])
   =/  snaps=path  (snoc p.u.ex %snaps)
   ;<  eny=@uvJ  bind:m  get-entropy:io
   =/  id=@t  (scot %uv (end [3 8] eny))
@@ -96,7 +143,7 @@
   =/  png-road=road:tarball  [%& %& snaps (crip "{(trip id)}.png")]
   ;<  *  bind:m  (keep:io /snap png-road ~)
   ;<  ~  bind:m
-    (make:io req-road |+[[[/ %json] (pairs:enjs:format ~[['session' s+session] ['moment' s+moment]])] ~])
+    (make:io req-road |+[[[/ %json] (pairs:enjs:format ~[['session' s+name] ['moment' s+moment]])] ~])
   ::  the page answers within seconds; thirty is "the attached tab is not drawing"
   ;<  got=(unit (unit mime))  bind:m
     %^  (with-timeout:io ,(unit mime))  /snap  ~s30
@@ -112,7 +159,7 @@
   ;<  ~  bind:m  (drop:io /snap png-road)
   ;<  *  bind:m  (cull-soft:io req-road)
   ?~  got
-    (pure:m [%error (crip "no picture arrived in 30s from the tab attached to session {(trip session)} (client {(trip (jstr client 'id'))}); is that tab still open?")])
+    (pure:m [%error (crip "no picture arrived in 30s from the tab attached to session {(trip name)} (client {(trip (jstr client 'id'))}); is that tab still open?")])
   ?~  u.got
     (pure:m [%error 'the page answered but no picture appeared'])
   ::  the answer says what the page drew; it was written before the png
@@ -123,6 +170,6 @@
   ;<  *  bind:m  (cull-soft:io ans-road)
   ;<  *  bind:m  (cull-soft:io png-road)
   ?:  &(!=('' moment) !(jflag ans 'found'))
-    (pure:m [%error (crip "no pane in session {(trip session)} shows {(trip moment)}; nothing was pictured. Snap without a moment to see the whole workspace.")])
+    (pure:m [%error (crip "no pane in session {(trip name)} shows {(trip moment)}; nothing was pictured. Snap without a moment to see the whole workspace.")])
   (pure:m [%mime u.u.got])
 --

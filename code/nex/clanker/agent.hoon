@@ -92,6 +92,7 @@
           ::  once; a clanker may edit or remove them
           [%fall %| /skills empty-dir:loader]
           [%fall %& [/skills %'recipes.md'] [[/ %mime] (default-skill %'recipes.md')]]
+          [%fall %& [/skills %'stage.md'] [[/ %mime] (default-skill %'stage.md')]]
           ::  recipes/*.json: thought processes a chat can follow. A run's
           ::  position lives beside that chat's log, as chats/<c>/run.json
           [%fall %| /recipes empty-dir:loader]
@@ -247,11 +248,23 @@
   ;<  ~  bind:m
     ?:  ?=([%ball *] dv)  (pure:m ~)
     (make:io (nex-road:io rail [%| chat-dir]) &+empty-dir:loader)
+  ::  the chat's stage: a layout the model writes and the stage pane
+  ::  follows. Seeded empty once; from then on it is the chat's.
+  =/  stage=road:tarball  (nex-road:io rail [%& chat-dir %'stage.layout'])
+  ;<  gv=view:nexus  bind:m  (peek:io stage ~)
+  ;<  ~  bind:m
+    ?:  ?=([%file *] gv)  (pure:m ~)
+    ;<  *  bind:m  (make-soft:io stage |+[[[/ %mime] [/application/json (as-octs:mimes:html empty-stage)]] ~])
+    (pure:m ~)
   =/  sig=road:tarball  (nex-road:io rail [%& chat-dir %'turn.sig'])
   ;<  sv=view:nexus  bind:m  (peek:io sig ~)
   ?:  ?=([%file *] sv)  (pure:m ~)
   ;<  *  bind:m  (make-soft:io sig |+[[[/ %sig] ~] ~])
   (pure:m ~)
+::  +empty-stage: a stage with nothing on it, one empty pane
+++  empty-stage
+  ^-  @t
+  '{"tabs": [{"entries": [], "cursor": -1}], "activeTab": 0}'
 ::  +forward: a chat's poke to its process, not waited for: the pack
 ::  reaches this fiber later and the loop's take skips it.
 ++  forward
@@ -941,7 +954,8 @@
   ;:  weld
     (trip sys)
     ?:(=('' reading) "" "\0a\0a{(trip reading)}")
-    ?:(=('' chat-sys) "" "\0a\0a# This chat\0a{(trip chat-sys)}\0a")
+    "\0a\0a# This chat\0aYou are in the chat `{(trip chat)}`. Its stage, the layout the owner's stage pane follows, is `chats/{(trip chat)}/stage.layout` (the stage skill says how to write it).\0a"
+    ?:(=('' chat-sys) "" "\0a{(trip chat-sys)}\0a")
     (skills-section frags skills)
     (section "Memories" memories)
     (recipes-section frags recipes)
