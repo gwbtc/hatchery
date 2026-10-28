@@ -1,9 +1,10 @@
 /<  tools  /lib/tools.hoon
-::  snap: a picture of the owner's explorer page. Writes a request into
-::  the explorer's snaps/ dir ({moment}); the explorer PAGE, the only
-::  thing that can see itself, renders the pane showing that moment (or
-::  the whole workspace) to a PNG and uploads it beside the request. The
-::  tool awaits the PNG, returns it as an image, and clears both files.
+::  snap: a picture of a gmux session as its attached browser shows it.
+::  Writes a request into the explorer's snaps/ dir ({session, moment});
+::  the page attached to that session, the only thing that can see it,
+::  renders the pane showing that moment (or the whole workspace) to a
+::  PNG and uploads it beside the request. The tool awaits the PNG,
+::  returns it as an image, and clears both files.
 ::  Calls protocol, like geocode: keep the result road, then ask.
 ::
 =>  |%
@@ -24,19 +25,23 @@
 ++  name  'snap'
 ++  description
   '''
-  Take a picture of the owner's explorer page as they see it right now.
-  moment is optional: the moment a pane shows, spelled as in its navbar
-  (a path with its ?args, e.g. "@clanker/projects/stage.clanker/files/stage.layout?follow=1");
-  that pane is pictured. With no moment, or one no pane shows, the whole
-  workspace is. Fails when no explorer page is open. Use it to check
-  your own work when it matters, not on every turn.
+  Take a picture of a gmux session as the browser attached to it shows it
+  right now. A session is a workspace the ship holds under
+  /apps/explorer.explorer/sessions/<name>.json; one browser tab is
+  attached to it and that tab answers. moment is optional: the moment a
+  pane shows, spelled as in its navbar (a path with its ?args, e.g.
+  "@clanker/projects/stage.clanker/files/stage.layout?follow=1"); that
+  pane is pictured. With no moment, or one no pane shows, the whole
+  workspace is. Fails when no tab is attached to the session. Use it to
+  check your own work when it matters, not on every turn.
   '''
 ++  parameters
   ^-  (map @t parameter-def:tools)
   %-  ~(gas by *(map @t parameter-def:tools))
-  :~  ['moment' [%string 'optional: the moment (path?args) a pane shows, as spelled in its navbar']]
+  :~  ['session' [%string 'the session to picture, by name (e.g. "staging")']]
+      ['moment' [%string 'optional: the moment (path?args) a pane shows, as spelled in its navbar']]
   ==
-++  required  ~
+++  required  ~['session']
 ++  handler
   ^-  tool-handler:tools
   =/  m  (fiber:fiber:nexus ,tool-result:tools)
@@ -45,6 +50,10 @@
   =/  moment=@t
     =/  v=(unit json)  (~(get by args.st) 'moment')
     ?:(?=([~ %s *] v) p.u.v '')
+  =/  session=@t
+    =/  v=(unit json)  (~(get by args.st) 'session')
+    ?:(?=([~ %s *] v) p.u.v '')
+  ?:  =('' session)  (pure:m [%error 'session required: the gmux session to picture'])
   ;<  ex=(unit lane:tarball)  bind:m  (resolve-link:io '@explorer')
   ?.  ?=([~ %| *] ex)  (pure:m [%error 'the explorer is not installed'])
   =/  snaps=path  (snoc p.u.ex %snaps)
@@ -54,8 +63,8 @@
   =/  png-road=road:tarball  [%& %& snaps (crip "{(trip id)}.png")]
   ;<  *  bind:m  (keep:io /snap png-road ~)
   ;<  ~  bind:m
-    (make:io req-road |+[[[/ %json] (pairs:enjs:format ~[['moment' s+moment]])] ~])
-  ::  the page answers within seconds; thirty is "no page is open"
+    (make:io req-road |+[[[/ %json] (pairs:enjs:format ~[['session' s+session] ['moment' s+moment]])] ~])
+  ::  the page answers within seconds; thirty is "no tab is attached"
   ;<  got=(unit (unit mime))  bind:m
     %^  (with-timeout:io ,(unit mime))  /snap  ~s30
     =/  m  (fiber:fiber:nexus ,(unit mime))
@@ -70,7 +79,7 @@
   ;<  ~  bind:m  (drop:io /snap png-road)
   ;<  *  bind:m  (cull-soft:io req-road)
   ?~  got
-    (pure:m [%error 'no picture arrived in 30s: is the explorer page open in a browser?'])
+    (pure:m [%error 'no picture arrived in 30s: is a browser tab attached to that session?'])
   ?~  u.got
     (pure:m [%error 'the page answered but no picture appeared'])
   ;<  *  bind:m  (cull-soft:io png-road)
