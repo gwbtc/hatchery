@@ -51,7 +51,7 @@ an app's own views only where the app declares them. A directory an app
 opens as a layout (a clanker, a repo, a trip) becomes that layout inside
 your pane. `?view=frame` shows a page of this ship inside the pane: on an
 html file it frames the file as a page; `/?view=frame&url=/grubbery/forge`
-frames that route (only `/grubbery/...` routes; nothing off the ship).
+frames that route (any path this ship serves; nothing off the ship).
 
 ## Routing
 
