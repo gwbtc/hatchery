@@ -121,7 +121,7 @@
     }
     return window.__shikiP.then(async function (hl) {
       if (!hl.getLoadedLanguages().includes(lang)) {
-        if (lang === 'hoon') await hl.loadLanguage(await (await fetch('/grubbery/ball/apps/explorer.explorer/hoon-grammar.json')).json());
+        if (lang === 'hoon') await hl.loadLanguage(await (await fetch('/grubbery/ball/apps/shell.shell/ui/explorer/hoon-grammar.json')).json());
         else await hl.loadLanguage(lang);
       }
       return hl;
