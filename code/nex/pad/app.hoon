@@ -30,7 +30,7 @@
         ==
       %+  spin:loader  ball
       :~  (manifest:loader 0)
-          [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'pad'] ['description' s+'Cross-ship collaborative text pads']])]]
+          [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'pad'] ['description' s+'Cross-ship collaborative text pads'] ['share' a+~[s+'/public']]])]]
           [%over %& [/ %'weir.json'] [[/ %json] weir-json]]
           [%over %& [/ %'tile.json'] [[/ %json] tile]]
           [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
@@ -38,6 +38,10 @@
           [%over %& [/ %'pad.js'] [[/ %mime] pad-js]]
           [%over %& [/ %'README.md'] [[/ %mime] man]]
           [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
+          ::  grant.json: the shell writes it on approval; a reload keeps
+          ::  only what is listed here, so it is listed, or here-abs:sh
+          ::  reads "not approved" after every reload
+          [%stay %& [/ %'grant.json']]
           [%fall %| /requests empty-dir:loader]
           [%fall %| /docs empty-dir:loader]
           [%fall %| /mirror empty-dir:loader]
@@ -83,7 +87,7 @@
           ::
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%pad /requests: failed")
-        (serve name.rail)
+        (serve rail)
       ==
     --
 |%
@@ -110,6 +114,8 @@
       :~  (line '/sys/bowl.sig' 'read the current time and our ship — get-time / get-our')
           (line '/sys/eyre/' 'bind its HTTP route and send page responses')
           (line '/sys/ames/ships/' 'remote-poke a host ship sequencer when editing a doc we do not own')
+          (line '/sys/ames/registry' 'register with the usergroup registry and open its docs to /public')
+          (line '/sys/behn/' 'the delivery deadline on every relay to a doc host')
       ==
       :-  'peek'
       :-  %a
@@ -240,15 +246,16 @@
 ::  +serve: route one HTTP request
 ::
 ++  serve
-  |=  eyre-id=@ta
+  |=  =rail:tarball
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
+  =/  eyre-id=@ta  name.rail
   ;<  [src=@p req=inbound-request:eyre]  bind:m  (get-state-as:io ,[src=@p inbound-request:eyre])
   =/  prefix=path  /grubbery/pad
   =/  site=path  site:(parse-url:http-utils url.request.req)
   =/  suffix=path  (slag (lent prefix) site)
   ?+    suffix  (serve-static eyre-id suffix)
-    [%api %whoami ~]  (serve-whoami eyre-id src req)
+    [%api %whoami ~]  (serve-whoami rail src req)
     [%api %docs ~]    (serve-docs eyre-id)
     [%api %create ~]  (serve-create eyre-id src req)
     [%api %open ~]    (serve-open eyre-id src req)
@@ -268,14 +275,20 @@
   =/  =mime  !<(mime (need-vase:tarball sang.view))
   (send-simple:srv eyre-id (mime-response:http-utils mime))
 ::
+::  +serve-whoami: who is asking, and where this pad lives. The page
+::  builds its keep paths from `root`: an install sits wherever its
+::  desk put it, not at a fixed /apps/pad.pad.
+::
 ++  serve-whoami
-  |=  [eyre-id=@ta src=@p req=inbound-request:eyre]
+  |=  [=rail:tarball src=@p req=inbound-request:eyre]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  %+  send-json  eyre-id
+  ;<  root=(unit @t)  bind:m  (here:sh rail)
+  %+  send-json  name.rail
   %-  pairs:enjs:format
   :~  ['ship' s+(scot %p src)]
       ['authenticated' b+authenticated.req]
+      ['root' s+(fall root '')]
   ==
 ::  +serve-docs: list local docs and mirrored docs
 ::
@@ -403,7 +416,8 @@
   ^-  form:m
   ;<  exists=?  bind:m  (peek-exists:io [%| 1 %& pax name])
   ?:  exists  (pure:m ~)
-  ;<  *  bind:m  (make-soft:io [%| 1 %& pax name] |+[[[/ %sig] ~] ~])
+  ;<  err=(unit tang)  bind:m  (make-soft:io [%| 1 %& pax name] |+[[[/ %sig] ~] ~])
+  ~?  >>>  ?=(^ err)  [%pad-ensure-sig-failed pax name u.err]
   (pure:m ~)
 ::  +ensure-dir: create a nexus-relative dir if absent
 ::
