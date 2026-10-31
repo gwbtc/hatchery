@@ -287,20 +287,21 @@
     make  (~(gas in make.base) (roads 'make'))
     poke  (~(gas in poke.base) (roads 'poke'))
   ==
-::  +sand-watch: the weirs are set once per CAUSE, never per message. On
-::  every rise, one pass over the collection (+sand-all): a clanker seeded
-::  at load was born before the proxy could be resolved (on-load cannot
-::  peek), one made before the proxy was installed has no road to it.
-::  Then the proxy's registry grub (/sys/link/anthropic/dest.lanes) is
-::  kept, and every move of it is another pass. Making a clanker
-::  (+handle-poke, /api/new) sands it then. A proxy not yet linked: the
-::  keep finds nothing within the lull, so try again later.
+::  +sand-watch: a clanker's weir is set once per CAUSE, never per
+::  message and never per reload. The kernel carries every directory's
+::  weir through a reload, so the pass at the start only sands clankers
+::  that have NO weir yet: one seeded at load was born before the proxy
+::  could be resolved (on-load cannot peek). Then the proxy's registry
+::  grub (/sys/link/anthropic/dest.lanes) is kept, and every move of it
+::  re-sands them all: the alias changed, so the weirs follow. Making a
+::  clanker (+handle-poke, /api/new) sands it then. A proxy not yet
+::  linked: the keep finds nothing within the lull, so try again later.
 ++  sand-watch
   |=  =prod:fiber:nexus
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  ~  bind:m  (rise-wait:io prod "%clanker sand: failed")
-  ;<  ~  bind:m  sand-all
+  ;<  ~  bind:m  (sand-all %.n)
   |-
   ;<  any=?  bind:m  keep-registries
   ?.  any
@@ -308,7 +309,7 @@
     $
   |-
   ;<  ~  bind:m  (take-news-any registry-wires)
-  ;<  ~  bind:m  sand-all
+  ;<  ~  bind:m  (sand-all %.y)
   $
 ::  +keep-registries: keep EVERY provider's link registry, each on its
 ::  own wire, so a proxy linked later also triggers a sand pass. Yields
@@ -346,10 +347,12 @@
       [~ %news * *]
     ?:((lien wires |=(w=wire =(w wire.u.in))) [%done ~] [%skip ~])
   ==
-::  +sand-all: every clanker in the collection, at any depth, re-sanded
+::  +sand-all: every clanker in the collection, at any depth, sanded
 ::  from its config with the proxy as it resolves now. Runs in sand.sig's
-::  fiber, at the collection root (up 0).
+::  fiber, at the collection root (up 0). all=%.n sands only clankers
+::  that have no weir yet; all=%.y every one (an alias moved).
 ++  sand-all
+  |=  all=?
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  anth=(list path)  bind:m  proxy-roots
@@ -365,8 +368,16 @@
   ;<  ~  bind:m
     |-  ^-  form:m
     ?~  clankers  (pure:m ~)
+    =/  dir=road:tarball  [%| 0 %| (welp /projects i.clankers)]
+    ;<  cv=view:nexus  bind:m  (peek-shallow:io dir ~)
+    =/  sanded=?
+      ?&  ?=([%ball *] cv)
+          ?=(^ fil.ball.cv)
+          ?=(^ weir.u.fil.ball.cv)
+      ==
+    ?:  &(!all sanded)  $(clankers t.clankers)
     ;<  cfg=json  bind:m  (read-json [%| 0 %& (welp /projects i.clankers) %'config.json'])
-    ;<  ~  bind:m  (sand:io [%| 0 %| (welp /projects i.clankers)] `(config-weir cfg anth))
+    ;<  ~  bind:m  (sand:io dir `(config-weir cfg anth))
     $(clankers t.clankers)
   $(todo (weld t.todo kids))
 ::  +sand-clanker: (re)set one clanker's weir from its config with the

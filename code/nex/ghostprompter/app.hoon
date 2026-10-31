@@ -102,11 +102,20 @@
         ;<  ~  bind:m  (rise-wait:io prod "%ghostprompter main: failed")
         ::  the agent reaches the anthropic proxy and the nostr mirror by
         ::  NAME; on-load has no fiber to look them up, so the agent is
-        ::  born with the base weir and sanded here once per rise
-        ;<  anth=(unit lane:tarball)   bind:m  (resolve-link:io '@anthropic')
-        ;<  nostr=(unit lane:tarball)  bind:m  (resolve-link:io '@nostr')
-        =/  fold  |=(u=(unit lane:tarball) ^-((unit path) ?.(?=([~ %| *] u) ~ `p.u.u)))
+        ::  born with no weir and sanded here the first time. A reload
+        ::  keeps the weir it has: the kernel carries every directory's
+        ::  weir through, so an agent that is already sanded is left alone.
+        ;<  av=view:nexus  bind:m  (peek-shallow:io (nex-road:io rail [%| /agent]) ~)
+        =/  sanded=?
+          ?&  ?=([%ball *] av)
+              ?=(^ fil.ball.av)
+              ?=(^ weir.u.fil.ball.av)
+          ==
         ;<  ~  bind:m
+          ?:  sanded  (pure:m ~)
+          ;<  anth=(unit lane:tarball)   bind:m  (resolve-link:io '@anthropic')
+          ;<  nostr=(unit lane:tarball)  bind:m  (resolve-link:io '@nostr')
+          =/  fold  |=(u=(unit lane:tarball) ^-((unit path) ?.(?=([~ %| *] u) ~ `p.u.u)))
           (sand:io (nex-road:io rail [%| /agent]) `(agent-weir (fold anth) (fold nostr)))
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/ghostprompter])
         (http-dispatch:io %ghostprompter)
