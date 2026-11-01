@@ -32,6 +32,11 @@
       :~  (manifest:loader 0)
           [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'pad'] ['description' s+'Cross-ship collaborative text pads'] ['share' a+~[s+'/public']]])]]
           [%over %& [/ %'weir.json'] [[/ %json] weir-json]]
+          ::  the usergroups it asks for and what it does in them: /docs is
+          ::  open to /public, so any ship can edit and mirror its pads.
+          ::  The keys are approved on Permits; roads are relative to this
+          ::  root.
+          [%over %& [/ %'groups.json'] [[/ %json] groups-json]]
           [%over %& [/ %'tile.json'] [[/ %json] tile]]
           [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
           [%over %& [/ %'index.html'] [[/ %mime] index-html]]
@@ -54,11 +59,10 @@
       =/  m  (fiber:fiber:nexus ,~)
       ^-  process:fiber:nexus
       ?+    rail  stay:m
-          ::  main.sig: grant /public access, bind HTTP, dispatch
+          ::  main.sig: bind HTTP, dispatch
           ::
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%pad /main: failed")
-        ;<  ~  bind:m  (grant-public rail)
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/pad])
         (http-dispatch:io %pad)
           ::  /docs/<doc>/inbox.sig: the sequencer. Local and remote
@@ -114,7 +118,6 @@
       :~  (line '/sys/bowl.sig' 'read the current time and our ship — get-time / get-our')
           (line '/sys/eyre/' 'bind its HTTP route and send page responses')
           (line '/sys/ames/ships/' 'remote-poke a host ship sequencer when editing a doc we do not own')
-          (line '/sys/ames/registry' 'register with the usergroup registry and open its docs to /public')
           (line '/sys/behn/' 'the delivery deadline on every relay to a doc host')
       ==
       :-  'peek'
@@ -127,20 +130,17 @@
 ::  HTTP response door (road from /requests/* to /main.sig)
 ::
 ++  srv  ~(. http-res:io [%| 1 %& ~ %'main.sig'])
-::  +grant-public: let any foreign ship poke doc inboxes and
-::  subscribe to doc logs
+::  +groups-json: what pad opens to which usergroups
 ::
-++  grant-public
-  |=  rail=rail:tarball
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  ;<  here=rail:tarball  bind:m  (here-abs:sh rail)
-  ;<  ~  bind:m  (reg-register-at:io here)
-  ::  a group's roads are absolute: our own root, found by our name
-  ;<  me=(unit lane:tarball)  bind:m  (resolve-link:io '@pad')
-  ?.  ?=([~ %| *] me)  (pure:m ~)
-  =/  docs=road:tarball  [%& %| (weld p.u.me /docs)]
-  (reg-how:io /public [~ (sy ~[docs]) (sy ~[docs])])
+++  groups-json
+  ^-  json
+  %-  pairs:enjs:format
+  :~  :-  '/public'
+      %-  pairs:enjs:format
+      :~  ['peek' a+~[s+'/docs']]
+          ['poke' a+~[s+'/docs']]
+      ==
+  ==
 ::  +inbox-loop: sequence update pokes into log grubs. Bad input is
 ::  skipped, never crashed on — a crashed sequencer would drop edits.
 ::

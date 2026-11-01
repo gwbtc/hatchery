@@ -91,6 +91,9 @@
           [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
           [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'wallet'] ['description' s+'Bitcoin SPV wallet']])]]
           [%over %& [/ %'weir.json'] [[/ %json] weir-json]]
+          ::  the usergroups it asks for and what it does in them: main.sig
+          ::  takes pokes from any ship once /public is approved
+          [%over %& [/ %'groups.json'] [[/ %json] (pairs:enjs:format ~[['/public' (pairs:enjs:format ~[['poke' a+~[s+'/main.sig']]])]])]]
           [%over %& [/ %'tile.json'] [[/ %json] tile]]
           [%over %& [/ %'main.sig'] [[/ %sig] ~]]
           =/  init-deps=json
@@ -127,7 +130,6 @@
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%wallet /main: failed")
         ;<  ~  bind:m  ensure-simple-wallet:h
-        ;<  ~  bind:m  ensure-public-poke:h
         |-
         ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
         ?+    name.p.sage
@@ -2362,20 +2364,6 @@
   ^-  (list tape)
   %+  turn  refs
   |=(ref=@t (trip ;;(@t (get-acct-network:aio labels ref))))
-::  +ensure-public-poke: register and expose main.sig for pokes via /public
-::
-++  ensure-public-poke
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  ::  only register once approved: a jailed app can neither self-address
-  ::  (peek /) nor reach the registry. grant.json present (here:sh non-~)
-  ::  == approved; the approval reload re-runs main.sig, so this fires then.
-  ;<  base=(unit @t)  bind:m  (here:sh rail)
-  ?~  base  (pure:m ~)
-  ::  main.sig sits at the nexus root, so its rail is [<root> main.sig].
-  =/  self=rail:tarball  [(stab u.base) name.rail]
-  ;<  ~  bind:m  reg-register:io
-  (reg-how:io /public [~ (sy ~[[%& %& self]]) ~])
 ::  +ensure-simple-wallet: create simple wallet if none labeled 'gwbtc:simple'
 ::
 ++  ensure-simple-wallet
