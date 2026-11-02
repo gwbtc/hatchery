@@ -7,7 +7,6 @@
   <link rel="icon" type="image/svg+xml" href="/grubbery/itinerary/icon.svg">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="/grubbery/itinerary/style.css">
-  <link rel="stylesheet" href="/grubbery/itinerary/chat.css">
 </head>
 <body>
   <div id="toolbar">
@@ -19,6 +18,7 @@
         </button>
         <div id="itin-menu-items"></div>
         <button id="menu-new" data-keep-open>+ New itinerary</button>
+        <button id="menu-delete" data-keep-open>Delete this trip</button>
       </drop-menu>
     </div>
     <div id="toolbar-right">
@@ -190,11 +190,15 @@
 
   <script type="module" src="/grubbery/itinerary/ui/components.js"></script>
   <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+  <!-- the shell's copy, the one the explorer and the clanker pane use;
+       the trip description and the chat transcript are both markdown -->
+  <script src="/grubbery/ball/apps/shell/ui/explorer/marked.min.js"></script>
   <script src="/grubbery/itinerary/app.js"></script>
-  <script src="/grubbery/itinerary/marked.min.js"></script>
-  <script src="/grubbery/itinerary/chat.js"></script>
   <script src="/grubbery/itinerary/ui/file-preview.js"></script>
   <script src="/grubbery/itinerary/ui/file-manager.js"></script>
   <script src="/grubbery/itinerary/files.js"></script>
+  <!-- the trip's assistant is its clanker; its own pane is the chat tab -->
+  <script src="/grubbery/clanker/viewer.js"></script>
+  <script src="/grubbery/itinerary/chat.js"></script>
 </body>
 </html>

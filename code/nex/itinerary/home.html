@@ -87,7 +87,18 @@ if (/^#[a-z0-9-]+\//.test(location.hash)) {
   location.replace('/grubbery/itinerary/app' + location.hash);
 }
 
-var API = '/grubbery/itinerary/api';
+var BALL = '/grubbery/api';
+var ROOT = null;
+
+// where this app lives, by the name it claims in /sys/link
+async function rootOf(name) {
+  var r = await fetch(BALL + '/peek/sys/link/' + name + '/dest.lanes');
+  if (!r.ok) return null;
+  var lanes = await r.json();
+  return (lanes && lanes[0]) || null;
+}
+function tripDir(id) { return ROOT + '/itineraries/' + encodeURIComponent(id); }
+function docPath(id) { return tripDir(id) + '/itinerary.json'; }
 
 function openTrip(id) {
   location.href = '/grubbery/itinerary/app#' + encodeURIComponent(id) + '/map';
@@ -102,29 +113,35 @@ var map = new maplibregl.Map({
 });
 map.on('style.load', function() { map.setProjection({ type: 'globe' }); });
 
+// one trip per directory, its card drawn from its own document
 async function load() {
-  var list;
+  var ids = [];
   try {
-    list = await fetch(API + '/list').then(function(r) { return r.json(); });
-  } catch(e) { list = []; }
+    ROOT = await rootOf('itinerary');
+    var kids = await fetch(BALL + '/peek' + ROOT + '/itineraries/')
+      .then(function(r) { return r.json(); });
+    ids = (kids.dirs || []).slice().sort();
+  } catch(e) { ids = []; }
   var box = document.getElementById('trips');
   box.textContent = '';
-  if (!list.length) {
+  if (!ids.length) {
     box.innerHTML = '<div class="empty">No trips yet — hit “+ New trip”.</div>';
     return;
   }
   var bounds = new maplibregl.LngLatBounds();
-  for (var i = 0; i < list.length; i++) {
-    var it = list[i];
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i];
     var doc;
     try {
-      doc = await fetch(API + '/i/' + it.id).then(function(r) { return r.json(); });
+      var r = await fetch(BALL + '/peek' + docPath(id));
+      if (!r.ok) continue;
+      doc = await r.json();
     } catch(e) { continue; }
-    renderCard(it.id, doc, box);
+    renderCard(id, doc, box);
     if (doc.center && doc.center.length === 2) {
       var ll = [doc.center[1], doc.center[0]];
       bounds.extend(ll);
-      addMarker(it.id, doc, ll);
+      addMarker(id, doc, ll);
     }
   }
   if (!bounds.isEmpty()) {
@@ -192,7 +209,10 @@ document.getElementById('new-trip').onclick = async function() {
   var id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   if (!id) return;
   var doc = { name: name, center: [0, 0], zoom: 2, pins: {}, zones: {}, schedule: {} };
-  var r = await fetch(API + '/i/' + id, {
+  // a trip is a directory with a document in it
+  if (!ROOT) ROOT = await rootOf('itinerary');
+  await fetch(BALL + '/make' + tripDir(id) + '/', { method: 'PUT' });
+  var r = await fetch(BALL + '/make' + docPath(id) + '?blot=/json', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(doc)

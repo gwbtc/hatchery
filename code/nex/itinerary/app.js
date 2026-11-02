@@ -1,4 +1,83 @@
-var API = '/grubbery/itinerary/api';
+// The page speaks the kernel's darts and nothing else. A trip's document is
+// one json grub in its own namespace — <root>/itineraries/<id>/itinerary.json
+// — read, written and followed through /grubbery/api. Other apps are reached
+// by poking their sigs: geocode for a lookup, clanker to drop a trip's
+// clanker, itinerary itself to open a trip. ROOT is where this app lives,
+// resolved by the name it claims in /sys/link.
+var BALL = '/grubbery/api';
+var ROOT = null;
+var rootReady = rootOf('itinerary').then(function(p) { ROOT = p; window.ITIN_ROOT = p; });
+// files.js mounts the shared file manager on absolute paths, so it waits
+// on the same lookup rather than asking the server a second time
+window.ITIN_ROOT_READY = rootReady;
+
+// where an app lives, by the name it claims in /sys/link
+async function rootOf(name) {
+  var r = await fetch(BALL + '/peek/sys/link/' + name + '/dest.lanes');
+  if (!r.ok) return null;
+  var lanes = await r.json();
+  return (lanes && lanes[0]) || null;
+}
+
+// poke a sig grub with a json body
+async function pokeSig(road, body) {
+  return fetch(BALL + '/poke' + road + '?blot=/json', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+// geocode speaks a calls protocol, not an HTTP API: poke it with a call
+// id, then read the call grub it writes until the call says done.
+async function geocode(params) {
+  var root = await rootOf('geocode');
+  if (!root) throw new Error('no geocode proxy');
+  var id = 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+  var call = Object.assign({ id: id, kind: '', query: '', lat: '', lon: '',
+                             polygon: '', featuretype: '', tag: '', radius: '' }, params);
+  await pokeSig(root + '/main.sig', call);
+  for (var i = 0; i < 40; i++) {
+    await new Promise(function(r) { setTimeout(r, 250); });
+    var res = await fetch(BALL + '/peek' + root + '/calls/' + id + '.json');
+    if (!res.ok) continue;
+    var doc = await res.json();
+    if (doc && doc.status === 'done') return doc.response || {};
+    if (doc && doc.status === 'failed') throw new Error(doc.error || 'geocode failed');
+  }
+  throw new Error('geocode timed out');
+}
+
+function tripDir(id) { return ROOT + '/itineraries/' + encodeURIComponent(id); }
+function docPath(id) { return tripDir(id) + '/itinerary.json'; }
+
+// deleting a trip deletes everything the trip is: its directory here, and
+// its clanker in the clanker collection. Whoever makes a clanker owns its
+// life — nothing hunts for clankers whose owner is gone.
+async function deleteTrip(id) {
+  await rootReady;
+  var r = await fetch(BALL + '/cull' + tripDir(id) + '/', { method: 'DELETE' });
+  if (!r.ok) throw new Error('could not delete the trip');
+  var clanker = await rootOf('clanker');
+  if (clanker) {
+    await fetch(BALL + '/poke' + clanker + '/main.sig?blot=/json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'remove', parent: '/itinerary', name: id })
+    });
+  }
+}
+
+// every write is the whole document, overwritten in place
+async function writeDoc(id, doc) {
+  await rootReady;
+  var r = await fetch(BALL + '/make' + docPath(id) + '?blot=/json&force=1', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(doc)
+  });
+  if (!r.ok) throw new Error('save failed');
+}
 var currentId = null;
 var itinerary = null;
 var itineraries = [];
@@ -113,8 +192,7 @@ async function whatsHere(lat, lng, zoneIds) {
   openPopupAt([lng, lat], loading);
   var data;
   try {
-    data = await fetch(API + '/geocode?kind=reverse&lat=' + lat.toFixed(6) +
-      '&lon=' + lng.toFixed(6)).then(function(r) { return r.json(); });
+    data = await geocode({ kind: 'reverse', lat: lat.toFixed(6), lon: lng.toFixed(6) });
   } catch(e) { data = null; }
   // user may have clicked elsewhere meanwhile
   if (!activePopup || !activePopup.isOpen()) return;
@@ -180,9 +258,22 @@ function popupDom(name, desc, from, action, onAction, notes) {
   return d;
 }
 
+// one trip per directory; its name comes from its document
 async function loadList() {
   try {
-    itineraries = await fetch(API + '/list').then(function(r) { return r.json(); });
+    await rootReady;
+    var kids = await fetch(BALL + '/peek' + ROOT + '/itineraries/')
+      .then(function(r) { return r.json(); });
+    var ids = (kids.dirs || []).slice().sort();
+    var docs = await Promise.all(ids.map(function(id) {
+      return fetch(BALL + '/peek' + docPath(id))
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .catch(function() { return null; });
+    }));
+    itineraries = [];
+    ids.forEach(function(id, i) {
+      if (docs[i]) itineraries.push({ id: id, name: docs[i].name || id });
+    });
   } catch(e) {
     itineraries = [];
   }
@@ -191,28 +282,21 @@ async function loadList() {
 
 async function loadItinerary(id) {
   try {
-    itinerary = await fetch(API + '/i/' + id).then(function(r) { return r.json(); });
+    await rootReady;
+    var r = await fetch(BALL + '/peek' + docPath(id));
+    if (!r.ok) throw new Error('no document');
+    itinerary = await r.json();
     currentId = id;
   } catch(e) {
     itinerary = null;
     currentId = null;
     return;
   }
-  if (!itinerary.pins) itinerary.pins = {};
-  if (!itinerary.zones) itinerary.zones = {};
-  if (!itinerary.categories) itinerary.categories = DEFAULT_CATEGORIES;
-
-  document.getElementById('map-name').textContent = itinerary.name || id;
-  syncHash();
-  window.dispatchEvent(new CustomEvent('itin-changed'));
-  renderMenu();
-  renderFilters();
-  renderMarkers();
-  renderZones();
-  renderTrip();
-  renderPanel();
-  renderEvents();
-  if (activeView === 'sched') renderSched();
+  applyDoc(itinerary);
+  // opening a trip is the moment it gets its clanker; the app composes
+  // that ensure itself, so this is a poke to it, not a request of it
+  pokeSig(ROOT + '/main.sig', { action: 'open', trip: id }).catch(function() {});
+  followDoc(id);
 
   // fit the view to everything on the map; fall back to the stored center
   var fit = new maplibregl.LngLatBounds();
@@ -232,6 +316,62 @@ async function loadItinerary(id) {
   }
 }
 
+// the document in hand, drawn. Called on open and on every change that
+// arrives from the namespace — the trip's agent writes the same document.
+function applyDoc(doc) {
+  itinerary = doc;
+  if (!itinerary.pins) itinerary.pins = {};
+  if (!itinerary.zones) itinerary.zones = {};
+  if (!itinerary.categories) itinerary.categories = DEFAULT_CATEGORIES;
+
+  document.getElementById('map-name').textContent = itinerary.name || currentId;
+  syncHash();
+  window.dispatchEvent(new CustomEvent('itin-changed'));
+  renderMenu();
+  renderFilters();
+  renderMarkers();
+  renderZones();
+  renderTrip();
+  renderPanel();
+  renderEvents();
+  if (activeView === 'sched') renderSched();
+}
+
+// follow the open trip's document: the kernel streams its current state and
+// every later change, so another writer's edit shows up without a reload.
+// Each event is named by what happened and which file it was.
+var docStream = null;
+
+function sortedKeys(v) {
+  if (Array.isArray(v)) return v.map(sortedKeys);
+  if (v && typeof v === 'object') {
+    var o = {};
+    Object.keys(v).sort().forEach(function(k) { o[k] = sortedKeys(v[k]); });
+    return o;
+  }
+  return v;
+}
+
+function sameDoc(a, b) {
+  return JSON.stringify(sortedKeys(a)) === JSON.stringify(sortedKeys(b));
+}
+
+function followDoc(id) {
+  if (docStream) { docStream.close(); docStream = null; }
+  var es = new EventSource(BALL + '/keep' + docPath(id));
+  docStream = es;
+  function adopt(ev) {
+    if (docStream !== es || !ev.data) return;
+    var doc;
+    try { doc = JSON.parse(ev.data); } catch(e) { return; }
+    if (sameDoc(doc, itinerary)) return;
+    applyDoc(doc);
+  }
+  ['old', 'new', 'upd'].forEach(function(what) {
+    es.addEventListener(what + ' /itinerary.json', adopt);
+  });
+}
+
 function renderEmpty() {
   document.getElementById('map-name').textContent = 'Itinerary';
   document.getElementById('panel-list').innerHTML =
@@ -249,6 +389,8 @@ function renderMenu() {
   box.querySelectorAll('button[data-id]').forEach(function(item) {
     item.onclick = function() { loadItinerary(item.getAttribute('data-id')); };
   });
+  var del = document.getElementById('menu-delete');
+  if (del) del.disabled = !currentId;
 }
 
 // -- Categories & Colors --
@@ -507,12 +649,7 @@ async function saveAbout() {
   var text = document.getElementById('about-text').value;
   var doc = Object.assign({}, itinerary, { desc: text });
   try {
-    var r = await fetch(API + '/i/' + currentId, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(doc)
-    });
-    if (!r.ok) throw new Error('Save failed');
+    await writeDoc(currentId, doc);
     itinerary = doc;
     renderTrip();
     document.getElementById('about-modal').close();
@@ -643,20 +780,15 @@ async function runSearch(q) {
   var box = document.getElementById('search-results');
   var c = map.getCenter();
   var tag = nearbyTag(q);
-  var url;
-  if (tag) {
-    url = API + '/geocode?kind=nearby&tag=' + encodeURIComponent(tag) +
-      '&lat=' + c.lat.toFixed(4) + '&lon=' + c.lng.toFixed(4) +
-      '&radius=' + viewportRadius();
-  } else {
-    url = API + '/geocode?kind=autocomplete&q=' + encodeURIComponent(q) +
-      '&lat=' + c.lat.toFixed(4) + '&lon=' + c.lng.toFixed(4);
-  }
+  var call = tag
+    ? { kind: 'nearby', tag: tag, lat: c.lat.toFixed(4), lon: c.lng.toFixed(4),
+        radius: String(viewportRadius()) }
+    : { kind: 'autocomplete', query: q, lat: c.lat.toFixed(4), lon: c.lng.toFixed(4) };
   box.innerHTML = '<div class="search-empty"><span class="search-spin"></span>Searching\u2026</div>';
   box.classList.remove('hidden');
   var data;
   try {
-    data = await fetch(url).then(function(r) { return r.json(); });
+    data = await geocode(call);
   } catch(e) {
     box.innerHTML = '<div class="search-empty">Search failed</div>';
     return;
@@ -1075,12 +1207,7 @@ function openSchedForm(id, date, start) {
 }
 
 async function putDoc() {
-  var r = await fetch(API + '/i/' + currentId, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(itinerary)
-  });
-  if (!r.ok) throw new Error('save failed');
+  return writeDoc(currentId, itinerary);
 }
 
 async function saveSched() {
@@ -1236,13 +1363,8 @@ async function saveZone() {
   var zoneId = editingZoneId || ('zone-' + Date.now().toString(36));
 
   try {
-    var r = await fetch(API + '/i/' + currentId + '/zone/' + zoneId, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(zone)
-    });
-    if (!r.ok) throw new Error('Save failed');
-    itinerary = await r.json();
+    itinerary.zones[zoneId] = zone;
+    await putDoc();
     cancelDraw();
     renderZones();
     renderTrip();
@@ -1256,9 +1378,8 @@ async function deleteZone() {
   if (!editingZoneId) return;
   if (!confirm('Delete this zone?')) return;
   try {
-    var r = await fetch(API + '/i/' + currentId + '/zone/' + editingZoneId, { method: 'DELETE' });
-    if (!r.ok) throw new Error('Delete failed');
-    itinerary = await r.json();
+    delete itinerary.zones[editingZoneId];
+    await putDoc();
     renderZones();
     renderTrip();
     closeZoneForm();
@@ -1360,13 +1481,8 @@ async function savePin() {
   var pinId = editingPinId || ('pin-' + Date.now().toString(36));
 
   try {
-    var r = await fetch(API + '/i/' + currentId + '/pin/' + pinId, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(pin)
-    });
-    if (!r.ok) throw new Error('Save failed');
-    itinerary = await r.json();
+    itinerary.pins[pinId] = pin;
+    await putDoc();
     renderMarkers();
     renderPanel();
         closePinForm();
@@ -1382,9 +1498,8 @@ async function deletePin() {
   if (!editingPinId) return;
   if (!confirm('Delete this pin?')) return;
   try {
-    var r = await fetch(API + '/i/' + currentId + '/pin/' + editingPinId, { method: 'DELETE' });
-    if (!r.ok) throw new Error('Delete failed');
-    itinerary = await r.json();
+    delete itinerary.pins[editingPinId];
+    await putDoc();
     renderMarkers();
     renderPanel();
         closePinForm();
@@ -1407,10 +1522,15 @@ function openNewItinerary() {
     categories: DEFAULT_CATEGORIES,
     pins: {}
   };
-  fetch(API + '/i/' + id, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(doc)
+  // a trip is a directory with a document in it
+  rootReady.then(function() {
+    return fetch(BALL + '/make' + tripDir(id) + '/', { method: 'PUT' });
+  }).then(function() {
+    return fetch(BALL + '/make' + docPath(id) + '?blot=/json', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(doc)
+    });
   }).then(function(r) {
     if (!r.ok) throw new Error();
     return loadList();
@@ -1483,6 +1603,19 @@ function bindEvents() {
   document.getElementById('menu-new').onclick = function() {
     document.getElementById('itin-menu').close();
     openNewItinerary();
+  };
+  document.getElementById('menu-delete').onclick = async function() {
+    if (!currentId) return;
+    var name = (itinerary && itinerary.name) || currentId;
+    if (!confirm('Delete ' + name + ' and its clanker?')) return;
+    document.getElementById('itin-menu').close();
+    try {
+      await deleteTrip(currentId);
+    } catch (e) {
+      alert(e.message || 'delete failed');
+      return;
+    }
+    location.replace('/grubbery/itinerary');
   };
   document.getElementById('form-save').onclick = savePin;
   document.getElementById('form-delete').onclick = deletePin;

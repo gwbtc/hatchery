@@ -406,11 +406,20 @@
   |=  jon=json
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  ?.  =('ensure' (jstr:clanker jon 'action'))  (pure:m ~)
+  =/  action=@t  (jstr:clanker jon 'action')
+  ?.  ?=(?(%'ensure' %'remove') action)  (pure:m ~)
   =/  name=@t  (jstr:clanker jon 'name')
   ?:  =('' name)  (pure:m ~)
   =/  parent=path
     (fall (rush =/(p=@t (jstr:clanker jon 'parent') ?:(=('' p) '/' p)) stap) /)
+  ::  {action:'remove', parent, name} — the host's thing is gone, so its
+  ::  clanker goes with it. A host that makes a clanker owns its life;
+  ::  nothing here hunts for clankers whose owner vanished.
+  ?:  =('remove' action)
+    =/  dir=path  (welp /projects (snoc parent (crip "{(trip name)}.clanker")))
+    ;<  dv=view:nexus  bind:m  (peek:io [%| 0 %| dir] ~)
+    ?.  ?=([%ball *] dv)  (pure:m ~)
+    (cull:io [%| 0 %| dir])
   =/  bundle=@t  =/(b=@t (jstr:clanker jon 'bundle') ?:(=('' b) 'default' b))
   =/  system=@t  (jstr:clanker jon 'system')
   =/  extra=(list [@t json])

@@ -11,9 +11,8 @@
   // server where it is (resolved by name through /sys/link) and builds
   // the trip's files/ URL from that.
   var ITINS = null;
-  var rootReady = fetch('/grubbery/itinerary/api/root')
-    .then(function (r) { return r.json(); })
-    .then(function (j) { ITINS = '/grubbery/ball' + j.root + '/itineraries'; })
+  var rootReady = (window.ITIN_ROOT_READY || Promise.reject())
+    .then(function () { ITINS = '/grubbery/ball' + window.ITIN_ROOT + '/itineraries'; })
     .catch(function () { ITINS = null; });
   var mount = document.getElementById('files-mount');
   var fm = FileManager.mount(mount, { persist: 'itin-files-view', rootLabel: 'files', lazy: true });

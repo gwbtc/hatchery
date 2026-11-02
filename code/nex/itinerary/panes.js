@@ -16,7 +16,11 @@
 // {doc, pin}: a places row asks, the map pane showing that doc answers.
 (function () {
   'use strict';
-  var API = '/grubbery/itinerary/api';
+  var BALL = '/grubbery/api';
+  // a pane is handed the explorer's url for what it shows
+  // (/grubbery/ball/<abs path>). Every read and write here is that same
+  // path through the kernel's api — the app serves no document endpoints.
+  function apiUrl(url, verb) { return String(url || '').replace(/\?.*$/, '').replace('/grubbery/ball', BALL + '/' + verb); }
   var CSS_ID = 'itin-panes-css';
   var DEFAULT_CATEGORIES = {
     food: { color: '#e67e22', label: 'Food' }, bar: { color: '#3498db', label: 'Bars' },
@@ -91,7 +95,12 @@
   function cats(doc) { return (doc && doc.categories) || DEFAULT_CATEGORIES; }
   function catColor(doc, c) { var k = cats(doc); return k[c] ? k[c].color : '#888'; }
   function catLabel(doc, c) { var k = cats(doc); return k[c] ? k[c].label : c; }
-  function putDoc(id, doc) { return fetch(API + '/i/' + encodeURIComponent(id), { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(doc) }); }
+  // the whole document, overwritten in place
+  function putDoc(url, doc) {
+    return fetch(apiUrl(url, 'make') + '?blot=/json&force=1', {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(doc)
+    });
+  }
   // a pane over the doc: fetch once, redraw on the stream's bodies
   function docPane(root, opts, draw) {
     css();
@@ -131,8 +140,8 @@
     css();
     var box = el('div', 'it'), head = el('div', 'it-head'), list = el('div', 'body'); box.append(head, list); root.appendChild(box);
     var dead = false;
-    // a new trip: its name typed here; the id is the name slugged. The api
-    // makes the dir, the doc and the agent; the stream redraws the list
+    // a new trip: its name typed here; the id is the name slugged. A trip
+    // is a directory with a document in it; the stream redraws the list
     var name = el('input'); name.placeholder = 'new trip\u2026'; name.spellcheck = false; head.appendChild(name);
     name.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter') return;
@@ -140,7 +149,14 @@
       var id = n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
       if (!id) return;
       name.disabled = true;
-      putDoc(id, { name: n, desc: '', dates: {}, categories: DEFAULT_CATEGORIES, pins: {}, zones: {}, schedule: {}, todos: {} })
+      var dir = String(opts.url || '').replace(/\?.*$/, '').replace(/\/$/, '') + '/' + encodeURIComponent(id);
+      fetch(apiUrl(dir, 'make') + '/', { method: 'PUT' })
+        .then(function () {
+          return fetch(apiUrl(dir + '/itinerary.json', 'make') + '?blot=/json', {
+            method: 'PUT', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: n, desc: '', dates: {}, categories: DEFAULT_CATEGORIES, pins: {}, zones: {}, schedule: {}, todos: {} })
+          });
+        })
         .then(function (r) { if (!r.ok) throw new Error(r.status + ''); name.value = ''; })
         .catch(function (e) { list.insertBefore(el('div', 'it-err', 'could not make it: ' + e.message), list.firstChild); })
         .then(function () { name.disabled = false; });
@@ -159,7 +175,21 @@
       if (nk) nk.mark();
     }
     var nk = window.navKeys ? window.navKeys(list, { rows: function () { return Array.prototype.slice.call(list.querySelectorAll('.it-row')); }, open: function (row, m) { if (row._open) row._open(m && m.beside); } }) : null;
-    function load() { get(API + '/list').then(function (t) { if (!dead) draw(Array.isArray(t) ? t : []); }).catch(function (e) { if (!dead) list.appendChild(el('div', 'it-err', 'could not list trips: ' + e.message)); }); }
+    function load() {
+      var dir = String(opts.url || '').replace(/\?.*$/, '').replace(/\/$/, '');
+      get(apiUrl(dir, 'peek') + '/').then(function (k) {
+        var ids = ((k && k.dirs) || []).slice().sort();
+        return Promise.all(ids.map(function (id) {
+          return get(apiUrl(dir + '/' + encodeURIComponent(id) + '/itinerary.json', 'peek'))
+            .then(function (d) { return { id: id, name: (d && d.name) || id }; })
+            .catch(function () { return null; });
+        }));
+      }).then(function (t) {
+        if (!dead) draw(t.filter(Boolean));
+      }).catch(function (e) {
+        if (!dead) list.appendChild(el('div', 'it-err', 'could not list trips: ' + e.message));
+      });
+    }
     load();
     return {
       destroy: function () { dead = true; if (nk) nk.destroy(); box.remove(); },
@@ -171,11 +201,26 @@
         var row = e.target.closest && e.target.closest('.it-row'); if (!row || !row._trip) return null;
         var t = row._trip;
         return [{ label: 'delete trip \u201c' + (t.name || t.id) + '\u201d', danger: true, run: function () {
-          takeover(list, 'Delete ' + (t.name || t.id) + '?', 'Its document, attachments and agent go with it. Open tabs showing it stay, marked deleted, until you close them.', 'delete',
-            function () { return fetch(API + '/i/' + encodeURIComponent(t.id), { method: 'DELETE' }).then(function (r) { if (!r.ok) throw new Error(r.status + ''); }); }, load);
+          takeover(list, 'Delete ' + (t.name || t.id) + '?', 'Its document, its attachments and its clanker go with it. Open tabs showing it stay, marked deleted, until you close them.', 'delete',
+            function () { return dropTrip(opts.url, t.id); }, load);
         } }];
       }
     };
+  }
+  // deleting a trip deletes everything the trip is: its directory, and its
+  // clanker in the clanker collection. Whoever makes a clanker owns its
+  // life — nothing hunts for clankers whose owner is gone.
+  async function dropTrip(dirUrl, id) {
+    var dir = String(dirUrl || '').replace(/\?.*$/, '').replace(/\/$/, '') + '/' + encodeURIComponent(id);
+    var r = await fetch(apiUrl(dir, 'cull') + '/', { method: 'DELETE' });
+    if (!r.ok) throw new Error(r.status + '');
+    var lanes = await get(BALL + '/peek/sys/link/clanker/dest.lanes').catch(function () { return null; });
+    var root = lanes && lanes[0];
+    if (!root) return;
+    await fetch(BALL + '/poke' + root + '/main.sig?blot=/json', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'remove', parent: '/itinerary', name: id })
+    });
   }
   // a confirmation that takes over a navigator's list: what is about to
   // happen, cancel / the verb. Enter is the verb, Escape cancels (only while
