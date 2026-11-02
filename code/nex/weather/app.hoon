@@ -259,6 +259,7 @@
   ^-  json
   %-  pairs:enjs:format
   :~  title+s+'Weather'
+      kind+s+'app'
       info+s+'add a location'
       color+s+'#4a90d9'
       image+s+'/grubbery/tiles/icon/weather.weather'

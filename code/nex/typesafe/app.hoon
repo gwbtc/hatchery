@@ -28,6 +28,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'TypeSafe'
+            kind+s+'utility'
             info+s+'Jev: typed decisions, not text'
             color+s+'#d45bb6'
             image+s+'/grubbery/tiles/icon/typesafe'

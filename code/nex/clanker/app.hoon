@@ -86,6 +86,7 @@
   =/  tile=json
     %-  pairs:enjs:format
     :~  title+s+'Clanker'
+        kind+s+'app'
         info+s+'Chat workspace, built from inside'
         color+s+'#3d3a45'
         image+s+'/grubbery/tiles/icon/clanker.clanker'

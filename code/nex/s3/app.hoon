@@ -53,6 +53,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'S3'
+            kind+s+'utility'
             info+s+'Buckets, mirrored into the namespace'
             color+s+'#e07a2f'
             image+s+'/grubbery/tiles/icon/s3'

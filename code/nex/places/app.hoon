@@ -32,6 +32,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Places'
+            kind+s+'app'
             info+s+'Imported POI datasets'
             color+s+'#8e6bbf'
             image+s+'/grubbery/places/icon.svg'

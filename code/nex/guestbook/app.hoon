@@ -10,6 +10,7 @@
   =/  tile=json
     %-  pairs:enjs:format
     :~  title+s+'Guestbook'
+        kind+s+'experiment'
         info+s+'Sign the guestbook'
         color+s+'#6b8aad'
         image+s+'/grubbery/tiles/icon/test.guestbook'

@@ -27,6 +27,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Anthropic'
+            kind+s+'utility'
             info+s+'The ship\'s Anthropic API proxy'
             color+s+'#cc785c'
             image+s+'/grubbery/tiles/icon/anthropic.anthropic'

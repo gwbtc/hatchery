@@ -26,6 +26,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Calendar'
+            kind+s+'app'
             info+s+'Events and schedules'
             color+s+'#1e3a5f'
             image+s+'/grubbery/tiles/icon/calendar'

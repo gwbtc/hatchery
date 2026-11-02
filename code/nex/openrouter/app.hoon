@@ -25,6 +25,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'OpenRouter'
+            kind+s+'utility'
             info+s+'Every model, one key'
             color+s+'#6366f1'
             image+s+'/grubbery/tiles/icon/openrouter.openrouter'

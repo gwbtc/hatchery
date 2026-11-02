@@ -23,6 +23,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Pad'
+            kind+s+'experiment'
             info+s+'Cross-ship live text pads'
             color+s+'#5b7f71'
             image+s+'/grubbery/tiles/icon/pad.pad'

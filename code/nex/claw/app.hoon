@@ -30,6 +30,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Claw'
+            kind+s+'experiment'
             info+s+'Agents & assistants'
             color+s+'#8a4a4a'
             image+s+'/grubbery/tiles/icon/claw'

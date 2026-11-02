@@ -54,6 +54,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Wallet'
+            kind+s+'app'
             info+s+'Bitcoin SPV wallet'
             color+s+'#f7931a'
             href+s+'/groundwire/wallet'

@@ -47,6 +47,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Itinerary'
+            kind+s+'app'
             info+s+'Travel maps & pins'
             color+s+'#27ae60'
             ::  full folder name, not the slug

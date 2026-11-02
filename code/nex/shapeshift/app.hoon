@@ -44,6 +44,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Shapeshift'
+            kind+s+'experiment'
             info+s+'An input that becomes what you mean'
             color+s+'#1f2328'
             image+s+'/grubbery/tiles/icon/shapeshift'

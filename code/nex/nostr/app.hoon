@@ -119,6 +119,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Nostr'
+            kind+s+'app'
             info+s+'A nostr client: feed, people, relays, accounts'
             color+s+'#f1ecfb'
             image+s+'/grubbery/tiles/icon/nostr'

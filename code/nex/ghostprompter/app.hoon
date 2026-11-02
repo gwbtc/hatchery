@@ -59,6 +59,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Ghostprompter'
+            kind+s+'experiment'
             info+s+'Drafts from your library, cued by the flow'
             color+s+'#3d3a52'
             image+s+'/grubbery/ghostprompter/icon.svg'

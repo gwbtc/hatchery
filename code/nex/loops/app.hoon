@@ -23,6 +23,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Loops'
+            kind+s+'experiment'
             info+s+'Open commitments'
             color+s+'#5b4bb5'
             image+s+'/grubbery/tiles/icon/loops.loops'

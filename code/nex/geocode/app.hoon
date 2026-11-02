@@ -48,6 +48,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Geocode'
+            kind+s+'utility'
             info+s+'OSM geocoding proxy, cached'
             color+s+'#16a085'
             image+s+'/grubbery/geocode/icon.svg'

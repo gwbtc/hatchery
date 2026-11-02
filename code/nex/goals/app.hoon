@@ -183,6 +183,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Goals'
+            kind+s+'experiment'
             info+s+'Structured intent'
             color+s+'#1f8a7d'
             image+s+'/grubbery/tiles/icon/goals.goals'

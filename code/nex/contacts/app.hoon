@@ -24,6 +24,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Contacts'
+            kind+s+'app'
             info+s+'Identity & contact management'
             color+s+'#4a90d9'
             href+s+'/grubbery/contacts'
