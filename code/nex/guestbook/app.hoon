@@ -27,10 +27,26 @@
             (line '/sys/eyre/' 'serve the guestbook page and handle sign posts')
         ==
     ==
+  =/  groups-json=json
+    %-  pairs:enjs:format
+    :~  :-  '/guestbook/'
+        %-  pairs:enjs:format
+        :~  :-  'readers'
+            %-  pairs:enjs:format
+            :~  ['members' a+~]
+                ['peek' a+~[s+'/']]
+            ==
+        ==
+    ==
   %+  spin:loader  ball
   :~  (manifest:loader 0)
       [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'guestbook'] ['description' s+'Public signed guestbook']])]]
       [%over %& [/ %'weir.json'] [[/ %json] wj]]
+      ::  the usergroups it asks for: a prefix of its own to run reader
+      ::  groups under, each with its own roster and the page road.
+      ::  %fall, not %over: the rosters are the app's to change at
+      ::  runtime, so the source seeds the file and the app owns it.
+      [%fall %& [/ %'groups.json'] [[/ %json] groups-json]]
       [%over %& [/ %'tile.json'] [[/ %json] tile]]
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
       [%over %& [/ %'index.html'] [[/ %mime] index-html]]
