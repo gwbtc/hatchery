@@ -26,7 +26,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Routes'
-            kind+s+'app'
+            kind+s+'experiment'
             info+s+'Draw running and cycling routes'
             color+s+'#3d6b52'
             image+s+'/grubbery/tiles/icon/routes.routes'

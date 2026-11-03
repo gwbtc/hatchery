@@ -26,7 +26,7 @@
       =/  tile=json
         %-  pairs:enjs:format
         :~  title+s+'Feeds'
-            kind+s+'app'
+            kind+s+'experiment'
             info+s+'RSS reader'
             color+s+'#b8763e'
             image+s+'/grubbery/tiles/icon/feeds.feeds'
