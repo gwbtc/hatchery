@@ -19,6 +19,16 @@
 /&  panes-js     ./panes.js
 /&  coll-layout  ./collection-layout.json
 /&  trip-layout  ./trip-layout.json
+::  what this app declares about itself: its tile, its name, the roads it
+::  asks for, and how the explorer opens it. Data, kept as files.
+/&  tile  ./tile.json
+/&  link  ./link.json
+/&  weir  ./weir.json
+/&  view  ./view.json
+::  the trip clanker's standing prompt ({{id}}, {{at}} filled per trip)
+::  and the plan chat's
+/&  trip-prompt  ./system-prompt/trip.md
+/&  plan-prompt  ./system-prompt/plan.md
 ::  shared web components from /lib/ui (see web-test.hoon for the pattern)
 /&  sv-js       /lib/ui/split-view.js
 /&  tg-js       /lib/ui/tab-group.js
@@ -44,26 +54,17 @@
         :-  /application/javascript
         %-  as-octs:mimes:html
         (rap 3 ~[(wrap sv-js) (wrap tg-js) (wrap dm-js) (wrap md-js) (wrap ft-js) (wrap fg-js)])
-      =/  tile=json
-        %-  pairs:enjs:format
-        :~  title+s+'Itinerary'
-            kind+s+'app'
-            info+s+'Travel maps & pins'
-            color+s+'#27ae60'
-            ::  full folder name, not the slug
-            ::  also slugs to 'itinerary', wins the scan, and 404s
-            image+s+'/grubbery/tiles/icon/itinerary.itinerary'
-            href+s+'/grubbery/itinerary'
-        ==
       %+  spin:loader  ball
       :~  (manifest:loader 0)
-          [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'itinerary'] ['description' s+'Travel maps with pins']])]]
-          [%over %& [/ %'weir.json'] [[/ %json] (pairs:enjs:format ~[['poke' a+~[(pairs:enjs:format ~[['road' s+'/sys/bowl.sig'] ['why' s+'time, identity, entropy — every fiber op']]) (pairs:enjs:format ~[['road' s+'/sys/eyre/'] ['why' s+'serve its page and the explorer layouts over HTTP']]) (pairs:enjs:format ~[['road' s+'@clanker/main.sig'] ['why' s+'make each trip its clanker in the clanker collection (the trip workspace chat)']])]] ['peek' a+~[(pairs:enjs:format ~[['road' s+'/sys/link/'] ['why' s+'find this app, the clanker collection and the geocode proxy by name (a trip clanker is granted geocode)']])]]])]]
-          [%over %& [/ %'tile.json'] [[/ %json] tile]]
+          [%over %& [/ %'link.json'] [[/ %json] (as-json:loader link)]]
+          [%over %& [/ %'weir.json'] [[/ %json] (as-json:loader weir)]]
+          ::  tile.json's image is the full folder name, not the slug: the
+          ::  slug also resolves to 'itinerary', wins the scan, and 404s
+          [%over %& [/ %'tile.json'] [[/ %json] (as-json:loader tile)]]
           ::  the explorer reads view.json: where to ask which pane a path
           ::  under this root opens in (+pick-viewer), and the chrome of an
           ::  explorer rooted here
-          [%over %& [/ %'view.json'] [[/ %json] (pairs:enjs:format ~[['viewers' s+'/grubbery/itinerary/api/viewer'] ['title' s+'itinerary'] ['icon' s+'/grubbery/itinerary/icon.svg']])]]
+          [%over %& [/ %'view.json'] [[/ %json] (as-json:loader view)]]
           [%over %& [/ %'panes.js'] [[/ %mime] panes-js]]
           [%over %& [/ %'collection-layout.json'] [[/ %mime] coll-layout]]
           [%over %& [/ %'trip-layout.json'] [[/ %mime] trip-layout]]
@@ -388,7 +389,7 @@
         :-  %a
         :~  %-  pairs:enjs:format
             :~  ['name' s+'plan']
-                ['system' s+'You are planning this trip with its owner. Keep the itinerary document current as plans firm up: add pins, schedule entries and todos as they are decided, and say what you changed.']
+                ['system' s+q.q.plan-prompt]
                 ['policy' (pairs:enjs:format ~[['default' s+'allow']])]
             ==
         ==
@@ -401,45 +402,25 @@
   ;<  res=(unit tang)  bind:m  (poke-soft:io sig [/ %json] ensure)
   ?^  res  (pure:m ~)
   (pure:m `~)
-::  +trip-clanker-prompt: the trip clanker's standing prompt: what the
-::  trip dir holds and how the document is shaped.
+::  +trip-clanker-prompt: system-prompt/trip.md with the trip's id and
+::  address filled in
 ++  trip-clanker-prompt
   |=  [id=@ta at=@t]
   ^-  @t
-  %-  crip
-  """
-  You are the assistant for the trip "{(trip id)}". The trip lives at
-  {(trip at)} in the grubbery namespace. Your tools work on it directly:
-  read_itinerary (the whole document), write_entry / delete_entry (a pin
-  or zone), write_field / delete_field (any field by slash path: desc,
-  dates, schedule/<id>, todos/<id>, pins/<id>/notes ...), geocode (names
-  to coordinates and back, never guess coordinates), and list_files /
-  read_file / write_file / delete_file over the attachments.
-
-  itinerary.json is the trip document, one JSON object:
-    name, desc (markdown), dates \{start, end} (ISO days), tz, center
-    [lat, lng], zoom, categories \{key: \{label, color}},
-    pins \{id: \{name, desc, cat, lat, lng, notes, from: [who]}},
-    zones \{id: \{name, desc, cat, points: [[lat, lng], ...]}},
-    schedule \{id: \{title, date, start, end, status: fixed|tentative, pin, notes}},
-    todos \{id: \{text, done}}.
-  Colour and grouping come from the linked pin's category. Mark anything
-  you guessed as tentative, and note sources in notes as "- source: X".
-  files/ holds the trip's attachments (tickets, schedules, photos): read
-  them when the owner points you at one.
-
-  Say what you changed.
-  """
-::  +fill-trip: a layout template with every {{trip}} filled with the id
+  (fill (fill q.q.trip-prompt "\{\{id}}" (trip id)) "\{\{at}}" (trip at))
+::  +fill-trip: a layout template with every {trip} filled with the id
 ++  fill-trip
   |=  [tpl=@t id=@ta]
   ^-  @t
-  =/  mark=tape  "\{trip}"
-  =/  s=tape  (trip id)
+  (fill tpl "\{trip}" (trip id))
+::  +fill: every `mark` in a template replaced with `val`
+++  fill
+  |=  [tpl=@t mark=tape val=tape]
+  ^-  @t
   =/  t=tape  (trip tpl)
   |-  ^-  @t
   =/  i=(unit @ud)  (find mark t)
   ?~  i  (crip t)
-  $(t :(weld (scag u.i t) s (slag (add u.i (lent mark)) t)))
+  $(t :(weld (scag u.i t) val (slag (add u.i (lent mark)) t)))
 
 --

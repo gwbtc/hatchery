@@ -1,0 +1,8 @@
+{
+  "title": "Itinerary",
+  "kind": "app",
+  "info": "Travel maps & pins",
+  "color": "#27ae60",
+  "image": "/grubbery/tiles/icon/itinerary.itinerary",
+  "href": "/grubbery/itinerary"
+}

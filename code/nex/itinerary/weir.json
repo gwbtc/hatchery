@@ -1,0 +1,10 @@
+{
+  "poke": [
+    {"road": "/sys/bowl.sig", "why": "time, identity, entropy — every fiber op"},
+    {"road": "/sys/eyre/", "why": "serve its page and the explorer layouts over HTTP"},
+    {"road": "@clanker/main.sig", "why": "make each trip its clanker in the clanker collection (the trip workspace chat)"}
+  ],
+  "peek": [
+    {"road": "/sys/link/", "why": "find this app, the clanker collection and the geocode proxy by name (a trip clanker is granted geocode)"}
+  ]
+}
