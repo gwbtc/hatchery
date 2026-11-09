@@ -18,6 +18,5 @@
  "anthropic.anthropic": "/anthropic/app",
  "openrouter.openrouter": "/openrouter/app",
  "contacts.contacts": "/contacts/app",
- "wallet.wallet_app": "/wallet/app",
  "clanker.clanker": "/clanker/app"
 }
