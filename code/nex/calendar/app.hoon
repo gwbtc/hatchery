@@ -291,7 +291,7 @@
           (get-state-as:io ,[src=@p inbound-request:eyre])
         ;<  our=@p  bind:m  get-our:io
         ?.  =(src our)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
           (pure:m ~)
         =/  [site=path args=quay:eyre]  (parse-url:http-utils url.request.req)
         =/  suffix=path  (slag (lent `path`/grubbery/calendar) site)
@@ -299,7 +299,7 @@
           =/  from=(unit @da)  (ms-arg args 'from')
           =/  to=(unit @da)    (ms-arg args 'to')
           ?:  |(?=(~ from) ?=(~ to))
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'need from/to (unix ms)')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'need from/to (unix ms)')])
             (pure:m ~)
           ;<  cache-view=view:nexus  bind:m
             (peek:io (cord-to-road:tarball '../order.calendar-cache') ~)
@@ -393,7 +393,7 @@
             fresh-calendar:cal
           =/  ev=(unit event:cal)  (~(get by events.c) id)
           ?~  ev
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'No such event')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'No such event')])
             (pure:m ~)
           (send-json eyre-id (event-json:cal id u.ev))
         ?:  ?=([%'events.json' ~] suffix)
@@ -457,15 +457,14 @@
         ;<  file-view=view:nexus  bind:m
           (peek:io (nex-road:io rail [%& / filename]) `[/ %mime])
         ?.  ?=([%file *] file-view)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
           (pure:m ~)
         =/  =mime  !<(mime (need-vase:tarball sang.file-view))
-        ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils mime))
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
         (pure:m ~)
       ==
     --
 |%
-++  srv  ~(. http-res:io [%| 1 %& ~ %'main.sig'])
 ::
 ++  get-meta
   |=  e=event:cal
@@ -523,7 +522,7 @@
   ^-  form:m
   =/  bod=octs  (as-octs:mimes:html (en:json:html json))
   ;<  ~  bind:m
-    (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+    (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
   (pure:m ~)
 ::  +send-reminders: one push per due timed occurrence. The tag is
 ::  eid+idx so a re-send replaces rather than stacks.

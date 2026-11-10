@@ -69,7 +69,6 @@
       ==
     --
 |%
-++  srv  ~(. http-res:io [%| 1 %& ~ %'main.sig'])
 ++  serve
   |=  [=rail:tarball eyre-id=@ta]
   =/  m  (fiber:fiber:nexus ,~)
@@ -137,16 +136,16 @@
   ;<  v=view:nexus  bind:m  (peek:io [%| 1 %& ~ filename] `[/ %mime])
   ?.  ?=([%file *] v)  (reply eyre-id 404 'Not found')
   =/  =mime  !<(mime (need-vase:tarball sang.v))
-  (send-simple:srv eyre-id (mime-response:http-utils mime))
+  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
 ::
 ++  reply
   |=  [eyre-id=@ta code=@ud msg=@t]
-  (send-simple:srv eyre-id [[code ~] `(as-octs:mimes:html msg)])
+  (send-simple:http-res:io eyre-id [[code ~] `(as-octs:mimes:html msg)])
 ::
 ++  send-json
   |=  [eyre-id=@ta jon=json]
   =/  bod=octs  (as-octs:mimes:html (en:json:html jon))
-  (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+  (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
 ::
 ++  strip-ext
   |=  name=@ta

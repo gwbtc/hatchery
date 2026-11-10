@@ -243,10 +243,9 @@
   ;<  ucfg=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'config.json'] ,json)
   =/  cfg=json  (fall ucfg *json)
   (pure:m ?.(?=([%o *] cfg) '' (jget cfg 'api-key')))
-++  web  ~(. web:nw [%| 1 %& ~ %'web.sig'])
-++  reply         reply:web
-++  send-json     send-json:web
-++  serve-static  serve-static:web
+++  reply         reply:web:nw
+++  send-json     send-json:web:nw
+++  serve-static  serve-static:web:nw
 ++  jget          jget:nw
 ++  jnum          jnum:nw
 ++  post-json     post-json:nw

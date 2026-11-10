@@ -61,12 +61,11 @@
           [[%ui %requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%loops request: failed")
         =/  eyre-id=@ta  name.rail
-        =/  s  (srv rail)
         ;<  [src=@p req=inbound-request:eyre]  bind:m
           (get-state-as:io ,[src=@p inbound-request:eyre])
         ;<  our=@p  bind:m  get-our:io
         ?.  =(src our)
-          ;<  ~  bind:m  (send-simple:s eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
           (pure:m ~)
         =/  [site=path args=quay:eyre]  (parse-url:http-utils url.request.req)
         =/  suffix=path
@@ -78,10 +77,10 @@
         ;<  file-view=view:nexus  bind:m
           (peek:io (nex-road:io rail [%& ~[%ui] filename]) `[/ %mime])
         ?.  ?=([%file *] file-view)
-          ;<  ~  bind:m  (send-simple:s eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
           (pure:m ~)
         =/  =mime  !<(mime (need-vase:tarball sang.file-view))
-        ;<  ~  bind:m  (send-simple:s eyre-id (mime-response:http-utils mime))
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
         (pure:m ~)
           ::
           [~ %'main.sig']
@@ -102,9 +101,6 @@
       ==
     --
 |%
-++  srv
-  |=  =rail:tarball
-  ~(. http-res:io (nex-road:io rail [%& ~[%ui] %'http.sig']))
 ::
 ++  gs
   |=  [jon=json k=@t]

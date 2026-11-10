@@ -107,13 +107,12 @@
           ::
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%weather /requests: failed")
-        =/  srv  ~(. http-res:io (nex-road:io rail [%& ~ %'main.sig']))
         =/  eyre-id=@ta  name.rail
         ;<  [src=@p req=inbound-request:eyre]  bind:m
           (get-state-as:io ,[src=@p inbound-request:eyre])
         ;<  our=@p  bind:m  get-our:io
         ?.  =(src our)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
           (pure:m ~)
         =/  site=path  site:(parse-url:http-utils url.request.req)
         =/  suffix=path
@@ -125,12 +124,12 @@
               (de:json:html ?~(body.request.req '' q.u.body.request.req))
             *json
           ?+    suffix
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
             (pure:m ~)
               [%add ~]
             =/  name=@t  (jstr jon 'name')
             ?:  =('' name)
-              ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'name required')])
+              ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'name required')])
               (pure:m ~)
             ::  a picked candidate arrives with its coordinates; a
             ::  bare name geocodes to the first hit as before
@@ -142,24 +141,24 @@
               %-  some
               (pairs:enjs:format ~[['name' s+name] ['lat' s+lat] ['lon' s+lon]])
             ?~  loc
-              ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'place not found')])
+              ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'place not found')])
               (pure:m ~)
             ;<  [units=@t locs=(list json)]  bind:m  (read-config rail)
             ;<  ~  bind:m  (write-config rail units (snoc locs u.loc))
             ;<  ~  bind:m  (poke-supervisor rail)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'added')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'added')])
             (pure:m ~)
               ::  search: geocode candidates for the add picker —
               ::  many cities share a name (see: Portland)
               [%search ~]
             =/  q=@t  (jstr jon 'q')
             ?:  =('' q)
-              ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'q required')])
+              ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'q required')])
               (pure:m ~)
             ;<  hits=(list json)  bind:m  (geocode-search q)
             =/  bod=octs  (as-octs:mimes:html (en:json:html a+hits))
             ;<  ~  bind:m
-              (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+              (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
             (pure:m ~)
               [%del ~]
             =/  name=@t  (jstr jon 'name')
@@ -167,7 +166,7 @@
             ;<  ~  bind:m
               (write-config rail units (skip locs |=(l=json =(name (jstr l 'name')))))
             ;<  ~  bind:m  (poke-supervisor rail)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'deleted')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'deleted')])
             (pure:m ~)
               ::  reorder: named locations take the given order, any
               ::  not mentioned keep their old order at the end
@@ -190,19 +189,19 @@
               |=(l=json (lien names |=(n=@t =(n (jstr l 'name')))))
             ;<  ~  bind:m  (write-config rail units (weld ordered rest))
             ;<  ~  bind:m  (poke-supervisor rail)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
             (pure:m ~)
               ::  display preference only — no refetch, but the
               ::  supervisor re-renders the tile in the new units
               [%units ~]
             =/  units=@t  (jstr jon 'units')
             ?.  |(=('c' units) =('f' units))
-              ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'units must be c or f')])
+              ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'units must be c or f')])
               (pure:m ~)
             ;<  [old=@t locs=(list json)]  bind:m  (read-config rail)
             ;<  ~  bind:m  (write-config rail units locs)
             ;<  ~  bind:m  (poke-supervisor rail)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
             (pure:m ~)
               ::  wake every city fiber to refetch now
               [%refresh ~]
@@ -216,7 +215,7 @@
                 (poke:io (nex-road:io rail [%& /forecasts (city-file n)]) [[/ %sig] ~])
               $(todo t.todo)
             ;<  ~  bind:m  (poke-supervisor rail)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
             (pure:m ~)
           ==
         ?:  ?=([%data ~] suffix)
@@ -240,17 +239,17 @@
             ==
           =/  bod=octs  (as-octs:mimes:html (en:json:html out))
           ;<  ~  bind:m
-            (send-simple:srv eyre-id [[200 ~[['content-type' 'application/json']]] `bod])
+            (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'application/json']]] `bod])
           (pure:m ~)
         ::  static files from the nexus root
         =/  filename=@ta  ?~(suffix 'index.html' i.suffix)
         ;<  fv=view:nexus  bind:m
           (peek:io (nex-road:io rail [%& ~ filename]) `[/ %mime])
         ?.  ?=([%file *] fv)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
           (pure:m ~)
         =/  =mime  !<(mime (need-vase:tarball sang.fv))
-        ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils mime))
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
         (pure:m ~)
       ==
     --

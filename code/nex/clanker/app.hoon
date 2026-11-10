@@ -78,7 +78,6 @@
       ==
     --
 |%
-++  srv  ~(. http-res:io [%| 1 %& ~ %'http.sig'])
 ::  +rows: the on-load tree. %fall for the workspace (seed once, then the
 ::  tree is the live, user-owned record); %over for product code.
 ++  rows
@@ -580,7 +579,7 @@
   ;<  [src=@p req=inbound-request:eyre]  bind:m  (get-state-as:io ,[src=@p inbound-request:eyre])
   ;<  our=@p  bind:m  get-our:io
   ?.  =(src our)
-    ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+    ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
     (pure:m ~)
   =/  [site=path args=quay:eyre]  (parse-url:http-utils url.request.req)
   =/  prefix=path  /grubbery/clanker
@@ -608,7 +607,7 @@
   ?:  ?&(=(%'GET' method) !?=([%api *] suffix))
     ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
     ?.  ?=([~ %| *] root)
-      (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'clanker is not in /sys/link')])
+      (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'clanker is not in /sys/link')])
     =/  coll=path  (snoc p.u.root %projects)
     =/  to=@t
       %-  crip
@@ -616,11 +615,11 @@
         "/grubbery/ball"  (spud coll)  ?~(suffix "" (spud suffix))
         "?scope="  (spud coll)
       ==
-    (send-simple:srv eyre-id [[302 ~[['location' to]]] ~])
+    (send-simple:http-res:io eyre-id [[302 ~[['location' to]]] ~])
   ?:  ?&(=(%'GET' method) =([%api %root ~] suffix))
     ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
     ?.  ?=([~ %| *] root)
-      (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'clanker is not in /sys/link')])
+      (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'clanker is not in /sys/link')])
     (send-json eyre-id (en:json:html (pairs:enjs:format ~[['root' s+(spat p.u.root)]])))
   ?:  ?&(=(%'GET' method) =([%api %viewer ~] suffix))
     ::  follows are absolute roads, so the answer needs the collection's
@@ -947,7 +946,7 @@
     ;<  *  bind:m
       (cull-soft:io [%| 1 %| (welp /projects (welp u.proj [%chats `@ta`chat ~]))])
     (send-json eyre-id '{"ok":true}')
-  ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+  ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
   (pure:m ~)
 ::  +collection-of: a category (the root included) as the selector's tree
 ::  draws it: {path, categories: [the same shape, each with its name],
@@ -1205,7 +1204,7 @@
   |=  [eyre-id=@ta msg=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html msg)])
+  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html msg)])
 ::
 ::  +pick-viewer: which pane a path opens in, from where it is under the
 ::  collection, whether it is a file or a dir, a file's blot and a dir's
@@ -1371,17 +1370,17 @@
   ^-  form:m
   ;<  =view:nexus  bind:m  (peek:io [%| 1 %& dir filename] `[/ %mime])
   ?.  ?=([%file *] view)
-    ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+    ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
     (pure:m ~)
   =/  =mime  !<(mime (need-vase:tarball sang.view))
-  ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils mime))
+  ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
   (pure:m ~)
 ::
 ++  send-json
   |=  [eyre-id=@ta body=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  (send-simple:srv eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
+  (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
 ::  +grubbery-system: the grubbery clanker's standing prompt.
 ++  grubbery-system
   ^-  @t

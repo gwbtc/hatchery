@@ -1,10 +1,42 @@
-::  itinerary nexus: travel maps with pins, zones and metadata
+::  itinerary nexus: one trip per itinerary, planned on a map.
 ::
-::  Per trip — a dir under /itineraries/: itinerary.json + files/.
-::  The page reads, writes and follows those documents itself through the
-::  kernel's own dart API, so this nexus serves no document endpoints. It
-::  binds its page, answers the two layout questions the explorer asks by
-::  URL, and takes one poke: give a trip its clanker.
+::  An itinerary organizes a single well-scoped trip: a bounded span of days,
+::  a bounded stretch of map and, in time, a bounded budget. The budget is
+::  the ambition the document does not hold yet. Today itinerary.json holds the
+::  trip's name and description, its dates and timezone, the map's center
+::  and zoom, the categories that colour and group everything, and the
+::  things planned: pins (places, with notes and who suggested them), zones
+::  (areas drawn on the map), a schedule (dated entries, fixed or tentative,
+::  each tied to a pin) and todos. Next to the document sits files/, the
+::  trip's attachments: tickets, schedules, photos.
+::
+::  On disk a trip is the dir /itineraries/<id>/ under this nexus, and that
+::  dir is the unit of everything: one grant covers a trip, one cull deletes
+::  it. The page at /grubbery/itinerary is a collection of trips; a trip
+::  opens as a workspace with the map and a tab per view (trip, places,
+::  events, schedule, todos, files, chat). The page reads, writes and follows
+::  the document itself through the kernel's dart API, so this nexus serves
+::  no document endpoints of its own. The explorer can open the same dirs:
+::  this nexus tells it which layout or pane each path wants.
+::
+::  Two companion apps are reached by name, through /sys/link, and the trip
+::  is designed around them being there:
+::
+::    @clanker   every trip gets its own clanker in the clanker collection,
+::               at itinerary/<id>.clanker: the trip's assistant, with tools
+::               over the document and the attachments, and a plan chat. The
+::               chat tab is that clanker. Absent, the tab reads as absent.
+::    @geocode   the place lookup the trip's assistant uses to turn names
+::               into coordinates and back. Absent, the assistant's geocode
+::               tool is left out of its grant and says so.
+::
+::  This file: the imports (the page, the explorer's panes and layouts, the
+::  app's declarations, the prompts, shared components), then the nexus core
+::  (+on-load lays the app out, +on-file runs its poke, its HTTP binding and
+::  its requests), then the helpers: the poke, the trip's roads, serving,
+::  reading the document, the explorer's viewer rule, and the trip clanker.
+::
+::  The page and its assets.
 ::
 /&  index-html  ./index.html
 /&  home-html   ./home.html
@@ -13,57 +45,56 @@
 /&  icon        ./icon.svg
 /<  files-js    ./files.js
 /<  chat-js     ./chat.js
-::  the explorer's panes for a trip, and the layouts its dirs open as
-::  ('./' paths resolve against the dir opened): the collection (trips |
-::  a tab per trip) and a trip (map | its tabs)
+::  Talking to the clankers, and text templating.
+::
+/<  clankerio  /lib/clankerio.hoon
+/<  text       /lib/text.hoon
+::  The explorer's panes for a trip, and the layouts its dirs open as: the
+::  collection (trips, then a tab per trip) and a trip (map, then its tabs).
+::  './' paths in a layout resolve against the dir being opened.
+::
 /&  panes-js     ./panes.js
 /&  coll-layout  ./collection-layout.json
 /&  trip-layout  ./trip-layout.json
-::  what this app declares about itself: its tile, its name, the roads it
-::  asks for, and how the explorer opens it. Data, kept as files.
+::  What this app declares about itself, as data: its tile, its name, the
+::  roads it asks for, and how the explorer opens it.
+::
 /&  tile  ./tile.json
 /&  link  ./link.json
 /&  weir  ./weir.json
 /&  view  ./view.json
-::  the trip clanker's standing prompt ({{id}}, {{at}} filled per trip)
-::  and the plan chat's
+::  The prompts: the trip clanker's standing prompt, with {{id}} and {{at}}
+::  filled per trip, and the plan chat's.
+::
 /&  trip-prompt  ./system-prompt/trip.md
 /&  plan-prompt  ./system-prompt/plan.md
-::  shared web components from /lib/ui (see web-test.hoon for the pattern)
+::  Shared web components from /lib/ui. The first six are served as one
+::  file, kit-js; the last two are classic scripts served on their own.
+::
+/<  ui          /lib/ui.hoon
 /&  sv-js       /lib/ui/split-view.js
 /&  tg-js       /lib/ui/tab-group.js
 /&  dm-js       /lib/ui/drop-menu.js
 /&  md-js       /lib/ui/modal-dialog.js
 /&  ft-js       /lib/ui/file-table.js
 /&  fg-js       /lib/ui/file-grid.js
-::  classic-script preview surface (svg/html/json/image/pdf) for the
-::  Files tab viewer — served separately, not welded (it isn't a module)
 /&  fp-js       /lib/ui/file-preview.js
 /&  fmgr-js     /lib/ui/file-manager.js
+=/  kit-js      (bundle:ui ~[sv-js tg-js dm-js md-js ft-js fg-js])
+::
 =<  ^-  nexus:nexus
     |%
     ++  on-load
       |=  =ball:tarball
       ^-  bole:tarball
-      ::  weld the component modules into one served file (single request);
-      ::  each wrapped in { } so top-level consts don't collide.
-      =/  wrap
-        |=  =mime  ^-  @
-        (rap 3 ~[123 10 q.q.mime 10 125 10])
-      =/  kit-js=mime
-        :-  /application/javascript
-        %-  as-octs:mimes:html
-        (rap 3 ~[(wrap sv-js) (wrap tg-js) (wrap dm-js) (wrap md-js) (wrap ft-js) (wrap fg-js)])
       %+  spin:loader  ball
       :~  (manifest:loader 0)
           [%over %& [/ %'link.json'] [[/ %json] (as-json:loader link)]]
           [%over %& [/ %'weir.json'] [[/ %json] (as-json:loader weir)]]
-          ::  tile.json's image is the full folder name, not the slug: the
-          ::  slug also resolves to 'itinerary', wins the scan, and 404s
           [%over %& [/ %'tile.json'] [[/ %json] (as-json:loader tile)]]
-          ::  the explorer reads view.json: where to ask which pane a path
-          ::  under this root opens in (+pick-viewer), and the chrome of an
-          ::  explorer rooted here
+          ::  view.json is read by the explorer: where to ask how a path under
+          ::  this root opens (+pick-viewer), and the chrome of an explorer here.
+          ::
           [%over %& [/ %'view.json'] [[/ %json] (as-json:loader view)]]
           [%over %& [/ %'panes.js'] [[/ %mime] panes-js]]
           [%over %& [/ %'collection-layout.json'] [[/ %mime] coll-layout]]
@@ -80,14 +111,10 @@
           [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
           [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
           [%fall %| /requests empty-dir:loader]
-          ::  /itineraries/<id>/ is a trip: itinerary.json (the doc) and
-          ::  files/ (attachments, written by the page's file manager and by
-          ::  the trip clanker's file tools). One dir per trip, so one grant
-          ::  covers everything per-trip and delete is one cull.
+          ::  One dir per trip, holding its document and its attachments, so
+          ::  one grant covers a whole trip and deleting it is one cull.
+          ::
           [%fall %| /itineraries empty-dir:loader]
-          ::  a trip's assistant is its clanker in the clanker collection
-          ::  (+ensure-trip-clanker), sandboxed by clanker. This app runs
-          ::  no agent of its own and reaches no model.
       ==
     ::
     ++  on-file
@@ -97,28 +124,29 @@
       =/  m  (fiber:fiber:nexus ,~)
       ^-  process:fiber:nexus
       ?+    rail  stay:m
-          ::  main.sig: the poke protocol. {action:'open', trip} gives a
-          ::  trip its clanker — the work needs this app's own reach, so
-          ::  it is a dart to us, not an endpoint of ours.
+          ::  The poke protocol: {action:'open', trip} gives a trip its dir,
+          ::  its files/ and its clanker. The work needs this app's own reach,
+          ::  so it is a poke to us rather than an endpoint of ours.
+          ::
           [~ %'main.sig']
-        ;<  ~  bind:m  (rise-wait:io prod "%itinerary main: failed")
         |-
         ;<  =sage:tarball  bind:m  take-poke:io
         =/  jon=json  (fall (mole |.(!<(json q.sage))) *json)
         ;<  ~  bind:m  (handle-poke rail jon)
         $
-          ::  http.sig: the page, and the two layouts the explorer asks for
+          ::  The HTTP binding. Each request is a fiber under /requests, below.
+          ::
           [~ %'http.sig']
-        ;<  ~  bind:m  (rise-wait:io prod "%itinerary http: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/itinerary])
         (http-dispatch:io %itinerary)
+          ::  One HTTP request. Only our own ship is served.
+          ::
           [[%requests ~] @]
-        ;<  ~  bind:m  (rise-wait:io prod "%itinerary request: failed")
         =/  eyre-id=@ta  name.rail
         ;<  [src=@p req=inbound-request:eyre]  bind:m  (get-state-as:io ,[src=@p inbound-request:eyre])
         ;<  our=@p  bind:m  get-our:io
         ?.  =(src our)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
           (pure:m ~)
         =/  [site=path args=quay:eyre]  (parse-url:http-utils url.request.req)
         =/  prefix=path  /grubbery/itinerary
@@ -126,8 +154,7 @@
           %+  skip  (slag (lent prefix) site)
           |=(s=@ta =('' s))
         =/  method=@t  method.request.req
-        ::
-        ::  static files: GET /, /app.js, /style.css
+        ::  GET / is the home page, /app the trip page; the rest are its assets.
         ::
         ?:  ?&  =(%'GET' method)
                 ?|  =(~ suffix)
@@ -142,44 +169,45 @@
             ?:  =([%app ~] suffix)  'index.html'
             i.suffix
           (serve-file eyre-id / filename)
-        ::  the explorer's panes and layouts
+        ::  GET /panes.js and /collection-layout.json: the explorer's panes and
+        ::  the collection's layout, served as they are.
+        ::
         ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'panes.js' i.suffix) =(%'collection-layout.json' i.suffix)))
           (serve-file eyre-id / i.suffix)
-        ::  /trip/<id>/layout.json → this trip's workspace layout: the template
-        ::  with the trip's id filled in, so its chat tab can name the trip's
-        ::  own clanker (@clanker/projects/itinerary/<id>.clanker/chats/plan)
-        ::  as a pane. Asking for the layout is what makes that clanker and
-        ::  its chat exist; forge does the same for a repo.
+        ::  GET /trip/<id>/layout.json: the trip's workspace layout, the
+        ::  template with the id filled in so its chat tab can name the trip's
+        ::  own clanker (@clanker/projects/itinerary/<id>.clanker/chats/plan).
+        ::  Asking for the layout is what makes that clanker and its chat exist,
+        ::  the way the forge does for a repo. Only a trip that has its document
+        ::  gets a workspace: an unknown id must not conjure a trip dir.
+        ::
         ?:  ?&(=(%'GET' method) ?=([%trip @ %'layout.json' ~] suffix))
           =/  id=@ta  i.t.suffix
-          ::  only a trip that exists (has its doc) gets a workspace: asking
-          ::  for an unknown id must not conjure a trip dir
           ;<  doc=(unit json)  bind:m  (load-itinerary rail id)
           ?~  doc
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'no such trip')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'no such trip')])
             (pure:m ~)
           ;<  ~  bind:m  (ensure-trip rail id)
           ;<  *  bind:m  (ensure-trip-clanker id)
           ;<  tv=view:nexus  bind:m  (peek:io [%| 1 %& / %'trip-layout.json'] `[/ %mime])
           ?.  ?=([%file *] tv)  (send-json eyre-id '{}')
-          =/  tpl=@t  `@t`q.q:!<(mime (need-vase:tarball sang.tv))
-          ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils [/application/json (as-octs:mimes:html (fill-trip tpl id))]))
+          =/  tpl=@t  (from-mime:text !<(mime (need-vase:tarball sang.tv)))
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils [/application/json (as-octs:mimes:html (fill:text tpl '{trip}' id))]))
           (pure:m ~)
-        ::  GET /api/viewer?path=&kind=&view= — the explorer asks, per path
-        ::  under this root, how it opens (+pick-viewer)
+        ::  GET /api/viewer?path=&kind=&view=&mode=: the explorer asks how a
+        ::  path under this root opens. +pick-viewer answers; an empty answer
+        ::  means we have no opinion.
+        ::
         ?:  ?&(=(%'GET' method) =([%api %viewer ~] suffix))
           =/  gq  |=(k=@t ^-(@t (fall (~(get by (malt args)) k) '')))
           ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@itinerary')
           =/  abs=path  ?.(?=([~ %| *] root) / p.u.root)
           =/  segs=path  =/(p=@t (gq 'path') ?:(=('' p) / (fall (mole |.((stab p))) /)))
-          ::  mode is 'mobile' or 'desktop': the phone is a distinct context, not
-          ::  a narrow desktop, so a rule may answer it with a different pane
           =/  pick=(unit json)
             (pick-viewer abs segs =('dir' (gq 'kind')) (gq 'view') (gq 'mode'))
           ?~  pick  (send-json eyre-id '')
           (send-json eyre-id (en:json:html u.pick))
-        ::
-        ::  GET /ui/components.js — welded web-component bundle
+        ::  GET /ui/*: the welded component bundle and the two classic scripts.
         ::
         ?:  ?&(=(%'GET' method) =([%ui %'components.js' ~] suffix))
           (serve-file eyre-id /ui 'components.js')
@@ -187,29 +215,28 @@
           (serve-file eyre-id /ui 'file-preview.js')
         ?:  ?&(=(%'GET' method) =([%ui %'file-manager.js' ~] suffix))
           (serve-file eyre-id /ui 'file-manager.js')
-        ::  files tab: explorer-scrap file manager scoped to the trip's files/
+        ::  The two tab panes built into this file: the files tab, a file
+        ::  manager scoped to the trip's files/, and the chat tab, the trip's
+        ::  clanker shown in the collection's own pane.
+        ::
         ?:  ?=([%'files.js' ~] suffix)
           ;<  ~  bind:m
-            (send-simple:srv eyre-id [[200 ~[['content-type' 'text/javascript']]] `q.files-js])
+            (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'text/javascript']]] `q.files-js])
           (pure:m ~)
-        ::  chat tab: the trip's clanker, shown in the collection's own pane
         ?:  ?=([%'chat.js' ~] suffix)
           ;<  ~  bind:m
-            (send-simple:srv eyre-id [[200 ~[['content-type' 'text/javascript']]] `q.chat-js])
+            (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'text/javascript']]] `q.chat-js])
           (pure:m ~)
-        ::
-        ::  404
-        ::
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
         (pure:m ~)
       ==
     --
 |%
-++  srv  ~(. http-res:io [%| 1 %& ~ %'http.sig'])
-::  +handle-poke: this app's poke protocol.
-::    {action:'open', trip} — the trip is being opened: it gets its dir,
-::    its files/ and its clanker. The page cannot do this itself: the
-::    ensure payload is ours to compose (bundle, roads, prompt).
+::  +handle-poke: the poke protocol. {action:'open', trip} means the trip is
+::  being opened: it gets its dir, its files/ and its clanker. The page
+::  cannot do this itself, since the clanker's ensure payload (bundle,
+::  roads, prompt) is ours to compose. Anything else is ignored.
+::
 ++  handle-poke
   |=  [here=rail:tarball jon=json]
   =/  m  (fiber:fiber:nexus ,~)
@@ -224,25 +251,25 @@
   ;<  ~  bind:m  (ensure-trip here id)
   ;<  *  bind:m  (ensure-trip-clanker id)
   (pure:m ~)
+::  The roads of a trip, built from the asking fiber's own rail: main.sig
+::  runs at the app root, a request fiber one dir below it, and +nex-road
+::  counts the steps so neither has to.
 ::
-::  a trip is the dir /itineraries/<id>/; its doc is itinerary.json inside.
-::  Every road is built from the asking fiber's own rail — main.sig runs at
-::  the app root, a request fiber one dir below it, and +nex-road counts the
-::  steps so neither has to.
-++  itin-dir
+++  itin-dir                                            ::  /itineraries/<id>/
   |=  [here=rail:tarball itin-id=@ta]
   ^-  road:tarball
   (nex-road:io here [%| (snoc `path`/itineraries itin-id)])
-++  itin-road
+++  itin-road                                           ::  the trip's document
   |=  [here=rail:tarball itin-id=@ta]
   ^-  road:tarball
   (nex-road:io here [%& (snoc `path`/itineraries itin-id) %'itinerary.json'])
-::  the trip's attachments
-++  files-dir
+++  files-dir                                           ::  the trip's attachments
   |=  [here=rail:tarball itin-id=@ta]
   ^-  road:tarball
   (nex-road:io here [%| (weld (snoc `path`/itineraries itin-id) `path`/files)])
-::  +ensure-trip: the trip dir and its files/ exist. Idempotent.
+::  +ensure-trip: the trip dir and its files/ exist. Idempotent. An older
+::  trip missing its files/ gets it here, so no tab of its workspace reads
+::  as absent.
 ::
 ++  ensure-trip
   |=  [here=rail:tarball itin-id=@ta]
@@ -252,11 +279,10 @@
   ?.  ?=([%ball *] dv)
     %+  make:io  (itin-dir here itin-id)
     &+[`[~ ~ %.n ~] (malt `(list [@ta bole:tarball])`~[[%files empty-dir:loader]])]
-  ::  an older trip missing its files/ gets it here, so no tab of its
-  ::  workspace reads as absent
   ;<  fv=view:nexus  bind:m  (peek:io (files-dir here itin-id) ~)
   ?:  ?=([%ball *] fv)  (pure:m ~)
   (make:io (files-dir here itin-id) &+empty-dir:loader)
+::  +serve-file: one of our own grubs as the response, or a 404.
 ::
 ++  serve-file
   |=  [eyre-id=@ta dir=path filename=@ta]
@@ -264,19 +290,19 @@
   ^-  form:m
   ;<  =view:nexus  bind:m  (peek:io [%| 1 %& dir filename] `[/ %mime])
   ?.  ?=([%file *] view)
-    ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+    ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
     (pure:m ~)
   =/  =mime  !<(mime (need-vase:tarball sang.view))
-  ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils mime))
+  ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
   (pure:m ~)
 ::
 ++  send-json
   |=  [eyre-id=@ta body=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  (send-simple:srv eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
-::
-::  +load-itinerary: read an itinerary file, return its json
+  (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
+::  +load-itinerary: the trip's document as json; ~ if there is none or it
+::  does not parse.
 ::
 ++  load-itinerary
   |=  [here=rail:tarball itin-id=@ta]
@@ -289,19 +315,22 @@
     (pure:m ~)
   =/  jon=json  !<(json (need-vase:tarball sang.view))
   (pure:m `jon)
-::  +pick-viewer: which pane a path under this root opens in, from where
-::  it is, whether it is a dir, and the moment's own ?view=. The answer
-::  is the explorer's viewers json: {layout} for a dir that opens as a
-::  layout, {view, script, args, follow} for a pane. `follow` names the
-::  roads the pane depends on, absolute (abs is this root), with the
-::  doc's body riding along so a pane redraws from the stream.
+::  +pick-viewer: which pane a path under this root opens in, from the path,
+::  whether it is a dir, and the moment's ?view= and ?mode=. The answer is
+::  the explorer's viewers json: {layout} for a dir that opens as a layout,
+::  {view, script, args, follow} for a pane. `follow` names the roads the
+::  pane depends on, absolute (abs is this root), with the document's body
+::  riding along so a pane redraws from the stream.
+::
 ::    /                                  the collection layout
-::    /itineraries  ?view=trips          the trips navigator (follows the dir)
+::    /itineraries                       the trips navigator (follows the dir)
 ::    /itineraries/<id>                  the trip layout
-::    /itineraries/<id>/itinerary.json  ?view=map|trip|todos|places|events|schedule
-::    `mode` is 'mobile' or 'desktop' (empty from an older caller). Mobile is
-::    the focused, fat-thumb context rather than a narrow desktop, so a rule
-::    may answer it with a different pane — or the same one, as these do.
+::    /itineraries/<id>/itinerary.json   ?view=map|trip|todos|places|events|schedule
+::
+::  mode is 'mobile' or 'desktop' (empty from an older caller). Mobile is
+::  the focused, fat-thumb context rather than a narrow desktop, so a rule
+::  may answer it with a different pane. These answer the same one.
+::
 ++  pick-viewer
   |=  [abs=path segs=path dir=? view=@t mode=@t]
   ^-  (unit json)
@@ -317,9 +346,9 @@
         ['follow' a+~[(pairs:enjs:format ~[['road' s+road] ['body' b+body] ['fold' b+fold]])]]
     ==
   ?~  segs  ?:(=('' view) (lay '/grubbery/itinerary/collection-layout.json') ~)
-  ::  trips is the ONLY way to look at this dir, so the bare dir opens it
-  ::  too — the same courtesy / and a trip dir already get. Naming the view
-  ::  bought nothing and made the moment depend on an argument.
+  ::  The trips navigator is the only way to look at /itineraries, so the
+  ::  bare dir opens it too, as / and a trip dir already do.
+  ::
   ?:  ?=([%itineraries ~] segs)
     ?.  |(=('trips' view) =('' view))  ~
     (pane 'itin-trips' (cat 3 (spat (weld abs /itineraries)) '/') %.n %.y)
@@ -327,9 +356,7 @@
     ?:  &(dir =('' view))  (lay (crip "/grubbery/itinerary/trip/{(trip i.t.segs)}/layout.json"))
     ~
   ?:  ?=([%itineraries @ %'itinerary.json' ~] segs)
-    ::  (the test narrows segs to a cell, which weld's wet gate cannot
-    ::  mull; p is the plain path)
-    =/  p=path  segs
+    =/  p=path  segs                                    ::  weld's wet gate cannot mull the narrowed segs
     =/  road=@t  (spat (weld abs p))
     ?:  =('map' view)       (pane 'itin-map' road %.y %.n)
     ?:  =('trip' view)      (pane 'itin-trip' road %.y %.n)
@@ -339,13 +366,20 @@
     ?:  =('schedule' view)  (pane 'itin-schedule' road %.y %.n)
     ~
   ~
-::  +ensure-trip-clanker: the trip's clanker in the clanker collection
-::  (itinerary/<id>.clanker): bundle "build" with the trip dir as its
-::  "repo", so its repo_read/repo_write/repo_edit tools reach the doc and
-::  the attachments, and a `plan` chat with the trip prompt. Made if
-::  missing by a poke to @clanker's main.sig; a host field that changed
-::  (the roads, the prompt) is folded in. ~ when no clanker app is
-::  linked or the poke never packs: the chat tab then reads as absent.
+::  +ensure-trip-clanker: the trip's clanker in the clanker collection, at
+::  itinerary/<id>.clanker. It is a "build" bundle with the trip dir as its
+::  "repo", so its repo_read/repo_write/repo_edit tools reach the document
+::  and the attachments, plus a `plan` chat with the trip prompt. Made if
+::  missing by a poke to @clanker's main.sig; a host field that changed (the
+::  roads, the prompt) is folded in. ~ when no clanker app is linked or the
+::  poke never packs: the chat tab then reads as absent.
+::
+::  The geocode dependency is the two endpoints the trip's geocode tool uses
+::  AND the name it looks them up by. Resolving @geocode is a peek on
+::  /sys/link/geocode, so a grant naming only the endpoints is refused at
+::  the tool's first line: it holds the key and may not read the address.
+::  Absent a geocode app, those roads are left out and the tool says so.
+::
 ++  ensure-trip-clanker
   |=  id=@ta
   =/  m  (fiber:fiber:nexus ,(unit ~))
@@ -354,73 +388,37 @@
   ?.  ?=([~ %| *] cl)  (pure:m ~)
   ;<  it=(unit lane:tarball)  bind:m  (resolve-link:io '@itinerary')
   ?.  ?=([~ %| *] it)  (pure:m ~)
-  ::  the geocode proxy, by name: the trip's geocode tool pokes it and
-  ::  reads its calls; absent, the roads are left out and the tool says so
   ;<  geo=(unit lane:tarball)  bind:m  (resolve-link:io '@geocode')
-  ::  The geocode dependency: the two endpoints the tool uses, AND the name it
-  ::  looks them up by. Resolving @geocode is a peek on /sys/link/geocode, so a
-  ::  grant that names only the endpoints is refused at the tool's first line —
-  ::  it holds the key and may not read the address. That is what wedged the
-  ::  somewhere trip: every geocode call banged on the lookup, the run never
-  ::  left step 'start', and the chat waited on it. The clanker already does
-  ::  this correctly for @anthropic; geocode was bolted on as resolved paths
-  ::  and the lookup was forgotten. See "Reads don't resolve" in the README.
-  =/  geo-roads=[poke=(list @t) peek=(list @t)]
-    ?.  ?=([~ %| *] geo)  [~ ~]
-    :-  ~[(crip "{(spud p.u.geo)}/main.sig")]
-    ~[(crip "{(spud p.u.geo)}/calls/") '/sys/link/geocode/']
   =/  trip=@t  (spat (weld p.u.it (snoc `path`/itineraries id)))
-  =/  strs  |=(l=(list @t) ^-(json a+(turn l |=(s=@t `json`s+s))))
-  =/  ensure=json
-    %-  pairs:enjs:format
-    :~  ['action' s+'ensure']
-        ['parent' s+'/itinerary']
-        ['name' s+id]
-        ['bundle' s+'trip']
-        ['system' s+(trip-clanker-prompt id trip)]
-        ['repo' s+trip]
-        :-  'roads'
-        %-  pairs:enjs:format
-        :~  ['peek' (strs (weld ~[(cat 3 trip '/')] peek.geo-roads))]
-            ['make' (strs ~[(cat 3 trip '/')])]
-            ['poke' (strs poke.geo-roads)]
-        ==
-        :-  'chats'
-        :-  %a
-        :~  %-  pairs:enjs:format
-            :~  ['name' s+'plan']
-                ['system' s+q.q.plan-prompt]
-                ['policy' (pairs:enjs:format ~[['default' s+'allow']])]
-            ==
-        ==
+  =/  trip-dir=@t  (cat 3 trip '/')
+  =/  geo=[poke=(list @t) peek=(list @t)]  (geocode-roads geo)
+  =/  req=spec:clankerio
+    :*  parent='/itinerary'
+        name=id
+        bundle='trip'
+        system=(fills:text (from-mime:text trip-prompt) ~[['{{id}}' id] ['{{at}}' trip]])
+        repo=trip
+        roads=(roads:clankerio [trip-dir peek.geo] ~[trip-dir] poke.geo)
+        chats=~[(chat:clankerio 'plan' (from-mime:text plan-prompt) allow:clankerio)]
+        config=~
     ==
-  ::  one soft poke, no peek first and no deadline: our weir grants the
-  ::  POKE on the collection's main.sig and nothing else (a peek of it,
-  ::  or the behn timer a deadline needs, would be vetoed and crash this
-  ::  request). A veto or a nack answers `~ tang; a pack answers ~.
+  ::  One soft poke, no peek first and no deadline: our weir grants the poke
+  ::  on the collection's main.sig and nothing else, so a peek of it, or the
+  ::  behn timer a deadline needs, would be vetoed and crash this request. A
+  ::  veto or a nack answers `~ tang; a pack answers ~.
+  ::
   =/  sig=road:tarball  [%& %& p.u.cl %'main.sig']
-  ;<  res=(unit tang)  bind:m  (poke-soft:io sig [/ %json] ensure)
+  ;<  res=(unit tang)  bind:m  (poke-soft:io sig [/ %json] (to-json:clankerio req))
   ?^  res  (pure:m ~)
   (pure:m `~)
-::  +trip-clanker-prompt: system-prompt/trip.md with the trip's id and
-::  address filled in
-++  trip-clanker-prompt
-  |=  [id=@ta at=@t]
-  ^-  @t
-  (fill (fill q.q.trip-prompt "\{\{id}}" (trip id)) "\{\{at}}" (trip at))
-::  +fill-trip: a layout template with every {trip} filled with the id
-++  fill-trip
-  |=  [tpl=@t id=@ta]
-  ^-  @t
-  (fill tpl "\{trip}" (trip id))
-::  +fill: every `mark` in a template replaced with `val`
-++  fill
-  |=  [tpl=@t mark=tape val=tape]
-  ^-  @t
-  =/  t=tape  (trip tpl)
-  |-  ^-  @t
-  =/  i=(unit @ud)  (find mark t)
-  ?~  i  (crip t)
-  $(t :(weld (scag u.i t) val (slag (add u.i (lent mark)) t)))
-
+::  +geocode-roads: what the trip clanker's geocode tool needs from the
+::  geocode app: its main.sig to poke, and to peek its calls/ and the name
+::  it is looked up by. None without the app.
+::
+++  geocode-roads
+  |=  geo=(unit lane:tarball)
+  ^-  [poke=(list @t) peek=(list @t)]
+  ?.  ?=([~ %| *] geo)  [~ ~]
+  :-  ~[(crip "{(spud p.u.geo)}/main.sig")]
+  ~[(crip "{(spud p.u.geo)}/calls/") '/sys/link/geocode/']
 --

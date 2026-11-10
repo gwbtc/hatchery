@@ -1411,7 +1411,6 @@
 ::                             [relays/<host>.json ...]}
 ::    GET /api/feed?limit=n    {posts: [event + profile], count}
 ::    POST /api/sync           wake the supervisor (re-ensure relays)
-++  srv  ~(. http-res:io [%| 1 %& ~ %'web.sig'])
 ++  serve
   |=  [=rail:tarball eyre-id=@ta]
   =/  m  (fiber:fiber:nexus ,~)
@@ -1964,18 +1963,18 @@
   ;<  v=view:nexus  bind:m  (peek:io [%| 1 %& ~ filename] `[/ %mime])
   ?.  ?=([%file *] v)  (reply eyre-id 404 'Not found')
   =/  =mime  !<(mime (need-vase:tarball sang.v))
-  (send-simple:srv eyre-id (mime-response:http-utils mime))
+  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
 ++  reply
   |=  [eyre-id=@ta code=@ud msg=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  (send-simple:srv eyre-id [[code ~] `(as-octs:mimes:html msg)])
+  (send-simple:http-res:io eyre-id [[code ~] `(as-octs:mimes:html msg)])
 ++  send-json
   |=  [eyre-id=@ta jon=json]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  bod=octs  (as-octs:mimes:html (en:json:html jon))
-  (send-simple:srv eyre-id [[200 ~[['content-type' 'application/json']]] `bod])
+  (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'application/json']]] `bod])
 ::  +people: each followed pubkey with its profile grub, if we have one
 ++  people
   |=  [=rail:tarball pks=(list @t)]

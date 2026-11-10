@@ -85,7 +85,6 @@
       ::
       [[%requests ~] @]
     ;<  ~  bind:m  (rise-wait:io prod "%guestbook /requests: failed")
-    =/  srv  ~(. http-res:io (nex-road:io rail [%& ~ %'main.sig']))
     =/  eyre-id=@ta  name.rail
     ;<  [src=@p req=inbound-request:eyre]  bind:m  (get-state-as:io ,[src=@p inbound-request:eyre])
     =/  prefix=path  /grubbery/guestbook
@@ -99,10 +98,10 @@
         i.suffix
       ;<  =view:nexus  bind:m  (peek:io (nex-road:io rail [%& / filename]) `[/ %mime])
       ?.  ?=([%file *] view)
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
         (pure:m ~)
       =/  =mime  !<(mime (need-vase:tarball sang.view))
-      ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils mime))
+      ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
       (pure:m ~)
         ::
         [%api %whoami ~]
@@ -113,7 +112,7 @@
         ==
       =/  bod=octs  (as-octs:mimes:html (en:json:html who))
       ;<  ~  bind:m
-        (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+        (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
       (pure:m ~)
         ::
         [%api %entries ~]
@@ -128,26 +127,26 @@
       =/  rows=json  (flatten-results result)
       =/  bod=octs  (as-octs:mimes:html (en:json:html rows))
       ;<  ~  bind:m
-        (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+        (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
       (pure:m ~)
         ::
         [%api %post ~]
       ?.  =(%'POST' method.request.req)
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[405 ~] `(as-octs:mimes:html 'Method not allowed')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[405 ~] `(as-octs:mimes:html 'Method not allowed')])
         (pure:m ~)
       ?.  authenticated.req
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Log in to sign')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Log in to sign')])
         (pure:m ~)
       =/  bod=(unit octs)  body.request.req
       ?~  bod
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Missing body')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Missing body')])
         (pure:m ~)
       =/  jon=(unit json)  (de:json:html q.u.bod)
       ?~  jon
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid JSON')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid JSON')])
         (pure:m ~)
       ?.  ?=([%o *] u.jon)
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Expected object')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Expected object')])
         (pure:m ~)
       ::  signer identity comes from the eyre session, never the client
       =/  name-val=tape  (trip (scot %p src))
@@ -155,7 +154,7 @@
         =/  v  (~(get by p.u.jon) 'message')
         ?~(v ~ ?.(?=([%s *] u.v) ~ (trip p.u.v)))
       ?:  ?~(msg-val & |)
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Missing message')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Missing message')])
         (pure:m ~)
       ;<  now=@da  bind:m  get-time:io
       =/  sql=tape
@@ -176,7 +175,7 @@
       ;<  =sage:tarball  bind:m  take-poke:io
       =/  bod=octs  (as-octs:mimes:html '{"ok":true}')
       ;<  ~  bind:m
-        (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+        (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
       (pure:m ~)
     ==
   ==

@@ -95,10 +95,8 @@
       ==
     --
 |%
-++  srv  ~(. http-res:io [%| 1 %& ~ %'web.sig'])
-++  web  ~(. web:nw [%| 1 %& ~ %'web.sig'])
-++  reply         reply:web
-++  send-json     send-json:web
+++  reply         reply:web:nw
+++  send-json     send-json:web:nw
 ++  count-files   count-files:nw
 ::  +serve: the dashboard. Static shell + api:
 ::    GET /api/info                       {config, cache, calls}
@@ -177,7 +175,7 @@
   ;<  v=view:nexus  bind:m  (peek:io [%| 1 %& ~ filename] `[/ %mime])
   ?.  ?=([%file *] v)  (reply eyre-id 404 'Not found')
   =/  =mime  !<(mime (need-vase:tarball sang.v))
-  (send-simple:srv eyre-id (mime-response:http-utils mime))
+  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
 ::
 ++  read-config-at
   |=  =rail:tarball

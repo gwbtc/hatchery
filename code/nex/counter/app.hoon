@@ -63,7 +63,7 @@
         ;<  [src=@p req=inbound-request:eyre]  bind:m  (get-state-as:io ,[src=@p inbound-request:eyre])
         ;<  our=@p  bind:m  get-our:io
         ?.  =(src our)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
           (pure:m ~)
         =/  prefix=path  /grubbery/counters
         =/  site=path  site:(parse-url:http-utils url.request.req)
@@ -83,23 +83,23 @@
             (turn counters |=([n=@ta v=@ud] [`@t`n (numb:enjs:format v)]))
           =/  body=octs  (as-octs:mimes:html (en:json:html jon))
           ;<  ~  bind:m
-            (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `body])
+            (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `body])
           (pure:m ~)
         ?:  &(=('PUT' method) ?=([%api %counter @ ~] suffix))
           ;<  ~  bind:m  (make:io [%| 2 %& /counters i.t.t.suffix] |+[[[/ %ud] 0] ~])
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
           (pure:m ~)
         ?:  &(=('DELETE' method) ?=([%api %counter @ ~] suffix))
           ;<  *  bind:m  (cull-soft:io [%| 2 %& /counters i.t.t.suffix])
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
           (pure:m ~)
         ::  Serve counter page from view grub
         ;<  =view:nexus  bind:m  (peek:io [%| 2 %& /ui/views %'page.html'] `[/ %mime])
         ?.  ?=([%file *] view)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[500 ~] `(as-octs:mimes:html 'View not ready')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[500 ~] `(as-octs:mimes:html 'View not ready')])
           (pure:m ~)
         =/  =mime  !<(mime (need-vase:tarball sang.view))
-        ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils mime))
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
         (pure:m ~)
       ==
     --
@@ -121,7 +121,6 @@
   ==
 ::  HTTP response door (road from /ui/requests/* to /ui/main.sig)
 ::
-++  srv  ~(. http-res:io [%| 1 %& ~ %'main.sig'])
 ::  +lump-counters: the counters in a directory lump — every %ud file
 ::
 ++  lump-counters

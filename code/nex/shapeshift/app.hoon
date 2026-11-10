@@ -110,10 +110,9 @@
       ==
   ==
 ::
-++  web  ~(. web:nw [%| 1 %& ~ %'web.sig'])
-++  reply         reply:web
-++  send-json     send-json:web
-++  serve-static  serve-static:web
+++  reply         reply:web:nw
+++  send-json     send-json:web:nw
+++  serve-static  serve-static:web:nw
 ++  jget          jget:nw
 ++  post-json     post-json:nw
 ++  file-entries  file-entries:nw
@@ -148,7 +147,7 @@
     ;<  v=view:nexus  bind:m  (peek:io [%| 1 %& /ui i.t.suffix] `[/ %mime])
     ?.  ?=([%file *] v)  (reply eyre-id 404 'Not found')
     =/  =mime  !<(mime (need-vase:tarball sang.v))
-    (send-simple:srv:web eyre-id (mime-response:http-utils mime))
+    (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
   ::
       [%api %intent ~]
     =/  jon=(unit json)  (post-json req)

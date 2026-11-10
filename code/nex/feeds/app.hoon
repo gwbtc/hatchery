@@ -74,12 +74,11 @@
           ::
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%feeds /requests: failed")
-        =/  srv  ~(. http-res:io (nex-road:io rail [%& ~ %'main.sig']))
         =/  eyre-id=@ta  name.rail
         ;<  [src=@p req=inbound-request:eyre]  bind:m  (get-state-as:io ,[src=@p inbound-request:eyre])
         ;<  our=@p  bind:m  get-our:io
         ?.  &(authenticated.req =(src our))
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
           (pure:m ~)
         =/  prefix=path  /grubbery/feeds
         =/  site=path  site:(parse-url:http-utils url.request.req)
@@ -91,10 +90,10 @@
             i.suffix
           ;<  =view:nexus  bind:m  (peek:io (nex-road:io rail [%& / filename]) `[/ %mime])
           ?.  ?=([%file *] view)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
             (pure:m ~)
           =/  =mime  !<(mime (need-vase:tarball sang.view))
-          ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils mime))
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
           (pure:m ~)
             ::
             [%api %items ~]
@@ -107,34 +106,34 @@
             ==
           =/  bod=octs  (as-octs:mimes:html (en:json:html jon))
           ;<  ~  bind:m
-            (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+            (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
           (pure:m ~)
             ::
             [%api %add ~]
           ?.  =(%'POST' method.request.req)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[405 ~] `(as-octs:mimes:html 'Method not allowed')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[405 ~] `(as-octs:mimes:html 'Method not allowed')])
             (pure:m ~)
           =/  url=(unit @t)  (body-url req)
           ?~  url
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Missing url')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Missing url')])
             (pure:m ~)
           ;<  urls=(list @t)  bind:m  (read-config rail)
           ?.  =(~ (find [u.url]~ urls))
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html '{"ok":true}')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html '{"ok":true}')])
             (pure:m ~)
           ;<  ~  bind:m  (write-config rail (snoc urls u.url))
           ::  restart the refresh loop for an immediate fetch
           ;<  ~  bind:m  (poke:io (nex-road:io rail [%& ~ %'refresh.sig']) [[/ %sig] ~])
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html '{"ok":true}')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html '{"ok":true}')])
           (pure:m ~)
             ::
             [%api %del ~]
           ?.  =(%'POST' method.request.req)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[405 ~] `(as-octs:mimes:html 'Method not allowed')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[405 ~] `(as-octs:mimes:html 'Method not allowed')])
             (pure:m ~)
           =/  url=(unit @t)  (body-url req)
           ?~  url
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Missing url')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Missing url')])
             (pure:m ~)
           ;<  urls=(list @t)  bind:m  (read-config rail)
           ;<  ~  bind:m  (write-config rail (skip urls |=(u=@t =(u u.url))))
@@ -143,15 +142,15 @@
           ;<  ~  bind:m
             ?.  ?=([%file *] view)  (pure:(fiber:fiber:nexus ,~) ~)
             (cull:io store)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html '{"ok":true}')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html '{"ok":true}')])
           (pure:m ~)
             ::
             [%api %refresh ~]
           ?.  =(%'POST' method.request.req)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[405 ~] `(as-octs:mimes:html 'Method not allowed')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[405 ~] `(as-octs:mimes:html 'Method not allowed')])
             (pure:m ~)
           ;<  ~  bind:m  (poke:io (nex-road:io rail [%& ~ %'refresh.sig']) [[/ %sig] ~])
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html '{"ok":true}')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html '{"ok":true}')])
           (pure:m ~)
         ==
       ==

@@ -85,12 +85,11 @@
       ::
       [[%requests ~] @]
     ;<  ~  bind:m  (rise-wait:io prod "%web-test /requests: failed")
-    =/  srv  ~(. http-res:io (nex-road:io rail [%& ~ %'main.sig']))
     =/  eyre-id=@ta  name.rail
     ;<  [src=@p req=inbound-request:eyre]  bind:m  (get-state-as:io ,[src=@p inbound-request:eyre])
     ;<  our=@p  bind:m  get-our:io
     ?.  =(src our)
-      ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+      ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
       (pure:m ~)
     =/  prefix=path  /grubbery/web-test
     =/  site=path  site:(parse-url:http-utils url.request.req)
@@ -111,7 +110,7 @@
           (make:io [%& %| base] &+(ball-to-bole:tarball `ball:tarball`[`[~ ~ %.n ~ ~] ~]))
         (peek-shallow:io [%& %| base] ~)
       ?.  ?=([%ball *] dv)
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[500 ~] `(as-octs:mimes:html 'desktop unavailable')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[500 ~] `(as-octs:mimes:html 'desktop unavailable')])
         (pure:m ~)
       =/  subs=(list @ta)  (sort ~(tap in ~(key by dir.ball.dv)) aor)
       =/  fils=(list @ta)
@@ -158,7 +157,7 @@
       =/  out=json  (pairs:enjs:format ~[['children' a+(weld (flop kids) fkids)]])
       =/  bod=octs  (as-octs:mimes:html (en:json:html out))
       ;<  ~  bind:m
-        (send-simple:srv eyre-id [[200 ~[['content-type' 'application/json']]] `bod])
+        (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'application/json']]] `bod])
       (pure:m ~)
     ::  resolve nested paths: split into [dir file] so /ui/split-view.js
     ::  serves the grub at [/ui %'split-view.js'], not a flat filename.
@@ -169,10 +168,10 @@
     =/  dir=path  ?:(=(0 n) / (scag (dec n) suffix))
     ;<  =view:nexus  bind:m  (peek:io (nex-road:io rail [%& dir file]) `[/ %mime])
     ?.  ?=([%file *] view)
-      ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+      ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
       (pure:m ~)
     =/  =mime  !<(mime (need-vase:tarball sang.view))
-    ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils mime))
+    ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
     (pure:m ~)
   ==
 --

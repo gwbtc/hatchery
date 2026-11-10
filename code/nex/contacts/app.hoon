@@ -128,7 +128,7 @@
         ;<  [src=@p req=inbound-request:eyre]  bind:m  (get-state-as:io ,[src=@p inbound-request:eyre])
         ;<  our=@p  bind:m  get-our:io
         ?.  =(src our)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
           (pure:m ~)
         =/  [site=path args=quay:eyre]  (parse-url:http-utils url.request.req)
         =/  prefix=path  /grubbery/contacts
@@ -170,7 +170,7 @@
         ::
         ?:  ?&(=(%'POST' method) =(/api/'sync-ames' suffix))
           ;<  ~  bind:m  (sync-ames rail)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
           (pure:m ~)
         ::
         ::  POST /api/overlay/[ship] — put fields into overlay
@@ -178,25 +178,25 @@
         ?:  ?&(=(%'POST' method) ?=([%api %overlay @ ~] suffix))
           =/  who=@ta  i.t.t.suffix
           ?~  (slaw %p who)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid ship name')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid ship name')])
             (pure:m ~)
           =/  bod=(unit @t)  ?~(body.request.req ~ `q.u.body.request.req)
           ?~  bod
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Missing body')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Missing body')])
             (pure:m ~)
           =/  jon=(unit json)  (de:json:html u.bod)
           ?~  jon
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid JSON')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid JSON')])
             (pure:m ~)
           ?.  ?=([%o *] u.jon)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Must be JSON object')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Must be JSON object')])
             (pure:m ~)
           ;<  overlays=(map @t (map @t json))  bind:m  (load-overlays rail)
           =/  existing=(map @t json)  (fall (~(get by overlays) who) ~)
           =/  merged=(map @t json)  (~(uni by existing) p.u.jon)
           =/  new-overlays=(map @t (map @t json))  (~(put by overlays) who merged)
           ;<  ~  bind:m  (save-overlays rail new-overlays)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
           (pure:m ~)
         ::
         ::  DELETE /api/overlay/[ship] — wipe overlay
@@ -204,12 +204,12 @@
         ?:  ?&(=(%'DELETE' method) ?=([%api %overlay @ ~] suffix))
           =/  who=@ta  i.t.t.suffix
           ?~  (slaw %p who)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid ship name')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid ship name')])
             (pure:m ~)
           ;<  overlays=(map @t (map @t json))  bind:m  (load-overlays rail)
           =/  new-overlays=(map @t (map @t json))  (~(del by overlays) who)
           ;<  ~  bind:m  (save-overlays rail new-overlays)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
           (pure:m ~)
         ::
         ::  DELETE /api/overlay/[ship]/[field] — delete single overlay field
@@ -217,7 +217,7 @@
         ?:  ?&(=(%'DELETE' method) ?=([%api %overlay @ @ ~] suffix))
           =/  who=@ta  i.t.t.suffix
           ?~  (slaw %p who)
-            ;<  ~  bind:m  (send-simple:srv eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid ship name')])
+            ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'Invalid ship name')])
             (pure:m ~)
           =/  field=@t  i.t.t.t.suffix
           ;<  overlays=(map @t (map @t json))  bind:m  (load-overlays rail)
@@ -225,10 +225,10 @@
           =/  pruned=(map @t json)  (~(del by existing) field)
           =/  new-overlays=(map @t (map @t json))  (~(put by overlays) who pruned)
           ;<  ~  bind:m  (save-overlays rail new-overlays)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[200 ~] `(as-octs:mimes:html 'ok')])
           (pure:m ~)
         ::
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
         (pure:m ~)
       ==
     --
@@ -313,18 +313,17 @@
 ::
 ::  HTTP helpers
 ::
-++  srv  ~(. http-res:io [%| 1 %& ~ %'main.sig'])
 ::
 ++  send-html
   |=  [eyre-id=@ta page=manx]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   =/  htm=@t  (crip (en-xml:html page))
-  (send-simple:srv eyre-id [[200 ~[['content-type' 'text/html']]] `(as-octs:mimes:html htm)])
+  (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'text/html']]] `(as-octs:mimes:html htm)])
 ::
 ++  send-json
   |=  [eyre-id=@ta body=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  (send-simple:srv eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
+  (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
 --

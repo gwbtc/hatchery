@@ -76,12 +76,11 @@
           [[%ui %requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%claw/app request: failed")
         =/  eyre-id=@ta  name.rail
-        =/  s  (srv rail)
         ;<  [src=@p req=inbound-request:eyre]  bind:m
           (get-state-as:io ,[src=@p inbound-request:eyre])
         ;<  our=@p  bind:m  get-our:io
         ?.  =(src our)
-          ;<  ~  bind:m  (send-simple:s eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
           (pure:m ~)
         =/  [site=path args=quay:eyre]  (parse-url:http-utils url.request.req)
         =/  suffix=path
@@ -103,10 +102,10 @@
         ;<  file-view=view:nexus  bind:m
           (peek:io (nex-road:io rail [%& ~[%ui] filename]) `[/ %mime])
         ?.  ?=([%file *] file-view)
-          ;<  ~  bind:m  (send-simple:s eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
           (pure:m ~)
         =/  =mime  !<(mime (need-vase:tarball sang.file-view))
-        ;<  ~  bind:m  (send-simple:s eyre-id (mime-response:http-utils mime))
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
         (pure:m ~)
           ::
           ::  assistants: any <name>.assistant/ dir under /assistants
@@ -294,12 +293,6 @@
     --
 ::
 |%
-::  +srv: the http responder, road derived from the request rail —
-::  never hand-count bend steps
-::
-++  srv
-  |=  =rail:tarball
-  ~(. http-res:io (nex-road:io rail [%& ~[%ui] %'http.sig']))
 ::  +agents-weir: weir for individual agent at ./agents/{name}/
 ::
 ++  agents-weir
@@ -482,12 +475,12 @@
   ^-  form:m
   =/  pax=(unit path)  (parse-asst-path pat)
   ?~  pax
-    ;<  ~  bind:m  (send-simple:(srv rail) eyre-id [[400 ~] `(as-octs:mimes:html 'bad path')])
+    ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html 'bad path')])
     (pure:m ~)
   =/  dir=path  (weld /assistants u.pax)
   ;<  =view:nexus  bind:m  (peek:io (nex-road:io rail [%| dir]) ~)
   ?.  ?=([%ball *] view)
-    ;<  ~  bind:m  (send-simple:(srv rail) eyre-id [[404 ~] `(as-octs:mimes:html 'not found')])
+    ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'not found')])
     (pure:m ~)
   =/  files=(list json)
     %+  turn  (walk-files ~ ball.view)
@@ -496,7 +489,7 @@
   =/  bod=octs
     (as-octs:mimes:html (en:json:html [%a files]))
   ;<  ~  bind:m
-    (send-simple:(srv rail) eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+    (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
   (pure:m ~)
 ::  +walk-files: every file in a ball subtree as [path blot-name]
 ::
@@ -562,6 +555,6 @@
     ==
   =/  bod=octs  (as-octs:mimes:html (en:json:html json))
   ;<  ~  bind:m
-    (send-simple:(srv rail) eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+    (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
   (pure:m ~)
 --

@@ -596,9 +596,8 @@
   |=  [=rail:tarball eyre-id=@ta]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  =/  web  ~(. web:nw (at rail [%& ~ %'web.sig']))
-  =/  reply  reply:web
-  =/  send-json  send-json:web
+  =/  reply  reply:web:nw
+  =/  send-json  send-json:web:nw
   ;<  [src=@p req=inbound-request:eyre]  bind:m
     (get-state-as:io ,[src=@p inbound-request:eyre])
   ;<  our=@p  bind:m  get-our:io
@@ -607,7 +606,7 @@
   =/  prefix=path  /grubbery/s3
   =/  [site=path args=quay:eyre]  (parse-url:http-utils url.request.req)
   =/  suffix=path  (slag (lent prefix) site)
-  ?+    suffix  (serve-static:web eyre-id suffix)
+  ?+    suffix  (serve-static:web:nw eyre-id suffix)
       ::  the page mounts the file manager on the kernel's file API, which
       ::  takes absolute paths; it asks where this app lives rather than guess
       [%api %root ~]
@@ -734,7 +733,7 @@
       =/  parts=(list @t)  (split-on (trip u.ct) '/')
       ?.  ?=([@ @ ~] parts)  /application/octet-stream
       ~[`@ta`i.parts `@ta`i.t.parts]
-    %-  send-simple:srv:web  :-  eyre-id
+    %-  send-simple:http-res:io  :-  eyre-id
     (mime-response:http-utils [mite data.u.full-file.resp])
   ::
       [%api %call-new ~]

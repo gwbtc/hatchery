@@ -66,7 +66,6 @@
 |%
 ::  HTTP response door (road from /requests/* to /main.sig)
 ::
-++  srv  ~(. http-res:io [%| 1 %& ~ %'main.sig'])
 ::  +serve: route one HTTP request
 ::
 ++  serve
@@ -93,7 +92,7 @@
   ?.  ?=([%file *] view)
     (reply eyre-id 404 'Not found')
   =/  =mime  !<(mime (need-vase:tarball sang.view))
-  (send-simple:srv eyre-id (mime-response:http-utils mime))
+  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
 ::  +serve-list: every saved route, as one json array
 ::
 ++  serve-list
@@ -179,10 +178,10 @@
 ::
 ++  reply
   |=  [eyre-id=@ta code=@ud msg=@t]
-  (send-simple:srv eyre-id [[code ~] `(as-octs:mimes:html msg)])
+  (send-simple:http-res:io eyre-id [[code ~] `(as-octs:mimes:html msg)])
 ::
 ++  send-json
   |=  [eyre-id=@ta jon=json]
   =/  bod=octs  (as-octs:mimes:html (en:json:html jon))
-  (send-simple:srv eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
+  (send-simple:http-res:io eyre-id [[200 ['content-type' 'application/json'] ~] `bod])
 --

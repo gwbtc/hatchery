@@ -126,7 +126,7 @@
         ;<  [src=@p req=inbound-request:eyre]  bind:m  (get-state-as:io ,[src=@p inbound-request:eyre])
         ;<  our=@p  bind:m  get-our:io
         ?.  =(src our)
-          ;<  ~  bind:m  (send-simple:srv eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
+          ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[403 ~] `(as-octs:mimes:html 'Forbidden')])
           (pure:m ~)
         =/  [site=path args=quay:eyre]  (parse-url:http-utils url.request.req)
         =/  prefix=path  /grubbery/ghostprompter
@@ -276,12 +276,11 @@
         ::
         ::  404
         ::
-        ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+        ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
         (pure:m ~)
       ==
     --
 |%
-++  srv  ~(. http-res:io [%| 1 %& ~ %'main.sig'])
 ::  agent-weir: THE SANDBOX. The complete external reach we grant the
 ::  ghostprompter agent when we mount it — the kernel refuses all else.
 ::    make: /proposals (the propose tool files drafts)
@@ -321,17 +320,17 @@
   ^-  form:m
   ;<  =view:nexus  bind:m  (peek:io [%| 1 %& dir filename] `[/ %mime])
   ?.  ?=([%file *] view)
-    ;<  ~  bind:m  (send-simple:srv eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
+    ;<  ~  bind:m  (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'Not found')])
     (pure:m ~)
   =/  =mime  !<(mime (need-vase:tarball sang.view))
-  ;<  ~  bind:m  (send-simple:srv eyre-id (mime-response:http-utils mime))
+  ;<  ~  bind:m  (send-simple:http-res:io eyre-id (mime-response:http-utils mime))
   (pure:m ~)
 ::
 ++  send-json
   |=  [eyre-id=@ta body=@t]
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
-  (send-simple:srv eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
+  (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
 ::  +fetch-feed: the timeline from the /apps/nostr mirror, compacted
 ::  for the dashboard: {posts: [{id, pubkey, content, at}] newest
 ::  first, profiles: {pubkey: {name, picture}}}. feed.json gives the
