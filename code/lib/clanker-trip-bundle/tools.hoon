@@ -365,7 +365,47 @@
   ^-  form:m
   ;<  cfg=(each json @t)  bind:m  repo-config
   ?:  ?=(%| -.cfg)  (pure:m cfg)
-  (pure:m (config-path p.cfg 'repo'))
+  =/  val=@t
+    ?.  ?=([%o *] p.cfg)  ''
+    =/  r  (~(get by p.p.cfg) 'repo')
+    ?:(?=([~ %s *] r) p.u.r '')
+  ::  a plain path is read as it is; a named one, "@app/dir/", resolves
+  ::  through /sys/link now
+  =/  tv=tape  (trip val)
+  ?:  |(?=(~ tv) !=('@' i.tv))  (pure:m (config-path p.cfg 'repo'))
+  ;<  got=(unit lane:tarball)  bind:m  (resolve-road val)
+  ?~  got  (pure:m [%| (crip "the repo in this clanker's config, {(trip val)}, names an app that is not linked")])
+  (pure:m [%& ?-(-.u.got %| p.u.got, %& path.p.u.got)])
+::  +resolve-road: a road as a host spells it, "/dir/" for a subtree,
+::  "/dir/file" for one grub, or named: "@app/dir/", "@app/file", where
+::  @app resolves through /sys/link now. ~ for a name that does not
+::  resolve, or text that is not a road.
+::
+++  resolve-road
+  |=  s=@t
+  =/  m  (fiber:fiber:nexus ,(unit lane:tarball))
+  ^-  form:m
+  =/  t=tape  (trip s)
+  ?~  t  (pure:m ~)
+  =/  dir=?  =('/' (rear t))
+  =/  body=tape  ?:(dir (snip `tape`t) t)
+  =/  as-lane
+    |=  pax=path
+    ^-  (unit lane:tarball)
+    ?:  dir  `[%| pax]
+    ?~  pax  ~
+    `[%& (snip `path`pax) (rear pax)]
+  ?~  body  (pure:m ~)
+  ?.  =('@' i.body)
+    =/  pax=(unit path)  (rush (crip body) stap)
+    (pure:m ?~(pax ~ (as-lane u.pax)))
+  =/  cut=(unit @ud)  (find "/" body)
+  =/  name=@t  (crip ?~(cut body (scag u.cut `tape`body)))
+  =/  rest=(unit path)  ?~(cut `/ (rush (crip (slag u.cut `tape`body)) stap))
+  ?~  rest  (pure:m ~)
+  ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io name)
+  ?.  ?=([~ %| *] root)  (pure:m ~)
+  (pure:m (as-lane (weld p.u.root u.rest)))
 ::  +read-text-at: a text file at an absolute path, or ~.
 ++  read-text-at
   |=  pax=path

@@ -253,40 +253,85 @@
 ::  +config-weir: a clanker's weir from its config: the kernel set for
 ::  bundle "kernel", the default otherwise, plus the extra roads the
 ::  config grants it (config.json "roads": {"peek": [...], "make": [...],
-::  "poke": [...]}, each a list of "/dir/" (the subtree) or "/dir/file"),
-::  e.g. a repo clanker's working tree to read, and for a build clanker to
-::  write, and its git lane to poke. Re-applied on every send, so the
-::  proxy resolves and the extras survive a config edit.
+::  "poke": [...]}), each as the host spelled it: "/dir/" for a subtree,
+::  "/dir/file" for one grub, or named, "@app/dir/", resolved through
+::  /sys/link now. A named road whose app is not linked is left out. Set
+::  again on every cause, so a moved name is followed (+sand-watch).
+::
 ++  config-weir
   |=  [cfg=json prox=(list path)]
-  ^-  weir:tarball
+  =/  m  (fiber:fiber:nexus ,weir:tarball)
+  ^-  form:m
   =/  base=weir:tarball
     ?:(=('kernel' (jstr:clanker cfg 'bundle')) (kernel-weir prox) (default-weir prox))
-  =/  roads
+  =/  spelled
     |=  key=@t
-    ^-  (list road:tarball)
+    ^-  (list @t)
     ?.  ?=([%o *] cfg)  ~
     =/  rj  (~(get by p.cfg) 'roads')
     ?.  ?=([~ %o *] rj)  ~
     =/  pj  (~(get by p.u.rj) key)
     ?.  ?=([~ %a *] pj)  ~
-    %+  murn  p.u.pj
-    |=  j=json
+    (murn p.u.pj |=(j=json ?.(?=([%s *] j) ~ `p.j)))
+  =/  roads
+    |=  l=(list @t)
+    =/  mr  (fiber:fiber:nexus ,(list road:tarball))
+    =|  out=(list road:tarball)
+    |-  ^-  form:mr
+    ?~  l  (pure:mr (flop out))
+    ;<  got=(unit lane:tarball)  bind:mr  (resolve-road i.l)
+    $(l t.l, out ?~(got out [[%& u.got] out]))
+  ;<  peek=(list road:tarball)  bind:m  (roads (spelled 'peek'))
+  ;<  make=(list road:tarball)  bind:m  (roads (spelled 'make'))
+  ;<  poke=(list road:tarball)  bind:m  (roads (spelled 'poke'))
+  ::  every name the config refers to, in its roads or as its repo, is
+  ::  one the clanker's own tools resolve too, by peeking its link: a
+  ::  named road is granted together with the name it is looked up by
+  =/  links=(list road:tarball)
+    %+  murn  (weld (spelled 'peek') (weld (spelled 'make') (weld (spelled 'poke') ~[(jstr:clanker cfg 'repo')])))
+    |=  s=@t
     ^-  (unit road:tarball)
-    ?.  ?=([%s *] j)  ~
-    =/  t=tape  (trip p.j)
-    ?~  t  ~
-    =/  dir=?  =('/' (rear t))
-    =/  pax=(unit path)  (rush (crip ?:(dir (snip `tape`t) t)) stap)
-    ?~  pax  ~
-    ?:  dir  `[%& %| u.pax]
-    ?~  u.pax  ~
-    `[%& %& (snip `path`u.pax) (rear u.pax)]
+    =/  t=tape  (trip s)
+    ?.  &(?=(^ t) =('@' i.t))  ~
+    =/  cut=(unit @ud)  (find "/" t)
+    =/  name=@t  (crip ?~(cut t (scag u.cut `tape`t)))
+    `[%& %| (weld /sys/link (link-segs:io name))]
+  %-  pure:m
   %=  base
-    peek  (~(gas in peek.base) (roads 'peek'))
-    make  (~(gas in make.base) (roads 'make'))
-    poke  (~(gas in poke.base) (roads 'poke'))
+    peek  (~(gas in (~(gas in peek.base) peek)) links)
+    make  (~(gas in make.base) make)
+    poke  (~(gas in poke.base) poke)
   ==
+::  +resolve-road: a road as a host spells it, "/dir/" for a subtree,
+::  "/dir/file" for one grub, or named: "@app/dir/", "@app/file", where
+::  @app resolves through /sys/link now. ~ for a name that does not
+::  resolve, or text that is not a road.
+::
+++  resolve-road
+  |=  s=@t
+  =/  m  (fiber:fiber:nexus ,(unit lane:tarball))
+  ^-  form:m
+  =/  t=tape  (trip s)
+  ?~  t  (pure:m ~)
+  =/  dir=?  =('/' (rear t))
+  =/  body=tape  ?:(dir (snip `tape`t) t)
+  =/  as-lane
+    |=  pax=path
+    ^-  (unit lane:tarball)
+    ?:  dir  `[%| pax]
+    ?~  pax  ~
+    `[%& (snip `path`pax) (rear pax)]
+  ?~  body  (pure:m ~)
+  ?.  =('@' i.body)
+    =/  pax=(unit path)  (rush (crip body) stap)
+    (pure:m ?~(pax ~ (as-lane u.pax)))
+  =/  cut=(unit @ud)  (find "/" body)
+  =/  name=@t  (crip ?~(cut body (scag u.cut `tape`body)))
+  =/  rest=(unit path)  ?~(cut `/ (rush (crip (slag u.cut `tape`body)) stap))
+  ?~  rest  (pure:m ~)
+  ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io name)
+  ?.  ?=([~ %| *] root)  (pure:m ~)
+  (pure:m (as-lane (weld p.u.root u.rest)))
 ::  +sand-watch: a clanker's weir is set once per CAUSE, never per
 ::  message and never per reload. The kernel carries every directory's
 ::  weir through a reload, so the pass at the start only sands clankers
@@ -304,11 +349,14 @@
   ;<  ~  bind:m  (sand-all %.n)
   |-
   ;<  any=?  bind:m  keep-registries
+  ::  and every name there is: a host's named road ("@geocode/calls/")
+  ::  resolves at sand time, so a name that moves re-sands them all
+  ;<  *  bind:m  (keep-soft:io /links [%& %| /sys/link] ~ ~s30)
   ?.  any
     ;<  ~  bind:m  (sleep:io ~m5)
     $
   |-
-  ;<  ~  bind:m  (take-news-any registry-wires)
+  ;<  ~  bind:m  (take-news-any [/links registry-wires])
   ;<  ~  bind:m  (sand-all %.y)
   $
 ::  +keep-registries: keep EVERY provider's link registry, each on its
@@ -377,7 +425,8 @@
       ==
     ?:  &(!all sanded)  $(clankers t.clankers)
     ;<  cfg=json  bind:m  (read-json [%| 0 %& (welp /projects i.clankers) %'config.json'])
-    ;<  ~  bind:m  (sand:io dir `(config-weir cfg anth))
+    ;<  w=weir:tarball  bind:m  (config-weir cfg anth)
+    ;<  ~  bind:m  (sand:io dir `w)
     $(clankers t.clankers)
   $(todo (weld t.todo kids))
 ::  +sand-clanker: (re)set one clanker's weir from its config with the
@@ -387,7 +436,8 @@
   =/  m  (fiber:fiber:nexus ,~)
   ^-  form:m
   ;<  anth=(list path)  bind:m  proxy-roots
-  (sand:io [%| 1 %| (welp /projects proj)] `(config-weir cfg anth))
+  ;<  w=weir:tarball  bind:m  (config-weir cfg anth)
+  (sand:io [%| 1 %| (welp /projects proj)] `w)
 ::  +handle-poke: the collection's poke protocol, for other apps (forge
 ::  makes a repo's clanker this way) and for tools. One action for now:
 ::    {action:'ensure', parent, name, bundle?, system?, repo?,
@@ -453,7 +503,8 @@
   ;<  ~  bind:m
     ?.  ?=([%ball *] dv)
       =/  cfg=json  (clanker-config name bundle extra)
-      (make:io [%| 0 %| dir] &+(clanker-bole name bundle system (config-weir cfg anth) extra))
+      ;<  w=weir:tarball  bind:m  (config-weir cfg anth)
+      (make:io [%| 0 %| dir] &+(clanker-bole name bundle system w extra))
     =/  cfg-road=road:tarball  [%| 0 %& dir %'config.json']
     ;<  cur=json  bind:m  (read-json cfg-road)
     =/  merged=json
@@ -461,7 +512,8 @@
       %-  ~(gas by ?:(?=([%o *] cur) p.cur *(map @t json)))
       [['bundle' s+bundle] extra]
     ;<  ~  bind:m  (over:io cfg-road [[/ %json] merged])
-    (sand:io [%| 0 %| dir] `(config-weir merged anth))
+    ;<  w=weir:tarball  bind:m  (config-weir merged anth)
+    (sand:io [%| 0 %| dir] `w)
   ::  the recipes the host ships, each with its files, made if missing
   ;<  ~  bind:m
     =/  rs=(list json)

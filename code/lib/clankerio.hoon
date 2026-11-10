@@ -5,22 +5,42 @@
 |%
 ::  A clanker as its host wants it. +to-json sends it as the collection's
 ::  ensure: make <parent>/<name>.clanker if it is not there, with its
-::  chats, or fold a changed host field into one that is. bundle is its
-::  tool set (default, kernel, repo, build, trip); system its standing
-::  prompt, seeded once; repo a working tree for the repo and build
-::  bundles; roads from +roads; chats from +chat, seeded once each; config
-::  extra fields for its config.json.
+::  chats, or fold a changed host field into one that is. The bundle is
+::  default, kernel, repo, build or trip.
 ::
+::  The roads a host grants its clanker, each spelled as the collection
+::  takes it: "/dir/" for a subtree, "/dir/file" for one grub, or named
+::  under an app, "@geocode/calls/", "@geocode/main.sig". The collection
+::  resolves a name when it grants the road, grants the link it is looked
+::  up by along with it, and follows the name if it moves.
+::
++$  roads  [peek=(list @t) make=(list @t) poke=(list @t)]
 +$  spec
-  $:  parent=@t
-      name=@t
-      bundle=@t
-      system=@t
-      repo=@t
-      roads=json
-      chats=(list json)
-      config=(list [@t json])
+  $:  parent=@t                 ::  category path, "/" or "/forge"
+      name=@t                   ::  its directory is <name>.clanker
+      bundle=@t                 ::  its tool set
+      repo=@t                   ::  a working tree, for the repo and build bundles
+      roads=roads               ::  what it reaches beyond its bundle
+      system=@t                 ::  its standing prompt, seeded once
+      chats=(list json)         ::  +chat each, seeded once
+      config=(list [@t json])   ::  extra config.json fields
   ==
+::  +ensure: one clanker as its spec says, in the collection linked as
+::  @clanker: made if missing, the host's fields folded in if it exists.
+::  One soft poke, no peek first and no deadline: a host's weir grants the
+::  poke on the collection's main.sig and nothing else, so a peek of it,
+::  or the behn timer a deadline needs, would be vetoed and crash the
+::  caller. ~ when no collection is linked or the poke never packs.
+::
+++  ensure
+  |=  =spec
+  =/  m  (fiber:fiber:nexus ,(unit ~))
+  ^-  form:m
+  ;<  cl=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
+  ?.  ?=([~ %| *] cl)  (pure:m ~)
+  ;<  res=(unit tang)  bind:m
+    (poke-soft:io [%& %& p.u.cl %'main.sig'] [/ %json] (to-json spec))
+  (pure:m ?^(res ~ `~))
 ::  +to-json: a spec as the collection's main.sig takes it.
 ::
 ++  to-json
@@ -33,18 +53,11 @@
       ['bundle' s+bundle.req]
       ['system' s+system.req]
       ['repo' s+repo.req]
-      ['roads' roads.req]
+      ['roads' (pairs:enjs:format ~[['peek' (strs peek.roads.req)] ['make' (strs make.roads.req)] ['poke' (strs poke.roads.req)]])]
       ['chats' a+chats.req]
       ?~  config.req  ~
       ~[['config' (pairs:enjs:format config.req)]]
   ==
-::  +roads: a clanker's extra weir roads, {peek, make, poke}, each a list
-::  of roads: "/dir/" for a subtree, "/dir/file" for one grub.
-::
-++  roads
-  |=  [peek=(list @t) make=(list @t) poke=(list @t)]
-  ^-  json
-  (pairs:enjs:format ~[['peek' (strs peek)] ['make' (strs make)] ['poke' (strs poke)]])
 ::  +chat: one chat a clanker is seeded with, under a policy (+allow, or
 ::  {default, allow, ask, deny} of your own).
 ::
