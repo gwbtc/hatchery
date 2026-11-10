@@ -86,7 +86,7 @@
           [~ %'web.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%shapeshift/web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/shapeshift])
-        (http-dispatch:io %shapeshift)
+        http-dispatch:io
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%shapeshift/req: failed")
         (serve name.rail)

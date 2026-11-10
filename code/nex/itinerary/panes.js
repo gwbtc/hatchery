@@ -207,20 +207,15 @@
       }
     };
   }
-  // deleting a trip deletes everything the trip is: its directory, and its
-  // clanker in the clanker collection. Whoever makes a clanker owns its
-  // life — nothing hunts for clankers whose owner is gone.
+  // the nexus unmakes the trip: its directory and its clanker. dirUrl is
+  // the itineraries dir; the nexus root is one up.
   async function dropTrip(dirUrl, id) {
-    var dir = String(dirUrl || '').replace(/\?.*$/, '').replace(/\/$/, '') + '/' + encodeURIComponent(id);
-    var r = await fetch(apiUrl(dir, 'cull') + '/', { method: 'DELETE' });
-    if (!r.ok) throw new Error(r.status + '');
-    var lanes = await get(BALL + '/peek/sys/link/clanker/dest.lanes').catch(function () { return null; });
-    var root = lanes && lanes[0];
-    if (!root) return;
-    await fetch(BALL + '/poke' + root + '/main.sig?blot=/json', {
+    var root = String(dirUrl || '').replace(/\?.*$/, '').replace(/\/$/, '').replace(/\/itineraries$/, '');
+    var r = await fetch(apiUrl(root + '/main.sig', 'poke') + '?blot=/json', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'remove', parent: '/itinerary', name: id })
+      body: JSON.stringify({ action: 'delete', trip: id })
     });
+    if (!r.ok) throw new Error(r.status + '');
   }
   // a confirmation that takes over a navigator's list: what is about to
   // happen, cancel / the verb. Enter is the verb, Escape cancels (only while

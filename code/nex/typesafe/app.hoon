@@ -82,7 +82,7 @@
           [~ %'web.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%typesafe/web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/typesafe])
-        (http-dispatch:io %typesafe)
+        http-dispatch:io
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%typesafe/req: failed")
         (serve name.rail)

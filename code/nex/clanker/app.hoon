@@ -69,7 +69,7 @@
           [~ %'http.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%clanker http: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/clanker])
-        (http-dispatch:io %clanker)
+        http-dispatch:io
           [~ %'sand.sig']
         (sand-watch prod)
           [[%requests ~] @]

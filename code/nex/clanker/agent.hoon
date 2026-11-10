@@ -577,7 +577,7 @@
   =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
   ;<  sys=@t  bind:m  (standing rail chat)
   ;<  pol=policy  bind:m  (read-policy rail chat)
-  ;<  schema=json  bind:m  (list-tools rail pol)
+  ;<  schema=json  bind:m  (list-tools rail pol (jnum:clanker cfg 'web_search' 0))
   (run rail chat road log sys model max schema pol (provider-of cfg))
 ::  +turn-chat: one turn. Append the %input event to the chat log, persist
 ::  (so a refresh shows it even if the turn stalls), assemble this
@@ -618,7 +618,7 @@
   =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
   ;<  sys=@t  bind:m  (standing rail chat)
   ;<  pol=policy  bind:m  (read-policy rail chat)
-  ;<  schema=json  bind:m  (list-tools rail pol)
+  ;<  schema=json  bind:m  (list-tools rail pol (jnum:clanker cfg 'web_search' 0))
   (run rail chat road log sys model max schema pol (provider-of cfg))
 ::  the chat log: one file per chat, its own mark (the explorer opens a
 ::  chat-log in the chat viewer), json inside
@@ -843,7 +843,7 @@
   =/  max=@ud   (jnum:clanker cfg 'max_tokens' 4.096)
   ;<  sys=@t  bind:m  (standing rail chat)
   ;<  pol=policy  bind:m  (read-policy rail chat)
-  ;<  schema=json  bind:m  (list-tools rail pol)
+  ;<  schema=json  bind:m  (list-tools rail pol (jnum:clanker cfg 'web_search' 0))
   (run rail chat road log sys model max schema pol (provider-of cfg))
 ::  +open-turn: does this log end mid-turn? An input or tool results
 ::  await a response; a response that stopped for tool_use awaits its
@@ -998,10 +998,14 @@
   =/  listed=tape  (zing (join ", " (turn names |=(n=@t (trip n)))))
   (trip (say frags %'recipes.md' ~[["recipes" listed]]))
 ::  +list-tools: what this clanker's tools nexus advertises, as an
-::  Anthropic tool schema array, plus the engine's own `spawn`. The tools
-::  nexus answers a {cmd:'list'} poke by poking the array back to us.
+::  Anthropic tool schema array, plus the engine's own `spawn`, plus
+::  Anthropic's server-side web search when the config allows it
+::  (config.json "web_search": the most searches one turn may run; 0 or
+::  absent is none). The tools nexus answers a {cmd:'list'} poke by
+::  poking the array back to us. A provider speaking the openai dialect
+::  drops the search block in +tools-to-oai: it has no equivalent there.
 ++  list-tools
-  |=  [=rail:tarball pol=policy]
+  |=  [=rail:tarball pol=policy searches=@ud]
   =/  m  (fiber:fiber:nexus ,json)
   ^-  form:m
   ::  the list comes back as a poke; one lost across a reboot of the tools
@@ -1037,7 +1041,9 @@
         ==
     ==
   ::  a denied tool is not advertised: the model never sees it
-  =/  all=(list json)  (snoc tools spawn-schema)
+  =/  all=(list json)
+    =/  own  (snoc tools spawn-schema)
+    ?:(=(0 searches) own (snoc own (web-search:clanker searches)))
   %-  pure:m
   :-  %a
   %+  skip  all

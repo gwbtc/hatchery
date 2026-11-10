@@ -51,21 +51,11 @@ async function geocode(params) {
 function tripDir(id) { return ROOT + '/itineraries/' + encodeURIComponent(id); }
 function docPath(id) { return tripDir(id) + '/itinerary.json'; }
 
-// deleting a trip deletes everything the trip is: its directory here, and
-// its clanker in the clanker collection. Whoever makes a clanker owns its
-// life — nothing hunts for clankers whose owner is gone.
+// the nexus unmakes the trip: its directory and its clanker
 async function deleteTrip(id) {
   await rootReady;
-  var r = await fetch(BALL + '/cull' + tripDir(id) + '/', { method: 'DELETE' });
+  var r = await pokeSig(ROOT + '/main.sig', { action: 'delete', trip: id });
   if (!r.ok) throw new Error('could not delete the trip');
-  var clanker = await rootOf('clanker');
-  if (clanker) {
-    await fetch(BALL + '/poke' + clanker + '/main.sig?blot=/json', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'remove', parent: '/itinerary', name: id })
-    });
-  }
 }
 
 // every write is the whole document, overwritten in place
@@ -293,9 +283,6 @@ async function loadItinerary(id) {
     return;
   }
   applyDoc(itinerary);
-  // opening a trip is the moment it gets its clanker; the app composes
-  // that ensure itself, so this is a poke to it, not a request of it
-  pokeSig(ROOT + '/main.sig', { action: 'open', trip: id }).catch(function() {});
   followDoc(id);
 
   // fit the view to everything on the map; fall back to the stored center
@@ -1522,15 +1509,9 @@ function openNewItinerary() {
     categories: DEFAULT_CATEGORIES,
     pins: {}
   };
-  // a trip is a directory with a document in it
+  // the nexus makes the trip: its dir, its document, its clanker
   rootReady.then(function() {
-    return fetch(BALL + '/make' + tripDir(id) + '/', { method: 'PUT' });
-  }).then(function() {
-    return fetch(BALL + '/make' + docPath(id) + '?blot=/json', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(doc)
-    });
+    return pokeSig(ROOT + '/main.sig', { action: 'create', trip: id, doc: doc });
   }).then(function(r) {
     if (!r.ok) throw new Error();
     return loadList();

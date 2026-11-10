@@ -71,7 +71,7 @@
           [[%ui ~] %'http.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%claw/app http: failed")
         ;<  ~  bind:m  (bind-http:io [~ /grubbery/claw])
-        (http-dispatch:io %claw)
+        http-dispatch:io
           ::
           [[%ui %requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%claw/app request: failed")

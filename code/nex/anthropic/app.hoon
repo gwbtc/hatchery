@@ -88,7 +88,7 @@
           [~ %'web.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%anthropic/web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/anthropic])
-        (http-dispatch:io %anthropic)
+        http-dispatch:io
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%anthropic/req: failed")
         (serve name.rail)

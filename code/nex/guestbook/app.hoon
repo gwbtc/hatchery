@@ -81,7 +81,7 @@
     ;<  =sage:tarball  bind:m  take-poke:io
     ~&  >  "%guestbook: db initialized"
     ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/guestbook])
-    (http-dispatch:io %guestbook)
+    http-dispatch:io
       ::
       [[%requests ~] @]
     ;<  ~  bind:m  (rise-wait:io prod "%guestbook /requests: failed")

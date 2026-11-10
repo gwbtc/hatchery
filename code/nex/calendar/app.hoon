@@ -67,7 +67,7 @@
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%calendar main: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/calendar])
-        (http-dispatch:io %cal)
+        http-dispatch:io
           ::
           ::  /calendar.calendar: poke CRUD on events
           ::

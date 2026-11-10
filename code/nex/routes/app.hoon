@@ -56,7 +56,7 @@
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%routes /main: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/routes])
-        (http-dispatch:io %routes)
+        http-dispatch:io
           ::
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%routes /requests: failed")

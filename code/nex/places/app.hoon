@@ -62,7 +62,7 @@
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%places main: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/places])
-        (http-dispatch:io %places)
+        http-dispatch:io
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%places req: failed")
         (serve rail name.rail)

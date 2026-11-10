@@ -65,7 +65,7 @@
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%pad /main: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/pad])
-        (http-dispatch:io %pad)
+        http-dispatch:io
           ::  /docs/<doc>/inbox.sig: the sequencer. Local and remote
           ::  editors poke a base64 update cord; arrival order here IS
           ::  the doc's order. Each poke lands as a fresh log grub.

@@ -41,6 +41,20 @@
   ;<  res=(unit tang)  bind:m
     (poke-soft:io [%& %& p.u.cl %'main.sig'] [/ %json] (to-json spec))
   (pure:m ?^(res ~ `~))
+::  +remove: the clanker <parent>/<name>.clanker, gone from the
+::  collection with everything in it. The host that made it owns its
+::  life. Same soft poke as +ensure, for the same reasons.
+::
+++  remove
+  |=  [parent=@t name=@t]
+  =/  m  (fiber:fiber:nexus ,(unit ~))
+  ^-  form:m
+  ;<  cl=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
+  ?.  ?=([~ %| *] cl)  (pure:m ~)
+  ;<  res=(unit tang)  bind:m
+    %^  poke-soft:io  [%& %& p.u.cl %'main.sig']  [/ %json]
+    (pairs:enjs:format ~[['action' s+'remove'] ['parent' s+parent] ['name' s+name]])
+  (pure:m ?^(res ~ `~))
 ::  +to-json: a spec as the collection's main.sig takes it.
 ::
 ++  to-json

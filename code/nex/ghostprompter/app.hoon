@@ -119,7 +119,7 @@
           =/  fold  |=(u=(unit lane:tarball) ^-((unit path) ?.(?=([~ %| *] u) ~ `p.u.u)))
           (sand:io (nex-road:io rail [%| /agent]) `(agent-weir (fold anth) (fold nostr)))
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/ghostprompter])
-        (http-dispatch:io %ghostprompter)
+        http-dispatch:io
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%ghostprompter request: failed")
         =/  eyre-id=@ta  name.rail

@@ -88,7 +88,7 @@
           [~ %'web.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%geocode web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/geocode])
-        (http-dispatch:io %geocode)
+        http-dispatch:io
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%geocode req: failed")
         (serve rail name.rail)

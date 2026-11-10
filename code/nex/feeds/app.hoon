@@ -60,7 +60,7 @@
         ;<  ~  bind:m  (rise-wait:io prod "%feeds /main: failed")
         ;<  ~  bind:m  (register-app:io 'Feeds')
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/feeds])
-        (http-dispatch:io %feeds)
+        http-dispatch:io
           ::
           [~ %'refresh.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%feeds /refresh: failed")

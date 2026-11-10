@@ -174,7 +174,7 @@
           [~ %'web.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%nostr/web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/nostr])
-        (http-dispatch:io %nostr)
+        http-dispatch:io
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%nostr/req: failed")
         (serve rail name.rail)

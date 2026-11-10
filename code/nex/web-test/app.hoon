@@ -80,7 +80,7 @@
       [~ %'main.sig']
     ;<  ~  bind:m  (rise-wait:io prod "%web-test /main: failed")
     ;<  ~  bind:m  (bind-http:io [~ /grubbery/web-test])
-    (http-dispatch:io %web-test)
+    http-dispatch:io
       ::  /requests/*: serve files
       ::
       [[%requests ~] @]

@@ -54,7 +54,7 @@
           [[%ui ~] %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%counter /ui/main: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/counters])
-        (http-dispatch:io %counter)
+        http-dispatch:io
           ::  /ui/requests/*: individual request handlers
           ::
           [[%ui %requests ~] @]

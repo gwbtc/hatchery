@@ -56,7 +56,7 @@
           [[%ui ~] %'http.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%loops http: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/loops])
-        (http-dispatch:io %loops)
+        http-dispatch:io
           ::
           [[%ui %requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%loops request: failed")

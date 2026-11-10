@@ -71,7 +71,7 @@
           [~ %'web.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%openrouter/web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/openrouter])
-        (http-dispatch:io %openrouter)
+        http-dispatch:io
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%openrouter/req: failed")
         (serve name.rail)

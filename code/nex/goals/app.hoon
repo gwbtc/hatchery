@@ -218,7 +218,7 @@
           [[%ui ~] %'http.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%goals http: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/goals])
-        (http-dispatch:io %goals)
+        http-dispatch:io
           ::
           [[%ui %requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%goals request: failed")

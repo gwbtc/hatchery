@@ -49,6 +49,8 @@
       '.cv-step .arg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8b949e}' +
       '.cv-step a.arg{color:#0969da;text-decoration:none;flex:none}' +
       '.cv-step .state{flex:none;color:#8b949e}.cv-step .state.err{color:#cf222e}.cv-step .state.declined{color:#9a6700}' +
+      '.cv-step .hits{margin:3px 0 6px 20px;padding:0;list-style:none;font:12px/1.5 system-ui,sans-serif}.cv-step .hits a{color:#0969da;text-decoration:none}.cv-step .hits a:hover{text-decoration:underline}.cv-step .hits .host{color:#8b949e;margin-left:6px}' +
+      '.cv-msg .cites{margin-top:6px;font:11.5px/1.5 system-ui,sans-serif;color:#57606a}.cv-msg .cites a{color:#0969da;text-decoration:none;margin-right:10px}' +
       '.cv-step pre{margin:3px 0 6px 20px;padding:8px 10px;max-height:260px;overflow:auto;background:#f6f8fa;border:1px solid #eaeef2;border-radius:6px;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:#24292f;white-space:pre-wrap;word-break:break-word}' +
       '.cv-step img{display:block;max-width:100%;max-height:360px;margin:3px 0 6px 20px;border:1px solid #eaeef2;border-radius:6px;background:#fff}' +
       '.cv-ask{max-width:90%;border:1px solid #d4a72c;background:#fff8c5;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}' +
@@ -300,6 +302,39 @@
       }
       return d;
     }
+    // one server-side search (Anthropic ran it inside the turn): the query as
+    // a step, the hits it returned as links. There is no run grub behind it.
+    function search(use, res) {
+      var d = el('details', 'cv-step'), s = el('summary');
+      s.appendChild(el('span', 'tool', use.name || 'web_search'));
+      s.appendChild(el('span', 'arg', (use.input && use.input.query) || ''));
+      var hits = res && Array.isArray(res.content) ? res.content.filter(function (h) { return h && h.url; }) : [];
+      var bad = res && res.content && res.content.type === 'web_search_tool_result_error';
+      s.appendChild(el('span', 'state' + (bad ? ' err' : ''), bad ? (res.content.error_code || 'error') : hits.length + (hits.length === 1 ? ' hit' : ' hits')));
+      d.appendChild(s);
+      if (hits.length) {
+        var ul = el('ul', 'hits');
+        hits.forEach(function (h) {
+          var li = el('li'), a = el('a', null, h.title || h.url); a.href = h.url; a.target = '_blank'; a.rel = 'noopener';
+          li.appendChild(a);
+          try { li.appendChild(el('span', 'host', new URL(h.url).hostname)); } catch (e) {}
+          ul.appendChild(li);
+        });
+        d.appendChild(ul);
+      }
+      return d;
+    }
+    // the sources a text block cites, once each, under the text
+    function cites(content) {
+      var seen = {}, out = [];
+      content.forEach(function (c) {
+        (c.citations || []).forEach(function (ci) { if (ci.url && !seen[ci.url]) { seen[ci.url] = true; out.push(ci); } });
+      });
+      if (!out.length) return null;
+      var box = el('div', 'cites', 'sources: ');
+      out.forEach(function (ci) { var a = el('a', null, ci.title || ci.url); a.href = ci.url; a.target = '_blank'; a.rel = 'noopener'; box.appendChild(a); });
+      return box;
+    }
     // the ask box: run / decline per asked use; posts once every use has an answer
     function askBox(uses, live) {
       var box = el('div', 'cv-ask');
@@ -356,6 +391,16 @@
           var text = content.filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join('\n');
           var b = msg('bot', who, text);
           if (!content.length && !ev.stop) b.appendChild(el('div', 'cv-err', 'empty response from the proxy'));
+          var srch = cites(content); if (srch) b.appendChild(srch);
+          var searches = content.filter(function (c) { return c.type === 'server_tool_use'; });
+          if (searches.length) {
+            var st = el('div', 'cv-trace');
+            searches.forEach(function (u) {
+              var res = content.filter(function (r) { return r.type === 'web_search_tool_result' && r.tool_use_id === u.id; })[0];
+              st.appendChild(search(u, res || null));
+            });
+            b.appendChild(st);
+          }
           var uses = content.filter(function (c) { return c.type === 'tool_use'; });
           if (uses.length) {
             var tr = el('div', 'cv-trace');

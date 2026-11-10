@@ -103,7 +103,7 @@
           [~ %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%weather /main: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/weather])
-        (http-dispatch:io %weather)
+        http-dispatch:io
           ::
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%weather /requests: failed")

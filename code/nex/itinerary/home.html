@@ -209,13 +209,12 @@ document.getElementById('new-trip').onclick = async function() {
   var id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   if (!id) return;
   var doc = { name: name, center: [0, 0], zoom: 2, pins: {}, zones: {}, schedule: {} };
-  // a trip is a directory with a document in it
+  // the nexus makes the trip: its dir, its document, its clanker
   if (!ROOT) ROOT = await rootOf('itinerary');
-  await fetch(BALL + '/make' + tripDir(id) + '/', { method: 'PUT' });
-  var r = await fetch(BALL + '/make' + docPath(id) + '?blot=/json', {
-    method: 'PUT',
+  var r = await fetch(BALL + '/poke' + ROOT + '/main.sig?blot=/json', {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(doc)
+    body: JSON.stringify({ action: 'create', trip: id, doc: doc })
   });
   if (r.ok) openTrip(id);
 };

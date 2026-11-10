@@ -119,7 +119,7 @@
           [[%ui ~] %'main.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%contacts /ui/main: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/contacts])
-        (http-dispatch:io %contacts)
+        http-dispatch:io
           ::  /ui/requests/*: individual HTTP request handlers
           ::
           [[%ui %requests ~] @]

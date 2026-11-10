@@ -99,7 +99,7 @@
           [~ %'web.sig']
         ;<  ~  bind:m  (rise-wait:io prod "%s3/web: failed")
         ;<  ~  bind:m  (bind-http-self:io [~ /grubbery/s3])
-        (http-dispatch:io %s3)
+        http-dispatch:io
           [[%requests ~] @]
         ;<  ~  bind:m  (rise-wait:io prod "%s3/req: failed")
         (serve rail name.rail)
