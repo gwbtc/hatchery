@@ -16,6 +16,5 @@
  "typesafe": "/typesafe/app",
  "anthropic.anthropic": "/anthropic/app",
  "openrouter.openrouter": "/openrouter/app",
- "contacts.contacts": "/contacts/app",
  "clanker.clanker": "/clanker/app"
 }
