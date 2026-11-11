@@ -10,7 +10,6 @@
  "test.web-test": "/web-test/app",
  "geocode.geocode": "/geocode/app",
  "ghostprompter": "/ghostprompter/app",
- "nostr": "/nostr/app",
  "itinerary": "/itinerary/app",
  "s3": "/s3/app",
  "shapeshift": "/shapeshift/app",
