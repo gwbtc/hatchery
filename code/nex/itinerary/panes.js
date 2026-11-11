@@ -91,7 +91,6 @@
   function get(u) { return fetch(u, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status + ''); return r.json(); }); }
   // the trip's doc from a pane's url (the explorer's /grubbery/ball/<abs>/itinerary.json)
   function docOf(url) { return (url || '').replace(/\?.*$/, ''); }
-  function tripIdOf(url) { var m = /\/itineraries\/([^/]+)\/itinerary\.json/.exec(docOf(url)); return m ? decodeURIComponent(m[1]) : ''; }
   function cats(doc) { return (doc && doc.categories) || DEFAULT_CATEGORIES; }
   function catColor(doc, c) { var k = cats(doc); return k[c] ? k[c].color : '#888'; }
   function catLabel(doc, c) { var k = cats(doc); return k[c] ? k[c].label : c; }
@@ -443,7 +442,6 @@
 
   // ---- todos ----
   function mountTodos(root, opts) {
-    var id = tripIdOf(opts.url);
     var p = docPane(root, opts, function (box, doc) {
       if (nk) nk.remember();
       // a redraw while typing a new to-do keeps the box and its draft
@@ -460,10 +458,10 @@
         cb.onchange = function () {
           row.classList.add('busy'); row.insertBefore(el('span', 'it-spin'), cb);
           t.done = cb.checked;
-          p.state.commit(putDoc(id, doc), function () { t.done = !t.done; cb.checked = t.done; }).catch(function () { flashFail(row); });
+          p.state.commit(putDoc(opts.url, doc), function () { t.done = !t.done; cb.checked = t.done; }).catch(function () { flashFail(row); });
         };
         var x = el('span', 'x', '×');
-        x.onclick = function (e) { e.preventDefault(); row.classList.add('busy'); row.appendChild(el('span', 'it-spin')); delete doc.todos[tid]; p.state.commit(putDoc(id, doc)).catch(function () { flashFail(row); }); };
+        x.onclick = function (e) { e.preventDefault(); row.classList.add('busy'); row.appendChild(el('span', 'it-spin')); delete doc.todos[tid]; p.state.commit(putDoc(opts.url, doc)).catch(function () { flashFail(row); }); };
         row.append(cb, el('span', 't', t.text || ''), x); body.appendChild(row);
         row._key = tid;
         row._open = function () { cb.checked = !cb.checked; cb.onchange(); };   // Enter toggles
@@ -483,13 +481,13 @@
         doc.todos = doc.todos || {}; doc.todos[tid] = { text: v, done: false };
         inp.value = ''; inp.classList.remove('fail'); nrow.appendChild(el('span', 'it-spin'));
         if (!e.shiftKey && nk) { nk.pin(tid); nk.focus(); }
-        p.state.commit(putDoc(id, doc), function () { delete doc.todos[tid]; }).catch(function () { inp.classList.add('fail'); inp.value = v; var s = nrow.querySelector('.it-spin'); if (s) s.remove(); });
+        p.state.commit(putDoc(opts.url, doc), function () { delete doc.todos[tid]; }).catch(function () { inp.classList.add('fail'); inp.value = v; var s = nrow.querySelector('.it-spin'); if (s) s.remove(); });
       });
       nrow.appendChild(inp); box.appendChild(nrow);
       if (typing) { inp.value = draft; inp.focus(); }
       if (nk) nk.restore();
     });
-    var nk = keyedNav(p.box, '.it-todo', function (row) { if (row._open) row._open(); }, function (row) { var d = p.state.doc; if (!d || !d.todos) return; var was = d.todos[row._key]; delete d.todos[row._key]; return p.state.commit(putDoc(id, d), function () { d.todos[row._key] = was; }); });
+    var nk = keyedNav(p.box, '.it-todo', function (row) { if (row._open) row._open(); }, function (row) { var d = p.state.doc; if (!d || !d.todos) return; var was = d.todos[row._key]; delete d.todos[row._key]; return p.state.commit(putDoc(opts.url, d), function () { d.todos[row._key] = was; }); });
     var h = p.handle, d = h.destroy; h.destroy = function () { if (nk) nk.destroy(); d(); };
     return h;
   }
@@ -557,8 +555,7 @@
       undated.forEach(function (i) { body.appendChild(eventCard(doc, i, sched[i], opts.url)); });
       if (nk) nk.restore();
     });
-    var id = tripIdOf(opts.url);
-    var nk = keyedNav(p.box, '.it-card', function (row) { if (row._open) row._open(); }, function (row) { var d = p.state.doc; if (!d || !d.schedule) return; var was = d.schedule[row._key]; delete d.schedule[row._key]; return p.state.commit(putDoc(id, d), function () { d.schedule[row._key] = was; }); });
+    var nk = keyedNav(p.box, '.it-card', function (row) { if (row._open) row._open(); }, function (row) { var d = p.state.doc; if (!d || !d.schedule) return; var was = d.schedule[row._key]; delete d.schedule[row._key]; return p.state.commit(putDoc(opts.url, d), function () { d.schedule[row._key] = was; }); });
     var h = p.handle, d = h.destroy; h.destroy = function () { if (nk) nk.destroy(); d(); };
     return h;
   }
@@ -613,8 +610,7 @@
       });
       if (nk) nk.restore();
     });
-    var id = tripIdOf(opts.url);
-    var nk = keyedNav(p.box, '.blk', function (row) { if (row._open) row._open(); }, function (row) { var d = p.state.doc; if (!d || !d.schedule) return; var was = d.schedule[row._key]; delete d.schedule[row._key]; return p.state.commit(putDoc(id, d), function () { d.schedule[row._key] = was; }); });
+    var nk = keyedNav(p.box, '.blk', function (row) { if (row._open) row._open(); }, function (row) { var d = p.state.doc; if (!d || !d.schedule) return; var was = d.schedule[row._key]; delete d.schedule[row._key]; return p.state.commit(putDoc(opts.url, d), function () { d.schedule[row._key] = was; }); });
     var h = p.handle, d = h.destroy; h.destroy = function () { if (nk) nk.destroy(); d(); };
     return h;
   }
