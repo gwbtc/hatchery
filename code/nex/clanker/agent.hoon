@@ -1042,7 +1042,7 @@
     ==
   ::  a denied tool is not advertised: the model never sees it
   =/  all=(list json)
-    =/  own  (snoc tools spawn-schema)
+    =/  own  (snoc (snoc tools spawn-schema) title-schema)
     ?:(=(0 searches) own (snoc own (web-search:clanker searches)))
   %-  pure:m
   :-  %a
@@ -1070,6 +1070,17 @@
   =/  t=tape  (trip n)
   =/  len=@ud  (lent t)
   &((gth len 8) =(".clanker" (slag (sub len 8) t)))
+::  +title-schema: the engine's own namer. A chat's directory is a path,
+::  fixed when it is made; this is what the chat is CALLED, which is not
+::  known until something has been asked.
+::
+++  title-schema
+  ^-  json
+  %:  mk-tool-typed:clanker  'set_title'
+    'Name this conversation. Call this once, with your first reply in a new chat, giving a short title (three to six words, no trailing punctuation) describing what is being asked about. Calling it again renames the chat.'
+    ~[['title' 'string' 'a few words naming this conversation']]
+    ~['title']
+  ==
 ::  +spawn-schema: the one tool the engine provides itself.
 ++  spawn-schema
   ^-  json
@@ -1233,6 +1244,7 @@
       =/  mo  (fiber:fiber:nexus ,(unit [json @t]))
       (pure:mo `[s+'The user declined to run this tool. Do not retry it; ask, or go on without it.' 'declined'])
     ?:  =('spawn' name)  (spawn rail chat input)
+    ?:  =('set_title' name)  (set-title rail chat input)
     ?:  =('recipe_step' name)  (take-step rail chat input)
     ?:  =('recipe_enter' name)  (take-enter rail chat input)
     (call-tool rail name input tid)
@@ -1251,6 +1263,37 @@
 ::  nexus of this same kind (its own on-load lays out its tree and seeds
 ::  its tools); no weir of its own, so it is bounded by ours. Then one
 ::  turn: poke its main.sig and wait for its reply event.
+::  +set-title: this chat's title, into the meta.json beside its log. How
+::  a chat is RENDERED, kept out of the log it runs on -- and written by
+::  the engine because a tool in the tools nexus does not know which chat
+::  called it.
+::
+++  set-title
+  |=  [=rail:tarball chat=@t input=json]
+  =/  m  (fiber:fiber:nexus ,(unit [json @t]))
+  ^-  form:m
+  =/  title=@t  (jstr:clanker input 'title')
+  ?:  =('' title)
+    (pure:m `[s+'set_title needs a title' 'error'])
+  ::  the standing chat is the one a collection opens in: it is named by
+  ::  whoever made it and keeps that name
+  ?:  =('main' chat)
+    (pure:m `[s+'This is the standing chat and keeps its name.' 'refused'])
+  =/  road=road:tarball  (nex-road:io rail [%& [%chats `@ta`chat ~] %'meta.json'])
+  ;<  v=view:nexus  bind:m  (peek:io road `[/ %json])
+  ::  merged, not replaced: meta.json is where everything about how this
+  ::  chat is shown will accumulate
+  =/  was=(map @t json)
+    ?.  ?=([%file *] v)  ~
+    =/  j=json  (fall (mole |.(!<(json (need-vase:tarball sang.v)))) [%o ~])
+    ?:(?=([%o *] j) p.j ~)
+  =/  jon=json  [%o (~(put by was) 'title' s+title)]
+  ?:  ?=([%file *] v)
+    ;<  ~  bind:m  (over:io road [[/ %json] jon])
+    (pure:m `[s+'Titled.' title])
+  ;<  *  bind:m  (make-soft:io road |+[[[/ %json] jon] ~])
+  (pure:m `[s+'Titled.' title])
+::
 ++  spawn
   |=  [=rail:tarball chat=@t input=json]
   =/  m  (fiber:fiber:nexus ,(unit [json @t]))

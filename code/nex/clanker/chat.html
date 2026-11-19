@@ -1,0 +1,48 @@
+<!doctype html>
+<!--
+  The clanker collection's plain face: one assistant, its chats, and a
+  composer. The workspace -- tree, panes, tool policy, prompts -- is the
+  explorer at /grubbery/clanker/<path>; this page is the same collection
+  with everything but the conversation taken away.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Groundwire Assistant</title>
+  <link rel="icon" type="image/svg+xml" href="/grubbery/clanker/icon.svg">
+  <link rel="stylesheet" href="/grubbery/clanker/chat.css">
+</head>
+<body>
+  <split-view id="app" orientation="horizontal" primary="start"
+              size="260px" min="170" max="480" persist="clanker-chat-side">
+    <aside id="side" slot="start">
+      <div id="side-head">
+        <div id="brand-row">
+          <div id="brand">Groundwire Assistant</div>
+          <button id="collapse" title="hide the sidebar">&#8676;</button>
+        </div>
+        <button id="new" title="start a new conversation">New chat</button>
+      </div>
+      <div id="chats"></div>
+    </aside>
+    <main id="main" slot="end">
+      <div id="thread"></div>
+      <div id="composer">
+        <div id="ask"></div>
+        <div id="box">
+          <textarea id="input" rows="1" placeholder="Ask about your ship&hellip;" autocomplete="off"></textarea>
+          <button id="send" title="send">Send</button>
+          <button id="stop" title="stop" hidden>Stop</button>
+        </div>
+        <div id="hint">Enter to send &middot; Shift+Enter for a new line</div>
+      </div>
+    </main>
+  </split-view>
+  <!-- the two components this page borrows: the split is the shared
+       primitive, marked is the kit's markdown parser -->
+  <script src="/grubbery/ball/apps/shell/ui/explorer/split-view.js" type="module"></script>
+  <script src="/grubbery/ball/apps/shell/ui/explorer/marked.min.js"></script>
+  <script src="/grubbery/clanker/chat.js"></script>
+</body>
+</html>

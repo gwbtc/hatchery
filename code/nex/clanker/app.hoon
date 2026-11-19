@@ -33,6 +33,9 @@
 /&  recipe-js   ./recipe.js
 /<  rcp-lib     /lib/recipe.hoon
 /&  icon        ./icon.svg
+/&  chat-html   ./chat.html
+/&  chat-js     ./chat.js
+/&  chat-css    ./chat.css
 ::  the layouts the explorer opens the collection's dirs as ('./' paths
 ::  resolve against the dir opened): the collection root or a category
 ::  (selector | a tab per clanker) and a clanker (its tree | chats, record)
@@ -100,6 +103,11 @@
       [%over %& [/ %'recipe.js'] [[/ %mime] recipe-js]]
       [%over %& [/ %'chats.js'] [[/ %mime] chats-js]]
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
+      ::  the plain face: one assistant and a composer, which the tile
+      ::  opens. The workspace is the explorer, a link away.
+      [%over %& [/ %'chat.html'] [[/ %mime] chat-html]]
+      [%over %& [/ %'chat.js'] [[/ %mime] chat-js]]
+      [%over %& [/ %'chat.css'] [[/ %mime] chat-css]]
       [%over %& [/ %'collection-layout.json'] [[/ %mime] coll-layout]]
       [%over %& [/ %'clanker-layout.json'] [[/ %mime] clanker-layout]]
       [%over %& [/ %'chat-layout.json'] [[/ %mime] chat-layout]]
@@ -125,6 +133,10 @@
       ::  Seeded without the proxy roads resolved (on-load cannot peek);
       ::  +sand-clanker re-sands it on every send.
       [%fall %| [%projects %'grubbery.clanker' ~] (clanker-bole 'grubbery' 'kernel' grubbery-system (kernel-weir ~) ~)]
+      ::  the assistant the plain page opens: the same kernel tools, a
+      ::  prompt that explains the ship rather than its source
+      [%fall %| [%projects %assistant ~] empty-dir:loader]
+      [%fall %| [%projects %assistant %'groundwire.clanker' ~] assistant-bole]
   ==
 ::  +view-decl: /projects/view.json, what the explorer reads (see
 ::  explorer.hoon +find-view): where to ask which pane a path opens in,
@@ -180,6 +192,15 @@
         ['bundle' s+bundle]
     ==
   extra
+::  +assistant-bole: the clanker the plain page opens, carrying the title
+::  it is shown under so the workspace names it the same thing.
+::
+++  assistant-bole
+  ^-  bole:tarball
+  =/  b=bole:tarball  (clanker-bole 'groundwire' 'kernel' assistant-system (kernel-weir ~) ~)
+  %+  ~(put bo:tarball b)  [/ %'meta.json']
+  [[/ %json] (pairs:enjs:format ~[['title' s+'Groundwire Assistant']])]
+::
 ++  clanker-bole
   |=  [name=@t bundle=@t system=@t =weir:tarball extra=(list [@t json])]
   ^-  bole:tarball
@@ -643,7 +664,7 @@
   =/  body=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) *json)
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
-  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'recipe.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix) =(%'stage-layout.json' i.suffix) =(%'root-layout.json' i.suffix)))
+  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'chat.js' i.suffix) =(%'chat.css' i.suffix) =(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'recipe.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix) =(%'stage-layout.json' i.suffix) =(%'root-layout.json' i.suffix)))
     (serve-file eyre-id / i.suffix)
   ::  the root's view: the nexus root itself opens as the root layout
   ::  (the collection over ./projects); anything else at the root keeps
@@ -656,6 +677,10 @@
   ::  finds this collection's views by itself (/projects/view.json), so
   ::  /grubbery/clanker/<path> is simply the explorer's own url for that
   ::  path under the collection
+  ::  the root: the plain page, which is what the tile links to. A path
+  ::  under it is the workspace, below.
+  ?:  ?&(=(%'GET' method) ?=(~ suffix))
+    (serve-file eyre-id / %'chat.html')
   ?:  ?&(=(%'GET' method) !?=([%api *] suffix))
     ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
     ?.  ?=([~ %| *] root)
@@ -712,13 +737,24 @@
     ?~  proj  (bad eyre-id 'path required')
     =/  chat=@t  (arg 'chat')
     ?.  =('' chat)
-      ;<  sys=@t  bind:m  (read-text [%| 1 %& (welp /projects (welp u.proj [%chats `@ta`chat ~])) %'system.md'])
+      =/  cdir=path  (welp /projects (welp u.proj [%chats `@ta`chat ~]))
+      ;<  sys=@t  bind:m  (read-text [%| 1 %& cdir %'system.md'])
+      ;<  mt=(unit json)  bind:m  (read-json-maybe [%| 1 %& cdir %'meta.json'])
       %+  send-json  eyre-id
-      (en:json:html (pairs:enjs:format ~[['path' s+(spat u.proj)] ['chat' s+chat] ['record' [%o ~]] ['system' s+sys]]))
+      %-  en:json:html
+      %-  pairs:enjs:format
+      :~  ['path' s+(spat u.proj)]  ['chat' s+chat]  ['record' [%o ~]]
+          ['system' s+sys]  ['meta' (fall mt [%o ~])]
+      ==
     ;<  cfg=json  bind:m  (read-json [%| 1 %& (welp /projects u.proj) %'config.json'])
     ;<  sys=@t  bind:m  (read-text [%| 1 %& (welp /projects (snoc u.proj %prompts)) %'main.md'])
+    ;<  mt=(unit json)  bind:m  (read-json-maybe [%| 1 %& (welp /projects u.proj) %'meta.json'])
     %+  send-json  eyre-id
-    (en:json:html (pairs:enjs:format ~[['path' s+(spat u.proj)] ['record' cfg] ['system' s+sys]]))
+    %-  en:json:html
+    %-  pairs:enjs:format
+    :~  ['path' s+(spat u.proj)]  ['record' cfg]  ['system' s+sys]
+        ['meta' (fall mt [%o ~])]
+    ==
   ?:  ?&(=(%'POST' method) =([%api %record ~] suffix))
     =/  proj=(unit path)  (parse-proj (jarg 'path'))
     ?~  proj  (bad eyre-id 'path required')
@@ -727,12 +763,16 @@
       =/  cdir=path  (welp /projects (welp u.proj [%chats `@ta`chat ~]))
       ;<  cv=view:nexus  bind:m  (peek:io [%| 1 %| cdir] ~)
       ?.  ?=([%ball *] cv)  (bad eyre-id 'no such chat')
+      ;<  named=?  bind:m  (put-meta cdir body)
       =/  s=(unit json)  ?.(?=([%o *] body) ~ (~(get by p.body) 'system'))
-      ?.  ?=([~ %s *] s)  (bad eyre-id 'system required')
-      =/  bask=bask:tarball  [[/ %mime] [/text/markdown (as-octs:mimes:html p.u.s)]]
-      ;<  *  bind:m  (make-soft:io [%| 1 %& cdir %'system.md'] |+[bask ~])
-      ;<  ~  bind:m  (over:io [%| 1 %& cdir %'system.md'] bask)
-      (send-json eyre-id '{"ok":true}')
+      ?:  ?=([~ %s *] s)
+        =/  bask=bask:tarball  [[/ %mime] [/text/markdown (as-octs:mimes:html p.u.s)]]
+        ;<  *  bind:m  (make-soft:io [%| 1 %& cdir %'system.md'] |+[bask ~])
+        ;<  ~  bind:m  (over:io [%| 1 %& cdir %'system.md'] bask)
+        (send-json eyre-id '{"ok":true}')
+      ?:  named  (send-json eyre-id '{"ok":true}')
+      (bad eyre-id 'system or title required')
+    ;<  *  bind:m  (put-meta (welp /projects u.proj) body)
     =/  cfg-road=road:tarball  [%| 1 %& (welp /projects u.proj) %'config.json']
     ;<  cv=view:nexus  bind:m  (peek:io cfg-road `[/ %json])
     ?.  ?=([%file *] cv)  (bad eyre-id 'no such clanker')
@@ -1099,7 +1139,16 @@
     ;<  log=json  bind:mj  (read-json [%| 1 %& cdir %'log.chat-log'])
     =/  evs=(list json)  ?:(?=([%a *] log) p.log ~)
     (pure:mj (chat-summary i.names evs !=('' sys)))
-  $(names t.names, acc [row acc])
+  ::  how it is shown, if it has been named: the list is the only place a
+  ::  chat is seen without being opened
+  ;<  mt=(unit json)  bind:m  (read-json-maybe [%| 1 %& cdir %'meta.json'])
+  =/  title=json
+    ?.  ?=([~ %o *] mt)  ~
+    (fall (~(get by p.u.mt) 'title') ~)
+  =/  titled=json
+    ?.  ?=([%o *] row)  row
+    [%o (~(put by p.row) 'title' title)]
+  $(names t.names, acc [titled acc])
 ::  +chat-summary: one chat as the chats pane shows it: its name, how
 ::  many events its log holds, the last thing said to it, and whether a
 ::  turn is running (the log ends in an input, tool results, or a
@@ -1228,6 +1277,28 @@
   ;<  more=(list @t)  bind:m  (tool-names-in root (snoc sub i.dirs))
   $(dirs t.dirs, files (weld files more))
 ::  +read-json-maybe: a json grub, or ~ when there is none
+::  +put-meta: merge the body's `meta` object (and a bare `title`) into a
+::  directory's meta.json, answering whether anything was given. How a
+::  thing is RENDERED -- a chat's or a clanker's title -- kept beside it
+::  and out of its record, which is what it runs on.
+::
+++  put-meta
+  |=  [dir=path body=json]
+  =/  m  (fiber:fiber:nexus ,?)
+  ^-  form:m
+  =/  given=(map @t json)
+    =/  o=(unit json)  ?.(?=([%o *] body) ~ (~(get by p.body) 'meta'))
+    =/  base=(map @t json)  ?:(?=([~ %o *] o) p.u.o ~)
+    =/  t=(unit json)  ?.(?=([%o *] body) ~ (~(get by p.body) 'title'))
+    ?.(?=([~ %s *] t) base (~(put by base) 'title' u.t))
+  ?:  =(~ given)  (pure:m %.n)
+  ;<  cur=(unit json)  bind:m  (read-json-maybe [%| 1 %& dir %'meta.json'])
+  =/  was=(map @t json)  ?:(?=([~ %o *] cur) p.u.cur ~)
+  =/  b=bask:tarball  [[/ %json] [%o (~(uni by was) given)]]
+  ;<  *  bind:m  (make-soft:io [%| 1 %& dir %'meta.json'] |+[b ~])
+  ;<  ~  bind:m  (over:io [%| 1 %& dir %'meta.json'] b)
+  (pure:m %.y)
+::
 ++  read-json-maybe
   |=  road=road:tarball
   =/  m  (fiber:fiber:nexus ,(unit json))
@@ -1434,6 +1505,43 @@
   ^-  form:m
   (send-simple:http-res:io eyre-id [[200 ~[['content-type' 'application/json']]] `(as-octs:mimes:html body)])
 ::  +grubbery-system: the grubbery clanker's standing prompt.
+++  assistant-system
+  ^-  @t
+  '''
+  You help the person who owns this ship understand and use it. They may be
+  new to urbit and to grubbery, so explain in plain words and keep urbit
+  jargon to what you have to use -- and when you use a word like desk, nexus,
+  grub or weir, say what it means the first time it comes up.
+
+  The ship's state is a namespace: a tree of directories and files called
+  grubs, which you read with your tools. Apps are nexuses installed under
+  /apps; a desk is a package of them. What is installed, where a thing lives,
+  what an app does and what it has stored are all questions you answer by
+  looking, not by guessing.
+
+  Look things up before answering. If you do not know where something is,
+  grep for it, scoped to a directory rather than the whole namespace. If a
+  question is about this ship, the answer is in the ship -- prefer reading it
+  over describing how it usually works.
+
+  Tools:
+  - grep / read_grub: find and read anything in the namespace.
+  - list_files / read_file / write_file / delete_file: your own directory,
+    where your memories/ live. remember appends a dated note to
+    memories/<topic>.md -- use it for what the person tells you about
+    themselves and their ship.
+
+  You can also change things, and that is what the permission prompts are
+  for. Say plainly what you are about to do and why before you ask. Never
+  edit or delete anything you were not asked to.
+
+  Answer briefly. One or two short paragraphs is almost always enough; offer
+  the longer version rather than writing it unasked.
+
+  On your first reply in a new conversation, call set_title with a short name
+  for it. Do this every time, before you answer.
+  '''
+::
 ++  grubbery-system
   ^-  @t
   '''
