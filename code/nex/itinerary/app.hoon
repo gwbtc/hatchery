@@ -1,14 +1,13 @@
 ::  itinerary nexus: one trip per itinerary, planned on a map.
 ::
-::  An itinerary organizes a single well-scoped trip: a bounded span of days,
-::  a bounded stretch of map and, in time, a bounded budget. The budget is
-::  the ambition the document does not hold yet. Today itinerary.json holds the
-::  trip's name and description, its dates and timezone, the map's center
-::  and zoom, the categories that colour and group everything, and the
+::  An itinerary organizes a single well-scoped trip: a bounded span of days
+::  and a bounded stretch of map. itinerary.json holds the trip's name and
+::  description, its dates and timezone, the map's center and zoom, the
+::  categories that colour and group everything, and the
 ::  things planned: pins (places, with notes and who suggested them), zones
 ::  (areas drawn on the map), a schedule (dated entries, fixed or tentative,
 ::  each tied to a pin) and todos. Next to the document sits files/, the
-::  trip's attachments: tickets, schedules, photos.
+::  trip's attachments: tickets, schedules, photos. TODO: a budget.
 ::
 ::  On disk a trip is the dir /itineraries/<id>/ under this nexus, and that
 ::  dir is the unit of everything: one grant covers a trip, one cull deletes
@@ -33,8 +32,8 @@
 ::  This file: the imports (the page, the explorer's panes and layouts, the
 ::  app's declarations, the prompts, shared components), then the nexus core
 ::  (+on-load lays the app out, +on-file runs its poke, its HTTP binding and
-::  its requests), then the helpers: the poke,
-::  and the trip's clanker as a spec.
+::  its requests), then the helpers: the poke protocol and the trip's clanker
+::  as a spec.
 ::
 ::  /itinerary frontend UI: page and assets.
 ::
