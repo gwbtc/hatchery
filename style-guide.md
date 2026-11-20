@@ -13,6 +13,10 @@
 - A library is what they are pulled out into when another application demands
   the same functionality — or earlier, if the group is simple and clear enough
   to stand alone and pulling it out significantly unclutters the nexus.
+- Don't maintain an HTTP endpoint for something the kernel's API already
+  serves. The page reaches the namespace through peek, make, poke, cull and
+  keep; an endpoint of your own over your own data is a second way to do what
+  already works, with its own permissions and its own bugs.
 
 ## Order
 
