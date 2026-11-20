@@ -8,7 +8,7 @@
 //
 // log events: input {body} · response {content, stop, usage} ·
 // results {content, trace} · ask {ids} · resolved {decisions} · interrupt
-(function () {
+export const panes = (function () {
   'use strict';
   var API = '/grubbery/clanker';
   var CSS_ID = 'clanker-chat-css';
@@ -451,6 +451,7 @@
     load();
     return handle;
   }
-  window.Viewers = window.Viewers || {};
-  window.Viewers['chat'] = { label: 'Chat', mount: mount };
+  return {
+    'chat': { label: 'Chat', mount: mount },
+  };
 })();

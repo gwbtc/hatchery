@@ -14,7 +14,7 @@
 //
 // Panes of one trip talk through one page-level event, itin-focus
 // {doc, pin}: a places row asks, the map pane showing that doc answers.
-(function () {
+export const panes = (function () {
   'use strict';
   var BALL = '/grubbery/api';
   // a pane is handed the explorer's url for what it shows
@@ -615,12 +615,13 @@
     return h;
   }
 
-  window.Viewers = window.Viewers || {};
-  window.Viewers['itin-trips'] = { label: 'trips', mount: mountTrips };
-  window.Viewers['itin-map'] = { label: 'map', mount: mountMap };
-  window.Viewers['itin-trip'] = { label: 'trip', mount: mountTrip };
-  window.Viewers['itin-todos'] = { label: 'todos', mount: mountTodos };
-  window.Viewers['itin-places'] = { label: 'places', mount: mountPlaces };
-  window.Viewers['itin-events'] = { label: 'events', mount: mountEvents };
-  window.Viewers['itin-schedule'] = { label: 'schedule', mount: mountSchedule };
+  return {
+    'trips': { label: 'trips', mount: mountTrips },
+    'map': { label: 'map', mount: mountMap },
+    'trip': { label: 'trip', mount: mountTrip },
+    'todos': { label: 'todos', mount: mountTodos },
+    'places': { label: 'places', mount: mountPlaces },
+    'events': { label: 'events', mount: mountEvents },
+    'schedule': { label: 'schedule', mount: mountSchedule },
+  };
 })();

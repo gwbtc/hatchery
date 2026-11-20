@@ -11,7 +11,7 @@
 //               own prompt, as a form. args {proj, chat?}
 //   config      which endpoint answers a clanker and with which model,
 //               as a form over the provider registry. args {proj}
-(function () {
+export const panes = (function () {
   'use strict';
   var API = '/grubbery/clanker';
   var CSS_ID = 'clanker-panes-css';
@@ -696,11 +696,12 @@
     return handle;
   }
 
-  window.Viewers = window.Viewers || {};
-  window.Viewers['tip'] = { label: 'Tip', mount: mountTip };
-  window.Viewers['tools'] = { label: 'Tools', mount: mountTools };
-  window.Viewers['collection'] = { label: 'Clankers', mount: mountCollection };
-  window.Viewers['chats'] = { label: 'Chats', mount: mountChats };
-  window.Viewers['record'] = { label: 'Prompt', mount: mountRecord };
-  window.Viewers['config'] = { label: 'Config', mount: mountConfig };
+  return {
+    'tip': { label: 'Tip', mount: mountTip },
+    'tools': { label: 'Tools', mount: mountTools },
+    'collection': { label: 'Clankers', mount: mountCollection },
+    'chats': { label: 'Chats', mount: mountChats },
+    'record': { label: 'Prompt', mount: mountRecord },
+    'config': { label: 'Config', mount: mountConfig },
+  };
 })();

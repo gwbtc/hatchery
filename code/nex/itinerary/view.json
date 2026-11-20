@@ -1,5 +1,59 @@
 {
-  "viewers": "/grubbery/itinerary/api/viewer",
   "title": "itinerary",
-  "icon": "/grubbery/itinerary/icon.svg"
+  "icon": "/grubbery/itinerary/icon.svg",
+  "rules": [
+    {
+      "match": "",
+      "kind": "dir",
+      "layout": "./collection-layout.json"
+    },
+    {
+      "match": "itineraries",
+      "kind": "dir",
+      "view": [
+        "",
+        "trips"
+      ],
+      "pane": {
+        "view": "trips",
+        "script": "./panes.js",
+        "follow": [
+          {
+            "road": "./itineraries/",
+            "fold": true
+          }
+        ]
+      }
+    },
+    {
+      "match": "itineraries/*",
+      "kind": "dir",
+      "layout": "./trip-layout.json",
+      "vars": {
+        "trip": "{1}"
+      }
+    },
+    {
+      "match": "itineraries/*/itinerary.json",
+      "kind": "file",
+      "view": [
+        "map",
+        "trip",
+        "todos",
+        "places",
+        "events",
+        "schedule"
+      ],
+      "pane": {
+        "view": "{view}",
+        "script": "./panes.js",
+        "follow": [
+          {
+            "road": "./itineraries/{1}/itinerary.json",
+            "body": true
+          }
+        ]
+      }
+    }
+  ]
 }

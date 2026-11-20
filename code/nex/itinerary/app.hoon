@@ -33,7 +33,7 @@
 ::  This file: the imports (the page, the explorer's panes and layouts, the
 ::  app's declarations, the prompts, shared components), then the nexus core
 ::  (+on-load lays the app out, +on-file runs its poke, its HTTP binding and
-::  its requests), then the helpers: the poke, the explorer's viewer rule,
+::  its requests), then the helpers: the poke,
 ::  and the trip's clanker as a spec.
 ::
 ::  /itinerary frontend UI: page and assets.
@@ -92,7 +92,7 @@
           [%over %& [/ %'link.json'] [[/ %json] (as-json:loader link)]]
           [%over %& [/ %'weir.json'] [[/ %json] (as-json:loader weir)]]
           [%over %& [/ %'tile.json'] [[/ %json] (as-json:loader tile)]]
-          [%over %& [/ %'view.json'] [[/ %json] (as-json:loader view)]]      ::  read by the explorer, see +pick-viewer
+          [%over %& [/ %'view.json'] [[/ %json] (as-json:loader view)]]      ::  the explorer's rules: how the paths under this root open
           [%over %& [/ %'panes.js'] [[/ %mime] panes-js]]
           [%over %& [/ %'collection-layout.json'] [[/ %mime] coll-layout]]
           [%over %& [/ %'trip-layout.json'] [[/ %mime] trip-layout]]
@@ -151,8 +151,6 @@
           ?+    route  (send-to-kernel:web eyre-id app-name route)
               ~                           (send-to-kernel:web eyre-id app-name ~[%'home.html'])
               [%app ~]                    (send-to-kernel:web eyre-id app-name ~[%'index.html'])
-              [%trip @ %'layout.json' ~]  (serve-trip-layout rail eyre-id i.t.route)
-              [%api %viewer ~]            (serve-viewer eyre-id args)
           ==
         ==
       ==
@@ -262,106 +260,5 @@
       ~[['{{id}}' id] ['{{at}}' trip]]
       chats=~[(chat:clankerio 'plan' (from-mime:text plan-prompt) allow:clankerio)]
       config=~[['web_search' (numb:enjs:format 5)]]                   ::  it may search the web, five times a turn
-  ==
-::  +serve-trip-layout: the trip's workspace layout, the template with
-::  the id filled in so its chat tab can name the trip's own clanker.
-::  404 for an id with no document.
-::
-++  serve-trip-layout
-  |=  [here=rail:tarball eyre-id=@ta id=@ta]
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  =*  web  web:nw
-  ;<  has=?  bind:m  (peek-exists:io (nex-road:io here [%& /itineraries/[id] %'itinerary.json']))
-  ?.  has  (reply:web eyre-id 404 'no such trip')
-  ;<  tv=view:nexus  bind:m  (peek:io [%| 1 %& / %'trip-layout.json'] `[/ %mime])
-  ?.  ?=([%file *] tv)  (send-json:web eyre-id [%o ~])
-  =/  tpl=@t  (from-mime:text !<(mime (need-vase:tarball sang.tv)))
-  (send-simple:http-res:io eyre-id (mime-response:http-utils [/application/json (as-octs:mimes:html (fill:text tpl '{trip}' id))]))
-::  How a place under this root opens, when the explorer asks. The rule
-::  is +pick-viewer, the explorer's json shape is +answer-json.
-::
-+$  answer
-  $%  [%layout url=tape]                     ::  as a workspace, laid out by the file at url
-      [%pane view=@t road=tape fold=?]       ::  in the itin-<view> pane of panes.js, following road: a file, or a dir if fold
-  ==
-::  +answer-json: an answer in the json format the explorer expects.
-::
-::  The explorer opens paths. For a path under this root it first asks
-::  this nexus how, at the url view.json declares, and the nexus answers
-::  with one of two json shapes:
-::
-::    {layout: url}
-::      open a workspace, laid out by the json at url
-::
-::    {view, script, args, follow}
-::      open one pane: load the script, place the <view> element in
-::      the pane with args, and stream it what it follows
-::
-::  follow is a list of roads, absolute, each one of:
-::
-::    {road, body: true}    a file, its body sent on every change
-::    {road, fold: true}    a dir, its listing sent on every change
-::
-::  root is where this nexus lives. Only the script url needs it.
-::
-++  answer-json
-  |=  [root=path =answer]
-  ^-  json
-  ?-  -.answer
-      %layout
-    (pairs:enjs:format ~[['layout' s+(crip url.answer)]])
-      %pane
-    %-  pairs:enjs:format
-    :~  ['view' s+(cat 3 'itin-' view.answer)]
-        ['script' s+(crip "/grubbery/api/peek{(spud root)}/panes.js")]
-        ['args' [%o ~]]
-        ['follow' a+~[(pairs:enjs:format ~[['road' s+(crip road.answer)] ['body' b+!fold.answer] ['fold' b+fold.answer]])]]
-    ==
-  ==
-::  +serve-viewer: the explorer asks how a path under this root opens,
-::  ?path=&view=. An empty answer means we have no opinion.
-::
-++  serve-viewer
-  |=  [eyre-id=@ta args=quay:eyre]
-  =/  m  (fiber:fiber:nexus ,~)
-  ^-  form:m
-  =/  arg   |=(k=@t ^-(@t (fall (~(get by (malt args)) k) '')))
-  =/  pax=(unit path)  ?:(=('' (arg 'path')) `/ (mole |.((stab (arg 'path')))))
-  ?~  pax  (reply:web:nw eyre-id 200 '')
-  ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io app-name)
-  ?.  ?=([~ %| *] root)  (reply:web:nw eyre-id 200 '')
-  =/  answer  (pick-viewer p.u.root u.pax (arg 'view'))
-  ?~  answer  (reply:web:nw eyre-id 200 '')
-  (send-json:web:nw eyre-id (answer-json p.u.root u.answer))
-::  +pick-viewer: the rule. Our files are the kernel's to serve, under
-::  the root; the trip layout is built, so it is ours.
-::
-::    /                                  the collection layout
-::    /itineraries                       the trips navigator, following the dir
-::    /itineraries/<id>                  the trip layout
-::    /itineraries/<id>/itinerary.json   ?view=map|trip|todos|places|events|schedule
-::
-++  pick-viewer
-  |=  [root=path pax=path view=@t]
-  ^-  (unit answer)
-  =/  kernel  "/grubbery/api/peek{(spud root)}"
-  ?+    pax  ~
-      ~
-    ?+  view  ~
-      %$                                              `[%layout "{kernel}/collection-layout.json"]
-    ==
-      [%itineraries ~]
-    ?+  view  ~
-      ?(%$ %trips)                                    `[%pane 'trips' "{(spud root)}/itineraries/" &]
-    ==
-      [%itineraries @ ~]
-    ?+  view  ~
-      %$                                              `[%layout "{(spud mount)}/trip/{(trip i.t.pax)}/layout.json"]
-    ==
-      [%itineraries @ %'itinerary.json' ~]
-    ?+  view  ~
-      ?(%map %trip %todos %places %events %schedule)  `[%pane view "{(spud root)}/itineraries/{(trip i.t.pax)}/itinerary.json" |]
-    ==
   ==
 --

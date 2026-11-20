@@ -1,5 +1,5 @@
 // Chat tab — the trip's clanker, in the page. The pane itself is the
-// clanker collection's own viewer (window.Viewers.chat): it reads the
+// clanker collection's own chat pane: it reads the
 // chat log through the collection's API and sends turns there. This file
 // only points it at the right clanker and tells it when the log moved.
 //
@@ -9,6 +9,14 @@
 
 (function () {
   var mount = document.getElementById('chat-mount');
+  // the pane is @clanker's, imported from it: one module, loaded once
+  var chatPane = null;
+  function thePane() {
+    if (!chatPane) chatPane = import('/grubbery/clanker/panes/chat.js')
+      .then(function (m) { return (m.panes || {}).chat || null; })
+      .catch(function () { return null; });
+    return chatPane;
+  }
   if (!mount) return;
   var pane = null;
   var stream = null;
@@ -38,14 +46,15 @@
     var id = window.currentId;
     if (!id || id === mountedFor) return;
     teardown();
-    if (!window.Viewers || !window.Viewers.chat) {
+    var chat = await thePane();
+    if (!chat) {
       mount.innerHTML = '<div style="padding:20px;color:#8b949e">chat unavailable</div>';
       return;
     }
     var road = await follow(id);
     if (!road || window.currentId !== id) return;
     mountedFor = id;
-    pane = window.Viewers.chat.mount(mount, {
+    pane = chat.mount(mount, {
       url: '/grubbery/ball' + road,
       args: { proj: proj(id), chat: 'plan' }
     });

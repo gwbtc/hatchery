@@ -11,7 +11,7 @@
 ::      work/                              a category
 ::        hatchery.clanker/
 ::    /http.sig, /requests/                the page and its API
-::    /viewer.js, /chats.js                the panes: a chat, a chats/ list
+::    /panes/<name>.js                     the panes: a chat, a clanker, a recipe
 ::
 ::  This nexus runs no turns. It mounts clankers, keeps the tree, and
 ::  serves its API; a chat message is a poke to that clanker's own
@@ -19,8 +19,8 @@
 ::  explorer's browse page (its <namespace-explorer> component) mounted
 ::  at this route and rooted at the collection, so /grubbery/clanker/
 ::  <path> is the explorer at that path. The same declaration points the
-::  explorer at /api/viewer, where +pick-viewer says per file which pane
-::  it opens in: a chat-log opens in the chat pane (viewer.js) in this
+::  explorer, whose view.json rules say per path which pane it opens
+::  in: a chat-log opens in the chat pane (panes/chat.js) in this
 ::  explorer, nowhere else. One explorer, one tree, one tab bar.
 ::
 /<  clanker    /lib/clanker.hoon
@@ -28,9 +28,9 @@
 ::  the collection's own tools nexus: clankers, chat_status, send,
 ::  resolve, stop, ensure (what the page's api does, for a tool caller)
 /&  coll-tools  /lib/clanker-collection-bundle/
-/&  viewer-js   ./viewer.js
-/&  chats-js    ./chats.js
-/&  recipe-js   ./recipe.js
+/&  chat-pane-js     ./panes/chat.js
+/&  clanker-pane-js  ./panes/clanker.js
+/&  recipe-pane-js   ./panes/recipe.js
 /<  rcp-lib     /lib/recipe.hoon
 /&  icon        ./icon.svg
 /&  chat-html   ./chat.html
@@ -98,10 +98,12 @@
       [%over %& [/ %'link.json'] [[/ %json] (pairs:enjs:format ~[['name' s+'clanker'] ['description' s+'The grubbery chat workspace']])]]
       [%over %& [/ %'weir.json'] [[/ %json] weir-ask]]
       [%over %& [/ %'tile.json'] [[/ %json] tile]]
-      ::  the panes +pick-viewer hands out: a chat-log's chat, a chats/ dir's list
-      [%over %& [/ %'viewer.js'] [[/ %mime] viewer-js]]
-      [%over %& [/ %'recipe.js'] [[/ %mime] recipe-js]]
-      [%over %& [/ %'chats.js'] [[/ %mime] chats-js]]
+      ::  the panes the rules hand out: a chat, a clanker's own forms
+      ::  and lists, a recipe graph
+      [%fall %| /panes empty-dir:loader]
+      [%over %& [/panes %'chat.js'] [[/ %mime] chat-pane-js]]
+      [%over %& [/panes %'recipe.js'] [[/ %mime] recipe-pane-js]]
+      [%over %& [/panes %'clanker.js'] [[/ %mime] clanker-pane-js]]
       [%over %& [/ %'icon.svg'] [[/ %mime] icon]]
       ::  the plain face: one assistant and a composer, which the tile
       ::  opens. The workspace is the explorer, a link away.
@@ -114,9 +116,8 @@
       [%over %& [/ %'stage-layout.json'] [[/ %mime] stage-layout]]
       [%over %& [/ %'root-layout.json'] [[/ %mime] root-layout]]
       ::  the root declares its own view: the explorer landing ON the nexus
-      ::  (by name, @clanker) asks /api/root-viewer and opens the root
-      ::  layout; everything under /projects is governed by the
-      ::  collection's view.json below, nearest one winning
+      ::  (by name, @clanker) opens the root layout; everything under
+      ::  /projects is governed by the collection's view.json below
       [%over %& [/ %'view.json'] [[/ %json] root-view-decl]]
       [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
       [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
@@ -127,7 +128,7 @@
       [%fall %| /requests empty-dir:loader]
       [%fall %| /projects empty-dir:loader]
       ::  the collection declares its views: an explorer rooted at or under
-      ::  /projects finds this and asks /api/viewer per path (+pick-viewer)
+      ::  /projects finds this and matches its rules (+view-rules)
       [%over %& [/projects %'view.json'] [[/ %json] view-decl]]
       ::  the grubbery clanker: the kernel self-editing tools, a wide weir.
       ::  Seeded without the proxy roads resolved (on-load cannot peek);
@@ -139,24 +140,165 @@
       [%fall %| [%projects %assistant %'groundwire.clanker' ~] assistant-bole]
   ==
 ::  +view-decl: /projects/view.json, what the explorer reads (see
-::  explorer.hoon +find-view): where to ask which pane a path opens in,
-::  and the chrome of an explorer rooted here.
+::  explorer.hoon +find-views): the table of how the paths under the
+::  collection open, and the chrome of an explorer rooted here.
 ++  view-decl
   ^-  json
   %-  pairs:enjs:format
-  :~  ['viewers' s+'/grubbery/clanker/api/viewer']
+  :~  ['rules' view-rules]
       ['title' s+'clanker']
       ['icon' s+'/grubbery/clanker/icon.svg']
   ==
-::  +root-view-decl: /view.json, the root's own declaration. Its viewers
-::  endpoint answers for the root alone (the root layout); the paths under
-::  /projects never reach it, the collection's own view.json is nearer.
+::  +root-view-decl: /view.json, the root's own declaration. Its one rule
+::  is for the root itself; the paths under /projects fall through to the
+::  collection's own view.json, which has the table.
 ++  root-view-decl
   ^-  json
   %-  pairs:enjs:format
-  :~  ['viewers' s+'/grubbery/clanker/api/root-viewer']
+  :~  :-  'rules'
+      :-  %a
+      :_  ~
+      %-  pairs:enjs:format
+      :~  ['match' s+'']  ['kind' s+'dir']
+          ['layout' s+'/grubbery/clanker/root-layout.json']
+      ==
       ['title' s+'clanker']
       ['icon' s+'/grubbery/clanker/icon.svg']
+  ==
+::  +view-rules: /projects/view.json's table — which pane a path under
+::  the collection opens in, from the path, whether it is a file or a
+::  dir, and the moment's own ?view= ('' is the bare path; 'collection',
+::  'record', 'tools', 'config', 'tip' and 'stage' are ours). The first
+::  rule that matches wins, so the specific paths come first and the
+::  collection's own two catch-alls last. The rule between them matches
+::  anything inside a clanker and names nothing: that path is the
+::  explorer's own to render, and the catch-alls do not get to claim it.
+::  `follow` names the roads a pane depends on, so the explorer's stream
+::  tells it when they move. A pane is about the path it opens on; keep
+::  it that way.
+::
+++  view-rules
+  ^-  json
+  =/  fol
+    |=  [road=@t body=? fold=?]
+    ^-  json
+    (pairs:enjs:format ~[['road' s+road] ['body' b+body] ['fold' b+fold]])
+  =/  pane
+    |=  [v=@t script=@t a=(list [@t json]) f=(list json)]
+    ^-  (list [@t json])
+    :_  ~
+    :-  'pane'
+    %-  pairs:enjs:format
+    :~  ['view' s+v]  ['script' s+script]
+        ['args' (pairs:enjs:format a)]  ['follow' a+f]
+    ==
+  =/  lay  |=(u=@t ^-((list [@t json]) ~[['layout' s+u]]))
+  =/  rul
+    |=  [match=@t kind=@t views=(list @t) body=(list [@t json])]
+    ^-  json
+    %-  pairs:enjs:format
+    ;:  weld
+      ~[['match' s+match]]
+      ?:(=('' kind) ~ ~[['kind' s+kind]])
+      ?~(views ~ ~[['view' a+(turn views |=(v=@t `json`s+v))]])
+      body
+    ==
+  =/  panes=@t       '/grubbery/clanker/panes/clanker.js'
+  =/  tool-panes=@t  '/grubbery/tools/pane.js'
+  ::  a chat: {1} is the clanker it belongs to, {2} the chat's own name
+  =/  log=@t   '**/chats/*/log.chat-log'
+  =/  chat=(list [@t json])  ~[['proj' s+'/{1}'] ['chat' s+'{2}']]
+  ::  a clanker named anywhere in the tree: {1} is what it sits under,
+  ::  {2} its name without the suffix, so './{1}/{2}.clanker' is it
+  =/  cfg=@t   '**/*.clanker/config.json'
+  =/  proj=(list [@t json])  ~[['proj' s+'/{1}/{2}.clanker']]
+  :-  %a
+  :~
+    ::  a chat's log: the chat itself, or one of the three forms over it
+    ::  (its prompt, its tool policy, its recipe run). The log is followed
+    ::  by name only -- the pane holds a window of it and fetches what is
+    ::  past that window on each change, never the whole array.
+      %^  rul  log  'file'
+      :-  ~['prompt']
+      %^  pane  'record'  panes
+      [chat ~[(fol './{1}/chats/{2}/system.md' | |)]]
+      %^  rul  log  'file'
+      :-  ~['tip']
+      %^  pane  'tip'  panes
+      :-  chat
+      ~[(fol './{1}/chats/{2}/run.json' | |) (fol './{1}/chats/{2}/log.chat-log' | |)]
+      %^  rul  log  'file'
+      :-  ~['tools']
+      %^  pane  'tools'  panes
+      :-  chat
+      ~[(fol './{1}/chats/{2}/tools.json' | |) (fol './{1}/tools.json' | |)]
+      %^  rul  log  'file'
+      :-  ~
+      %^  pane  'chat'  '/grubbery/clanker/panes/chat.js'
+      [chat ~[(fol './{1}/chats/{2}/log.chat-log' | |)]]
+    ::  a tool's source under a clanker's tools nexus: the shell's tool
+    ::  pane, following the file so an edit redraws it
+      %^  rul  '**/*.clanker/tools/code/lib/tools/**'  'file'
+      :-  ~
+      %^  pane  'tool'  tool-panes
+      :-  ~[['at' s+'./{1}/{2}.clanker/tools'] ['file' s+'/{3}']]
+      ~[(fol './{1}/{2}.clanker/tools/code/lib/tools/{3}' & |)]
+    ::  a recipe: its graph beside its aims, redrawn when the json changes
+      %^  rul  '**/*.clanker/recipes/*'  'file'
+      :-  ~
+      %^  pane  'recipe'  '/grubbery/clanker/panes/recipe.js'
+      :-  ~[['proj' s+'/{1}/{2}.clanker'] ['name' s+'{3}']]
+      ~[(fol './{1}/{2}.clanker/recipes/{3}' & |)]
+    ::  a clanker's standing prompt, its settings and its tool policy, as
+    ::  three forms all opened on its config.json. The prompt is `record`
+    ::  alone: the model and the provider live in `config`, so the two
+    ::  are edited and saved apart and neither clobbers the other.
+      %^  rul  cfg  'file'
+      :-  ~['tools']
+      %^  pane  'tools'  panes
+      :-  proj
+      :~  (fol './{1}/{2}.clanker/tools.json' | |)
+          (fol './{1}/{2}.clanker/tools/code/lib/tools' | &)
+      ==
+      %^  rul  cfg  'file'
+      :-  ~['config']
+      %^  pane  'config'  panes
+      [proj ~[(fol './{1}/{2}.clanker/config.json' & |)]]
+      %^  rul  cfg  'file'
+      :-  ~['record']
+      %^  pane  'record'  panes
+      [proj ~[(fol './{1}/{2}.clanker/prompts/main.md' | |)]]
+    ::  a clanker's tools/ is its tools nexus: the shell's tools pane,
+    ::  live on the tools' code and on the runs
+      %^  rul  '**/*.clanker/tools'  'dir'
+      :-  ~
+      %^  pane  'tools-nexus'  tool-panes
+      :-  ~[['at' s+'./{1}/{2}.clanker/tools']]
+      :~  (fol './{1}/{2}.clanker/tools/code/lib/tools' | &)
+          (fol './{1}/{2}.clanker/tools/runs' | &)
+      ==
+    ::  a clanker's chats/ is its list of chats, live on the dir
+      %^  rul  '**/chats'  'dir'
+      :-  ~
+      %^  pane  'chats'  panes
+      [~[['proj' s+'/{1}']] ~[(fol './{1}/chats/' | &)]]
+    ::  a chat's own directory opens as the chat layout (the chat | its
+    ::  prompt), rooted at it; ?view=stage is the staging view, the chat
+    ::  in the left third and its stage.layout, followed, in the rest
+      (rul '**/*.clanker/chats/*' 'dir' ~['stage'] (lay '/grubbery/clanker/stage-layout.json'))
+      (rul '**/*.clanker/chats/*' 'dir' ~ (lay '/grubbery/clanker/chat-layout.json'))
+    ::  a clanker itself opens as the clanker layout, rooted at it
+      (rul '**.clanker' 'dir' ~ (lay '/grubbery/clanker/clanker-layout.json'))
+    ::  anything else inside a clanker keeps the usual view, and the two
+    ::  catch-alls below do not see it
+      (rul '**/*.clanker/**' '' ~['*'] ~)
+    ::  the collection root, or a category: the selector pane when asked
+    ::  for it (the layout's left side), the layout otherwise
+      %^  rul  '**'  'dir'
+      :-  ~['collection']
+      %^  pane  'collection'  panes
+      [~[['parent' s+'/{1}']] ~[(fol './{1}/' | &)]]
+      (rul '**' 'dir' ~ (lay '/grubbery/clanker/collection-layout.json'))
   ==
 ::  +weir-ask: what this nexus needs to reach: everything. The collection
 ::  is the container, not the sandbox: each clanker inside it sits under
@@ -631,9 +773,8 @@
 ::  one level under the nexus root, so the root is [%| 1 ...].
 ::
 ::    GET  /<anything but api>           the explorer page, mounted here
-::    GET  /viewer.js /icon.svg          the chat pane, the icon
+::    GET  /panes/chat.js /icon.svg     the chat pane, the icon
 ::    GET  /api/root                     this instance's absolute root
-::    GET  /api/viewer?path=&kind=&blot=&neck=   which pane a path opens in (+pick-viewer)
 ::    GET  /api/chats?path=              a clanker's chats: name, events, last, busy
 ::    GET  /api/tree                     the whole collection as {dirs, files}
 ::    GET  /api/record?path=             a clanker's config + system prompt
@@ -664,15 +805,17 @@
   =/  body=json
     (fall (de:json:html ?~(body.request.req '' q.u.body.request.req)) *json)
   =/  jarg  |=(k=@t ^-(@t (jstr:clanker body k)))
-  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'chat.js' i.suffix) =(%'chat.css' i.suffix) =(%'viewer.js' i.suffix) =(%'chats.js' i.suffix) =(%'recipe.js' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix) =(%'stage-layout.json' i.suffix) =(%'root-layout.json' i.suffix)))
+  ::  the panes: /panes/<what they are about>.js
+  ?:  ?&  =(%'GET' method)
+          ?=([%panes @ ~] suffix)
+          |(=(%'chat.js' i.t.suffix) =(%'clanker.js' i.t.suffix) =(%'recipe.js' i.t.suffix))
+      ==
+    (serve-file eyre-id /panes i.t.suffix)
+  ?:  ?&(=(%'GET' method) ?=([@ ~] suffix) |(=(%'chat.js' i.suffix) =(%'chat.css' i.suffix) =(%'icon.svg' i.suffix) =(%'collection-layout.json' i.suffix) =(%'clanker-layout.json' i.suffix) =(%'chat-layout.json' i.suffix) =(%'stage-layout.json' i.suffix) =(%'root-layout.json' i.suffix)))
     (serve-file eyre-id / i.suffix)
   ::  the root's view: the nexus root itself opens as the root layout
   ::  (the collection over ./projects); anything else at the root keeps
   ::  the usual view
-  ?:  ?&(=(%'GET' method) =([%api %root-viewer ~] suffix))
-    =/  at=@t  (arg 'path')
-    ?.  &(|(=('' at) =('/' at)) =('' (arg 'view')))  (send-json eyre-id '')
-    (send-json eyre-id (en:json:html (pairs:enjs:format ~[['layout' s+'/grubbery/clanker/root-layout.json']])))
   ::  the page: the explorer, rooted at the collection. The explorer
   ::  finds this collection's views by itself (/projects/view.json), so
   ::  /grubbery/clanker/<path> is simply the explorer's own url for that
@@ -698,15 +841,6 @@
     ?.  ?=([~ %| *] root)
       (send-simple:http-res:io eyre-id [[404 ~] `(as-octs:mimes:html 'clanker is not in /sys/link')])
     (send-json eyre-id (en:json:html (pairs:enjs:format ~[['root' s+(spat p.u.root)]])))
-  ?:  ?&(=(%'GET' method) =([%api %viewer ~] suffix))
-    ::  follows are absolute roads, so the answer needs the collection's
-    ::  absolute path: this instance, by name
-    ;<  root=(unit lane:tarball)  bind:m  (resolve-link:io '@clanker')
-    =/  coll=path  ?.(?=([~ %| *] root) /projects (snoc p.u.root %projects))
-    =/  pax=(unit path)  (parse-proj (arg 'path'))
-    =/  pick  (pick-viewer coll (fall pax ~) =('dir' (arg 'kind')) (arg 'blot') (arg 'neck') (arg 'view'))
-    ?~  pick  (send-json eyre-id '')
-    (send-json eyre-id (en:json:html u.pick))
   ?:  ?&(=(%'GET' method) =([%api %chats ~] suffix))
     =/  proj=(unit path)  (parse-proj (arg 'path'))
     ?~  proj  (bad eyre-id 'path required')
@@ -1329,163 +1463,6 @@
   ^-  form:m
   (send-simple:http-res:io eyre-id [[400 ~] `(as-octs:mimes:html msg)])
 ::
-::  +pick-viewer: which pane a path opens in, from where it is under the
-::  collection, whether it is a file or a dir, a file's blot and a dir's
-::  neck (the nexus it runs, '' when plain). Plain code: match the path,
-::  match the blot or neck, name a view the script registers, and hand
-::  the pane its context as args so it never has to read the tree's
-::  shape out of a url. ~ means the usual view. A pane is about the path
-::  it opens on; keep it that way.
-::  The answer is the explorer's viewers json: {view, script, args, follow}
-::  for a pane, or {layout} for a dir that opens as a layout. `view` is
-::  the moment's own ?view= (the explorer's rows/grid/tree never reach
-::  here): '' is the bare path, 'collection' and 'record' are ours.
-::  `follow` names the roads the pane depends on, absolute, so the
-::  explorer's stream tells it when they move (a log's body rides along).
-++  pick-viewer
-  |=  [coll=path pax=path dir=? blot=@t neck=@t view=@t]
-  ^-  (unit json)
-  =/  fol
-    |=  [p=path body=? fold=?]
-    ^-  json
-    (pairs:enjs:format ~[['road' s+(cat 3 (spat p) ?:(fold '/' ''))] ['body' b+body] ['fold' b+fold]])
-  =/  ans
-    |=  [v=@t script=@t a=json f=(list json)]
-    ^-  (unit json)
-    `(pairs:enjs:format ~[['view' s+v] ['script' s+script] ['args' a] ['follow' a+f]])
-  =/  lay  |=(u=@t ^-((unit json) `(pairs:enjs:format ~[['layout' s+u]])))
-  =/  panes=@t  '/grubbery/clanker/chats.js'
-  ::  the shell's tools panes: a tools nexus, and one tool on its source
-  =/  tools-panes=@t  '/grubbery/tools/pane.js'
-  =/  f=path  (flop pax)
-  ::  a tool's source under a clanker's tools nexus: the clanker, and the
-  ::  file's path under code/lib/tools
-  =/  tool-file
-    |=  p=path
-    ^-  (unit [proj=path rel=path])
-    =|  proj=path
-    |-  ^-  (unit [path path])
-    ?~  p  ~
-    ?:  ?&  ?=([%tools %code %lib %tools ^] p)
-            ?=(^ proj)
-            (is-clanker (rear proj))
-        ==
-      `[proj t.t.t.t.p]
-    $(p t.p, proj (snoc proj i.p))
-  ::  a chat: its log file, or its directory. The pane follows the log
-  ::  with its body (the mark grows to json) and the status beside it.
-  =/  chat-ans
-    |=  [proj=path chat=@ta]
-    ^-  (unit json)
-    =/  cdir=path  (welp coll (welp proj [%chats chat ~]))
-    ::  the log is followed by NAME only: the pane holds a window of it and
-    ::  fetches what is past that window on each change (/api/log?from=),
-    ::  never the whole array on the stream
-    %-  ans
-    :^  'chat'  '/grubbery/clanker/viewer.js'
-      (pairs:enjs:format ~[['proj' s+(spat proj)] ['chat' s+chat]])
-    ~[(fol (snoc cdir %'log.chat-log') | |)]
-  ::  (each ?= is the test of its own ?: so it narrows the path it matched)
-  ?.  dir
-    ::  a chat's log, by its blot or by its name (a restored log may sit
-    ::  as plain mime until the agent next writes it)
-    ?:  |(=('chat-log' blot) ?=([%'log.chat-log' *] f))
-      ?.  ?=([@ @ %chats *] f)  ~
-      ::  ?view=prompt on a chat's log: the chat's own prompt, as the
-      ::  record form (its system.md may not exist yet, so the log is the
-      ::  path the form opens on)
-      ?.  |(=('prompt' view) =('tools' view) =('tip' view))  (chat-ans (flop t.t.t.f) i.t.f)
-      =/  proj=path  (flop t.t.t.f)
-      =/  pdir=path  (welp coll proj)
-      =/  cdir=path  (welp pdir [%chats i.t.f ~])
-      =/  a=json  (pairs:enjs:format ~[['proj' s+(spat proj)] ['chat' s+i.t.f]])
-      ::  ?view=tip: the chat's recipe run, following run.json and the
-      ::  log (a leave writes both; a move writes the run)
-      ?:  =('tip' view)
-        (ans 'tip' panes a ~[(fol (snoc cdir %'run.json') | |) (fol (snoc cdir %'log.chat-log') | |)])
-      ::  ?view=tools: the chat's own tool policy, over the clanker's
-      ?:  =('tools' view)
-        (ans 'tools' panes a ~[(fol (snoc cdir %'tools.json') | |) (fol (snoc pdir %'tools.json') | |)])
-      (ans 'record' panes a ~[(fol (snoc cdir %'system.md') | |)])
-    ::  a tool: the shell's tool pane (description, schema, a form to run
-    ::  it, the source), following the file so an edit redraws it
-    =/  tf=(unit [proj=path rel=path])  (tool-file pax)
-    ?^  tf
-      =/  tdir=path  (welp coll (snoc proj.u.tf %tools))
-      %-  ans
-      :^  'tool'  tools-panes
-        (pairs:enjs:format ~[['at' s+(spat tdir)] ['file' s+(spat rel.u.tf)]])
-      ~[(fol (welp tdir (welp /code/lib/tools rel.u.tf)) & |)]
-    ::  a recipe: its graph beside its aims. The pane follows the file
-    ::  with its body, so editing the json redraws the graph.
-    ?:  ?=([@ %recipes @ *] f)
-      ?.  (is-clanker i.t.t.f)  ~
-      =/  proj=path  (flop t.t.f)
-      %-  ans
-      :^  'recipe'  '/grubbery/clanker/recipe.js'
-        (pairs:enjs:format ~[['proj' s+(spat proj)] ['name' s+i.f]])
-      ~[(fol (welp coll (welp proj [%recipes i.f ~])) & |)]
-    ::  a clanker's standing prompt, its settings, or its tool policy, as
-    ::  three forms, all opened on its config.json. `record` is the prompt
-    ::  alone: the model and the provider live in `config`, so the two are
-    ::  edited and saved apart (the api merges, so neither clobbers the
-    ::  other's fields).
-    ?.  ?|(=('record' view) =('tools' view) =('config' view))  ~
-    ?.  ?=([%'config.json' @ *] f)  ~
-    ?.  (is-clanker i.t.f)  ~
-    =/  proj=path  (flop t.f)
-    =/  pdir=path  (welp coll proj)
-    ?:  =('tools' view)
-      %-  ans
-      :^  'tools'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
-      ~[(fol (snoc pdir %'tools.json') | |) (fol (welp pdir /tools/code/lib/tools) | &)]
-    ?:  =('config' view)
-      %-  ans
-      :^  'config'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
-      ~[(fol (snoc pdir %'config.json') & |)]
-    %-  ans
-    :^  'record'  panes  (pairs:enjs:format ~[['proj' s+(spat proj)]])
-    ~[(fol (snoc (snoc pdir %prompts) %'main.md') | |)]
-  ::  a clanker's tools/ directory is its tools nexus: the shell's tools
-  ::  pane, live on the tools' code and on the runs
-  ?:  ?=([%tools @ *] f)
-    ?.  (is-clanker i.t.f)  ~
-    ?.  =('' view)  ~
-    =/  tdir=path  (welp coll (snoc (flop t.f) %tools))
-    %-  ans
-    :^  'tools-nexus'  tools-panes
-      (pairs:enjs:format ~[['at' s+(spat tdir)]])
-    ~[(fol (welp tdir /code/lib/tools) | &) (fol (welp tdir /runs) | &)]
-  ::  a clanker's chats/ directory is its list of chats, live on the dir
-  ?:  ?=([%chats @ *] f)
-    =/  proj=path  (flop t.f)
-    (ans 'chats' panes (pairs:enjs:format ~[['proj' s+(spat proj)]]) ~[(fol (welp coll (snoc proj %chats)) | &)])
-  ::  a chat's own directory opens as the chat layout (the chat | its
-  ::  prompt), rooted at it; ?view=stage is the staging view, the chat in
-  ::  the left third and its stage.layout, followed, in the rest
-  ?:  ?=([@ %chats @ *] f)
-    ?.  (lien pax is-clanker)  ~
-    ?:  =('stage' view)  (lay '/grubbery/clanker/stage-layout.json')
-    ?.  =('' view)  ~
-    (lay '/grubbery/clanker/chat-layout.json')
-  ::  a clanker dir opens as the clanker layout, rooted at it; inside a
-  ::  clanker everything else keeps the usual view. (The test narrows pax to
-  ::  a cell, which the wet gates below cannot mull; p is the plain path.)
-  ?:  ?=(^ pax)
-    =/  p=path  pax
-    ?:  &((is-clanker (rear p)) =('' view))
-      (lay '/grubbery/clanker/clanker-layout.json')
-    ?:  (lien p is-clanker)  ~
-    ?:  =('collection' view)
-      (ans 'collection' panes (pairs:enjs:format ~[['parent' s+(spat p)]]) ~[(fol (welp coll p) | &)])
-    ?:  =('' view)  (lay '/grubbery/clanker/collection-layout.json')
-    ~
-  ::  the collection root, or a category: the selector pane when asked
-  ::  for it (the layout's left side), the layout otherwise
-  ?:  =('collection' view)
-    (ans 'collection' panes (pairs:enjs:format ~[['parent' s+(spat pax)]]) ~[(fol (welp coll pax) | &)])
-  ?:  =('' view)  (lay '/grubbery/clanker/collection-layout.json')
-  ~
 ::
 ++  serve-file
   |=  [eyre-id=@ta dir=path filename=@ta]

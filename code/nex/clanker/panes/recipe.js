@@ -15,9 +15,8 @@
 // when you hover the edge they belong to.
 //
 // mount(root, {url, args, onNavigate}) -> {destroy, onUpdate}
-(function () {
+export const panes = (function () {
   'use strict';
-  window.Viewers = window.Viewers || {};
 
   // the reserved exits, each its own kind: done ends the run with its
   // output, abort ends it without, ask pauses it on the user. A step
@@ -383,5 +382,7 @@
     };
   }
 
-  window.Viewers['recipe'] = { label: 'Recipe', mount: mountRecipe };
+  return {
+    'recipe': { label: 'Recipe', mount: mountRecipe },
+  };
 })();
