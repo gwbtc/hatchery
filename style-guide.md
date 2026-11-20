@@ -2,13 +2,15 @@
 
 ## Layers
 
-- In the nexus, the main fiber reads as a stepwise sequence of instructions.
-- It calls out to pure functions and helper fibers that consolidate work one
-  layer of abstraction down.
+- In the nexus the main fiber is `+on-file`: the switch that says which grub
+  runs what. Each of its cases reads as a stepwise sequence of instructions.
+- Every fiber reads as a stepwise sequence of instructions, each one at a
+  single level of abstraction. A fiber that drops below its own level for a
+  few lines has found a helper.
+- A fiber calls out to pure functions and helper fibers, which consolidate
+  the work one layer of abstraction down.
 - A computation that is a synchronous pure function of some piece of state is
   defined as one — possibly a core with several arms manipulating that state.
-- Where you reach below what reads naturally at the main fiber's level, drop
-  into a helper fiber: the logic is cleaner there.
 - Helpers that coalesce on a theme get grouped.
 - A library is what they are pulled out into when another application demands
   the same functionality — or earlier, if the group is simple and clear enough
@@ -17,6 +19,13 @@
   serves. The page reaches the namespace through peek, make, poke, cull and
   keep; an endpoint of your own over your own data is a second way to do what
   already works, with its own permissions and its own bugs.
+- Data the code does not compute is a file. A declaration, a seed, a table of
+  names — anything whose value is just written down — is imported beside the
+  nexus, not assembled by an arm. An arm earns its place when the value is
+  derived from state or chosen by a condition.
+- A file says what it is in its own notation, is readable and editable without
+  a compile, and diffs as the thing that changed. The same value spelled in
+  Hoon makes a reader step through construction to find out what it says.
 
 ## Order
 
@@ -59,6 +68,10 @@
 - Inline `::` lines sit inside, one before each step of multi-step work.
 - A run of declarations — imports, rows — takes a trailing `::` on each line,
   aligned in a column, saying what that one is.
+- Switch cases are spaced apart. Each takes a block above it like any other
+  thing a comment describes — the text, then a bare `::`, then the case. A
+  bare `::` alone where there is nothing to say. Cases run together are a
+  wall.
 - Any single line takes a trailing `::` when it needs a word and does not need
   a line of its own: one binding among many, one row in a list that is not
   obvious from its name.
@@ -94,6 +107,9 @@
 - Plain. No vague or poetic language, no hedging.
 - Cut what the reader does not need here. A mechanism that matters three
   screens away does not belong in an import header.
+- Leave the working-out behind. "The way every other nexus serves itself",
+  "this is the standard approach", "as discussed" — that is the author
+  justifying the choice to a reviewer. The reader learns nothing from it.
 - No history. How the code came to be is not the reader's business: no dates,
   no incidents, no "was added to fix", no "used to", no "no longer". That
   belongs in the commit.
@@ -107,6 +123,12 @@
 - Incomprehensible to someone who did not write it means wrong.
 - The test: could someone six months from now understand what this does and
   why it is shaped this way, knowing nothing about when or how it was written?
+
+## Deprecated
+
+- `+rise-wait` does nothing. `prod` is always `~`, so every call falls
+  straight through. It reads like crash recovery, which is why it survives.
+  Drop the line; don't add new ones.
 
 ## Process and Emergence
 
