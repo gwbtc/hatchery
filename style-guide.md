@@ -15,6 +15,11 @@
 - A library is what they are pulled out into when another application demands
   the same functionality — or earlier, if the group is simple and clear enough
   to stand alone and pulling it out significantly unclutters the nexus.
+- A fiber or function that works a grub the way any nexus would — not this
+  app's own notion of it — eventually belongs in the io every fiber already
+  holds, `/lib/fiberio`. The bar is that a nexus without it writes the same
+  thing by hand. Below that bar it stays an app's own; an app's convenience
+  in the io is something every nexus then carries.
 - Don't maintain an HTTP endpoint for something the kernel's API already
   serves. The page reaches the namespace through peek, make, poke, cull and
   keep; an endpoint of your own over your own data is a second way to do what
