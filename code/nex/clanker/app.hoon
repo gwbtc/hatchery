@@ -143,12 +143,14 @@
 ::  chrome of an explorer rooted here. The first rule is the root itself
 ::  — landing on @clanker opens the root layout — and +view-rules has
 ::  the rest, matched from here, so a path is spelled 'projects/...'.
+++  app-icon  ^-(@t '/grubbery/clanker/icon.svg')
 ++  view-decl
   ^-  json
   =/  root-rule=json
     %-  pairs:enjs:format
     :~  ['match' s+'']  ['kind' s+'dir']
         ['layout' s+'/grubbery/clanker/root-layout.json']
+        ['icon' s+app-icon]
     ==
   %-  pairs:enjs:format
   :~  ['rules' a+[root-rule view-rules]]

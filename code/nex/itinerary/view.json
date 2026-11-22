@@ -5,7 +5,8 @@
     {
       "match": "",
       "kind": "dir",
-      "layout": "./collection-layout.json"
+      "layout": "./collection-layout.json",
+      "icon": "/grubbery/itinerary/icon.svg"
     },
     {
       "match": "itineraries",
