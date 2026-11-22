@@ -115,10 +115,12 @@
       [%over %& [/ %'chat-layout.json'] [[/ %mime] chat-layout]]
       [%over %& [/ %'stage-layout.json'] [[/ %mime] stage-layout]]
       [%over %& [/ %'root-layout.json'] [[/ %mime] root-layout]]
-      ::  the root declares its own view: the explorer landing ON the nexus
-      ::  (by name, @clanker) opens the root layout; everything under
-      ::  /projects is governed by the collection's view.json below
-      [%over %& [/ %'view.json'] [[/ %json] root-view-decl]]
+      ::  the nexus root declares every view: the explorer landing ON it
+      ::  (by name, @clanker) opens the root layout, and the paths under
+      ::  /projects match the rules that follow it in the same table. A
+      ::  view.json is read at a nexus root and nowhere else
+      ::  (explorer.hoon +find-views), and /projects is not one.
+      [%over %& [/ %'view.json'] [[/ %json] view-decl]]
       [%fall %& [/ %'http.sig'] [[/ %sig] ~]]
       [%fall %& [/ %'main.sig'] [[/ %sig] ~]]
       ::  the weir keeper: sands every clanker once on rise and again
@@ -127,9 +129,6 @@
       [%over %| /tools (seed-tools:nex-tools coll-tools)]
       [%fall %| /requests empty-dir:loader]
       [%fall %| /projects empty-dir:loader]
-      ::  the collection declares its views: an explorer rooted at or under
-      ::  /projects finds this and matches its rules (+view-rules)
-      [%over %& [/projects %'view.json'] [[/ %json] view-decl]]
       ::  the grubbery clanker: the kernel self-editing tools, a wide weir.
       ::  Seeded without the proxy roads resolved (on-load cannot peek);
       ::  +sand-clanker re-sands it on every send.
@@ -139,46 +138,40 @@
       [%fall %| [%projects %assistant ~] empty-dir:loader]
       [%fall %| [%projects %assistant %'groundwire.clanker' ~] assistant-bole]
   ==
-::  +view-decl: /projects/view.json, what the explorer reads (see
-::  explorer.hoon +find-views): the table of how the paths under the
-::  collection open, and the chrome of an explorer rooted here.
+::  +view-decl: /view.json, what the explorer reads (see explorer.hoon
+::  +find-views): the table of how this nexus's paths open, and the
+::  chrome of an explorer rooted here. The first rule is the root itself
+::  — landing on @clanker opens the root layout — and +view-rules has
+::  the rest, matched from here, so a path is spelled 'projects/...'.
 ++  view-decl
   ^-  json
+  =/  root-rule=json
+    %-  pairs:enjs:format
+    :~  ['match' s+'']  ['kind' s+'dir']
+        ['layout' s+'/grubbery/clanker/root-layout.json']
+    ==
   %-  pairs:enjs:format
-  :~  ['rules' view-rules]
+  :~  ['rules' a+[root-rule view-rules]]
       ['title' s+'clanker']
       ['icon' s+'/grubbery/clanker/icon.svg']
   ==
-::  +root-view-decl: /view.json, the root's own declaration. Its one rule
-::  is for the root itself; the paths under /projects fall through to the
-::  collection's own view.json, which has the table.
-++  root-view-decl
-  ^-  json
-  %-  pairs:enjs:format
-  :~  :-  'rules'
-      :-  %a
-      :_  ~
-      %-  pairs:enjs:format
-      :~  ['match' s+'']  ['kind' s+'dir']
-          ['layout' s+'/grubbery/clanker/root-layout.json']
-      ==
-      ['title' s+'clanker']
-      ['icon' s+'/grubbery/clanker/icon.svg']
-  ==
-::  +view-rules: /projects/view.json's table — which pane a path under
-::  the collection opens in, from the path, whether it is a file or a
-::  dir, and the moment's own ?view= ('' is the bare path; 'collection',
-::  'record', 'tools', 'config', 'tip' and 'stage' are ours). The first
-::  rule that matches wins, so the specific paths come first and the
-::  collection's own two catch-alls last. The rule between them matches
-::  anything inside a clanker and names nothing: that path is the
-::  explorer's own to render, and the catch-alls do not get to claim it.
-::  `follow` names the roads a pane depends on, so the explorer's stream
-::  tells it when they move. A pane is about the path it opens on; keep
-::  it that way.
+::  +view-rules: the table under +view-decl's root rule — which pane a
+::  path in the collection opens in, from the path, whether it is a file
+::  or a dir, and the moment's own view name ('' is the bare path;
+::  'collection', 'record', 'tools', 'config', 'tip' and 'stage' are
+::  ours). Matched from the nexus root, so every pattern and every
+::  followed road names 'projects' first; the captures after it stay
+::  relative to the collection, which is how /api/collection and the
+::  panes spell a clanker. The first rule that
+::  matches wins, so the specific paths come first and the collection's
+::  own catch-alls last. The rule between them matches anything inside a
+::  clanker and names nothing: that path is the explorer's own to render,
+::  and the catch-alls do not get to claim it. `follow` names the roads a
+::  pane depends on, so the explorer's stream tells it when they move. A
+::  pane is about the path it opens on; keep it that way.
 ::
 ++  view-rules
-  ^-  json
+  ^-  (list json)
   =/  fol
     |=  [road=@t body=? fold=?]
     ^-  json
@@ -206,13 +199,12 @@
   =/  panes=@t       '/grubbery/clanker/panes/clanker.js'
   =/  tool-panes=@t  '/grubbery/tools/pane.js'
   ::  a chat: {1} is the clanker it belongs to, {2} the chat's own name
-  =/  log=@t   '**/chats/*/log.chat-log'
+  =/  log=@t   'projects/**/chats/*/log.chat-log'
   =/  chat=(list [@t json])  ~[['proj' s+'/{1}'] ['chat' s+'{2}']]
   ::  a clanker named anywhere in the tree: {1} is what it sits under,
-  ::  {2} its name without the suffix, so './{1}/{2}.clanker' is it
-  =/  cfg=@t   '**/*.clanker/config.json'
+  ::  {2} its name without the suffix, so './projects/{1}/{2}.clanker' is it
+  =/  cfg=@t   'projects/**/*.clanker/config.json'
   =/  proj=(list [@t json])  ~[['proj' s+'/{1}/{2}.clanker']]
-  :-  %a
   :~
     ::  a chat's log: the chat itself, or one of the three forms over it
     ::  (its prompt, its tool policy, its recipe run). The log is followed
@@ -221,34 +213,34 @@
       %^  rul  log  'file'
       :-  ~['prompt']
       %^  pane  'record'  panes
-      [chat ~[(fol './{1}/chats/{2}/system.md' | |)]]
+      [chat ~[(fol './projects/{1}/chats/{2}/system.md' | |)]]
       %^  rul  log  'file'
       :-  ~['tip']
       %^  pane  'tip'  panes
       :-  chat
-      ~[(fol './{1}/chats/{2}/run.json' | |) (fol './{1}/chats/{2}/log.chat-log' | |)]
+      ~[(fol './projects/{1}/chats/{2}/run.json' | |) (fol './projects/{1}/chats/{2}/log.chat-log' | |)]
       %^  rul  log  'file'
       :-  ~['tools']
       %^  pane  'tools'  panes
       :-  chat
-      ~[(fol './{1}/chats/{2}/tools.json' | |) (fol './{1}/tools.json' | |)]
+      ~[(fol './projects/{1}/chats/{2}/tools.json' | |) (fol './projects/{1}/tools.json' | |)]
       %^  rul  log  'file'
       :-  ~
       %^  pane  'chat'  '/grubbery/clanker/panes/chat.js'
-      [chat ~[(fol './{1}/chats/{2}/log.chat-log' | |)]]
+      [chat ~[(fol './projects/{1}/chats/{2}/log.chat-log' | |)]]
     ::  a tool's source under a clanker's tools nexus: the shell's tool
     ::  pane, following the file so an edit redraws it
-      %^  rul  '**/*.clanker/tools/code/lib/tools/**'  'file'
+      %^  rul  'projects/**/*.clanker/tools/code/lib/tools/**'  'file'
       :-  ~
       %^  pane  'tool'  tool-panes
-      :-  ~[['at' s+'./{1}/{2}.clanker/tools'] ['file' s+'/{3}']]
-      ~[(fol './{1}/{2}.clanker/tools/code/lib/tools/{3}' & |)]
+      :-  ~[['at' s+'./projects/{1}/{2}.clanker/tools'] ['file' s+'/{3}']]
+      ~[(fol './projects/{1}/{2}.clanker/tools/code/lib/tools/{3}' & |)]
     ::  a recipe: its graph beside its aims, redrawn when the json changes
-      %^  rul  '**/*.clanker/recipes/*'  'file'
+      %^  rul  'projects/**/*.clanker/recipes/*'  'file'
       :-  ~
       %^  pane  'recipe'  '/grubbery/clanker/panes/recipe.js'
       :-  ~[['proj' s+'/{1}/{2}.clanker'] ['name' s+'{3}']]
-      ~[(fol './{1}/{2}.clanker/recipes/{3}' & |)]
+      ~[(fol './projects/{1}/{2}.clanker/recipes/{3}' & |)]
     ::  a clanker's standing prompt, its settings and its tool policy, as
     ::  three forms all opened on its config.json. The prompt is `record`
     ::  alone: the model and the provider live in `config`, so the two
@@ -257,48 +249,57 @@
       :-  ~['tools']
       %^  pane  'tools'  panes
       :-  proj
-      :~  (fol './{1}/{2}.clanker/tools.json' | |)
-          (fol './{1}/{2}.clanker/tools/code/lib/tools' | &)
+      :~  (fol './projects/{1}/{2}.clanker/tools.json' | |)
+          (fol './projects/{1}/{2}.clanker/tools/code/lib/tools' | &)
       ==
       %^  rul  cfg  'file'
       :-  ~['config']
       %^  pane  'config'  panes
-      [proj ~[(fol './{1}/{2}.clanker/config.json' & |)]]
+      [proj ~[(fol './projects/{1}/{2}.clanker/config.json' & |)]]
       %^  rul  cfg  'file'
       :-  ~['record']
       %^  pane  'record'  panes
-      [proj ~[(fol './{1}/{2}.clanker/prompts/main.md' | |)]]
+      [proj ~[(fol './projects/{1}/{2}.clanker/prompts/main.md' | |)]]
     ::  a clanker's tools/ is its tools nexus: the shell's tools pane,
     ::  live on the tools' code and on the runs
-      %^  rul  '**/*.clanker/tools'  'dir'
+      %^  rul  'projects/**/*.clanker/tools'  'dir'
       :-  ~
       %^  pane  'tools-nexus'  tool-panes
-      :-  ~[['at' s+'./{1}/{2}.clanker/tools']]
-      :~  (fol './{1}/{2}.clanker/tools/code/lib/tools' | &)
-          (fol './{1}/{2}.clanker/tools/runs' | &)
+      :-  ~[['at' s+'./projects/{1}/{2}.clanker/tools']]
+      :~  (fol './projects/{1}/{2}.clanker/tools/code/lib/tools' | &)
+          (fol './projects/{1}/{2}.clanker/tools/runs' | &)
       ==
     ::  a clanker's chats/ is its list of chats, live on the dir
-      %^  rul  '**/chats'  'dir'
+      %^  rul  'projects/**/chats'  'dir'
       :-  ~
       %^  pane  'chats'  panes
-      [~[['proj' s+'/{1}']] ~[(fol './{1}/chats/' | &)]]
+      [~[['proj' s+'/{1}']] ~[(fol './projects/{1}/chats/' | &)]]
     ::  a chat's own directory opens as the chat layout (the chat | its
     ::  prompt), rooted at it; ?view=stage is the staging view, the chat
     ::  in the left third and its stage.layout, followed, in the rest
-      (rul '**/*.clanker/chats/*' 'dir' ~['stage'] (lay '/grubbery/clanker/stage-layout.json'))
-      (rul '**/*.clanker/chats/*' 'dir' ~ (lay '/grubbery/clanker/chat-layout.json'))
+      (rul 'projects/**/*.clanker/chats/*' 'dir' ~['stage'] (lay '/grubbery/clanker/stage-layout.json'))
+      (rul 'projects/**/*.clanker/chats/*' 'dir' ~ (lay '/grubbery/clanker/chat-layout.json'))
     ::  a clanker itself opens as the clanker layout, rooted at it
-      (rul '**.clanker' 'dir' ~ (lay '/grubbery/clanker/clanker-layout.json'))
+      (rul 'projects/**.clanker' 'dir' ~ (lay '/grubbery/clanker/clanker-layout.json'))
     ::  anything else inside a clanker keeps the usual view, and the two
     ::  catch-alls below do not see it
-      (rul '**/*.clanker/**' '' ~['*'] ~)
+      (rul 'projects/**/*.clanker/**' '' ~['*'] ~)
     ::  the collection root, or a category: the selector pane when asked
-    ::  for it (the layout's left side), the layout otherwise
-      %^  rul  '**'  'dir'
+    ::  for it (the layout's left side), the layout otherwise. Two
+    ::  patterns for each, because 'projects/**' takes what is under the
+    ::  collection but not the collection itself. `parent` is the
+    ::  category as /api/collection names it, from /projects down: the
+    ::  root is '/', a category '/{1}', the capture after 'projects/'.
+      %^  rul  'projects'  'dir'
       :-  ~['collection']
       %^  pane  'collection'  panes
-      [~[['parent' s+'/{1}']] ~[(fol './{1}/' | &)]]
-      (rul '**' 'dir' ~ (lay '/grubbery/clanker/collection-layout.json'))
+      [~[['parent' s+'/']] ~[(fol './projects/' | &)]]
+      %^  rul  'projects/**'  'dir'
+      :-  ~['collection']
+      %^  pane  'collection'  panes
+      [~[['parent' s+'/{1}']] ~[(fol './projects/{1}/' | &)]]
+      (rul 'projects' 'dir' ~ (lay '/grubbery/clanker/collection-layout.json'))
+      (rul 'projects/**' 'dir' ~ (lay '/grubbery/clanker/collection-layout.json'))
   ==
 ::  +weir-ask: what this nexus needs to reach: everything. The collection
 ::  is the container, not the sandbox: each clanker inside it sits under
@@ -817,7 +818,7 @@
   ::  (the collection over ./projects); anything else at the root keeps
   ::  the usual view
   ::  the page: the explorer, rooted at the collection. The explorer
-  ::  finds this collection's views by itself (/projects/view.json), so
+  ::  finds this nexus's views by itself (the root view.json), so
   ::  /grubbery/clanker/<path> is simply the explorer's own url for that
   ::  path under the collection
   ::  the root: the plain page, which is what the tile links to. A path
