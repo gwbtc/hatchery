@@ -7,6 +7,10 @@
 - Every fiber reads as a stepwise sequence of instructions, each one at a
   single level of abstraction. A fiber that drops below its own level for a
   few lines has found a helper.
+- A step is one line wherever it fits on one. A line carries a comment only
+  where it needs one: a single `::` line directly above it, or a short note
+  to its right where that reads cleaner. Don't number the steps; their order
+  on the page is the sequence.
 - A fiber calls out to pure functions and helper fibers, which consolidate
   the work one layer of abstraction down.
 - A computation that is a synchronous pure function of some piece of state is
@@ -15,6 +19,11 @@
 - A library is what they are pulled out into when another application demands
   the same functionality — or earlier, if the group is simple and clear enough
   to stand alone and pulling it out significantly unclutters the nexus.
+- A clear seam is reason enough to cut, before either side is clean. When one
+  side is detail that belongs behind a library API — inessential to this file,
+  made plain by the shape of that API — extract it now; the library and its
+  API improve under use. Waiting for both sides to be tidy first is how the
+  seam stays uncut.
 - A fiber or function that works a grub the way any nexus would — not this
   app's own notion of it — eventually belongs in the io every fiber already
   holds, `/lib/fiberio`. The bar is that a nexus without it writes the same
@@ -134,6 +143,16 @@
 - `+rise-wait` does nothing. `prod` is always `~`, so every call falls
   straight through. It reads like crash recovery, which is why it survives.
   Drop the line; don't add new ones.
+
+## Canonical
+
+The settled way to do a common thing. Reach for these; a hand-rolled version
+beside one of them is the thing to change, not a thing to add to. What
+`/lib/fiberio` or a canonical library already provides is not re-rolled.
+
+- JSON is read and written through `+jo` in `/lib/json-utils`: `get` `got`
+  `gut` for a value by path, `deg` `dog` `dug` with a `dejs:format` reparser
+  for a typed read, `put` `del` `mar` `gas` to build.
 
 ## Process and Emergence
 
