@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>gw-handle</title>
+  <link rel="stylesheet" href="/grubbery/gw-handle/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>gw-handle</h1>
+      <p class="tagline">A handle on your browser, held by your ship.</p>
+    </header>
+
+    <section class="get">
+      <a class="button" href="/grubbery/gw-handle/download" download="gw-handle-extension.tar">
+        Download the extension
+      </a>
+      <p class="note">
+        This is a Chrome extension you load from a folder — no Web Store
+        needed. Download, unpack, and load it in five steps below.
+      </p>
+    </section>
+
+    <section class="steps">
+      <ol>
+        <li>
+          <h2>Unpack the archive</h2>
+          <p>The download is a <code>.tar</code>. Unpack it, then open the
+          folder it made and go down to the <code>extension</code> folder
+          inside — the one that directly contains <code>manifest.json</code>.
+          That is the folder Chrome loads. Keep it somewhere permanent;
+          deleting or moving it later uninstalls the extension.</p>
+        </li>
+        <li>
+          <h2>Open Chrome's extensions page</h2>
+          <p>Go to <code>chrome://extensions</code> and turn on
+          <strong>Developer mode</strong> (top right).</p>
+        </li>
+        <li>
+          <h2>Load the folder</h2>
+          <p>Click <strong>Load unpacked</strong> and choose the
+          <code>extension</code> folder from step 1. gw-handle appears in the
+          list and in your toolbar.</p>
+        </li>
+        <li>
+          <h2>Point it at this ship</h2>
+          <p>Open the gw-handle popup, set the endpoint to this ship's
+          address, and <strong>Save</strong>. It signs in with your existing
+          ship session — there is no password or token to copy.</p>
+        </li>
+        <li>
+          <h2>Arm the sites it should watch</h2>
+          <p>In the popup, arm a domain to stream its cookies and the calls
+          its pages make into your ship as you browse. Nothing is collected
+          for a site you have not armed. Driving — the ship opening and acting
+          in its own tabs — is separate and needs no arming.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="what">
+      <h2>What it does</h2>
+      <ul>
+        <li><strong>Watches your own traffic.</strong> For an armed site it
+        records the requests that site's pages make and the responses they
+        get, and keeps them on your ship.</li>
+        <li><strong>Carries the session.</strong> It copies the armed site's
+        cookies to your ship, so the session can be used from there.</li>
+        <li><strong>Drives a tab group.</strong> Your ship opens its own tabs
+        and can navigate, read, click, type, run scripts, and make requests in
+        them — the full reach you have in those tabs. It never touches a tab
+        you opened.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

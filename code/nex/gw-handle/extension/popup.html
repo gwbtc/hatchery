@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px/1.4 -apple-system, system-ui, sans-serif; width: 340px; margin: 0; padding: 12px; color: #222; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  label { display: block; font-size: 11px; color: #666; margin-top: 6px; }
+  input[type=text], input[type=password] { width: 100%; box-sizing: border-box; padding: 5px 6px; border: 1px solid #ccc; border-radius: 4px; font: inherit; }
+  .row { display: flex; gap: 6px; margin-top: 8px; }
+  button { padding: 5px 10px; border: 1px solid #bbb; background: #f6f6f6; border-radius: 4px; cursor: pointer; font: inherit; }
+  button:hover { background: #eee; }
+  #status { font-size: 11px; color: #666; min-height: 14px; margin-top: 4px; }
+  #status.err { color: #b00020; }
+  hr { border: 0; border-top: 1px solid #e5e5e5; margin: 12px 0; }
+  #filter { margin-bottom: 6px; }
+  ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; }
+  li { display: flex; align-items: center; gap: 8px; padding: 4px 2px; border-bottom: 1px solid #f0f0f0; }
+  li .d { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li .n { color: #999; font-size: 11px; }
+  li .last { color: #4a7; font-size: 10px; }
+  li .last.err { color: #b00020; }
+  .on { font-weight: 600; }
+  .hint { color: #666; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+  <h1>gw-handle</h1>
+  <label>Endpoint</label>
+  <input id="endpoint" type="text" placeholder="http://localhost:8081/grubbery/gw-handle">
+  <p class="hint">Signs in with your ship session. No token: the nexus
+  answers only your own @p, so log in to the ship in this browser.</p>
+  <div class="row">
+    <button id="save">Save</button>
+    <button id="test">Test</button>
+    <button id="sync">Sync enabled</button>
+  </div>
+  <div id="status"></div>
+  <hr>
+  <div class="row">
+    <input id="add" type="text" placeholder="arm a domain, e.g. example.com" style="flex:1">
+    <button id="addbtn">Arm</button>
+  </div>
+  <input id="filter" type="text" placeholder="filter domains…" style="margin-top:8px">
+  <ul id="domains"></ul>
+  <script src="popup.js"></script>
+</body>
+</html>

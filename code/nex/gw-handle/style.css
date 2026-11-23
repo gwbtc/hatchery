@@ -1,0 +1,143 @@
+:root {
+  --ink: #1a1a1a;
+  --muted: #6a6a6a;
+  --line: #e4e4e4;
+  --accent: #3b4a5a;
+  --accent-ink: #fff;
+  --code-bg: #f3f3f3;
+  --bg: #fcfcfc;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 56px 24px 96px;
+}
+
+header { margin-bottom: 40px; }
+
+h1 {
+  font-size: 32px;
+  margin: 0 0 6px;
+  letter-spacing: -0.02em;
+}
+
+.tagline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.get {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+a.button {
+  display: inline-block;
+  text-decoration: none;
+  font: inherit;
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  padding: 13px 26px;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+a.button:hover { opacity: 0.88; }
+
+.note {
+  margin: 18px auto 0;
+  max-width: 420px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.steps ol {
+  list-style: none;
+  counter-reset: step;
+  padding: 0;
+  margin: 0;
+}
+
+.steps li {
+  counter-increment: step;
+  position: relative;
+  padding: 0 0 28px 52px;
+  border-left: 2px solid var(--line);
+  margin-left: 15px;
+}
+
+.steps li:last-child { border-left-color: transparent; padding-bottom: 0; }
+
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: -16px;
+  top: -2px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 14px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+
+.steps h2 {
+  font-size: 16px;
+  margin: 2px 0 4px;
+}
+
+.steps p { margin: 0; color: #333; }
+
+.what {
+  margin-top: 56px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+}
+
+.what h2 { font-size: 18px; margin: 0 0 16px; }
+
+.what ul { margin: 0; padding-left: 20px; }
+
+.what li { margin-bottom: 12px; }
+
+code {
+  background: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font: 13px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e8e8e8;
+    --muted: #9a9a9a;
+    --line: #333;
+    --accent: #5a7a9a;
+    --code-bg: #262626;
+    --bg: #161616;
+  }
+  .get { background: #1e1e1e; }
+  .steps p, .what li { color: #cfcfcf; }
+}

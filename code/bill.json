@@ -16,5 +16,6 @@
  "typesafe": "/typesafe/app",
  "anthropic.anthropic": "/anthropic/app",
  "openrouter.openrouter": "/openrouter/app",
- "clanker.clanker": "/clanker/app"
+ "clanker.clanker": "/clanker/app",
+ "gw-handle": "/gw-handle/app"
 }
