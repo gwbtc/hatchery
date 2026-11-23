@@ -57,6 +57,10 @@
   first and they follow in the order it reaches them — the main-sequence rule
   one layer down. "Set up, define, use" is for the tight arms within a single
   core, not for a fiber and the helpers it drives.
+- Smaller before larger is the baseline taste, so a few small helpers and types
+  may come before the function they motivate when the whole cluster fits on one
+  screen — about fifty lines — and the reader takes it in at once. Past a
+  screen the motivator leads, so the reader is oriented before the descent.
 - A file reads top to bottom in order, and skims top to bottom too — the
   structures and their comments alone give the shape.
 - A name used before it is defined carries a hint where it is used: what you
