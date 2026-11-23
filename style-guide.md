@@ -40,13 +40,23 @@
 - A file says what it is in its own notation, is readable and editable without
   a compile, and diffs as the thing that changed. The same value spelled in
   Hoon makes a reader step through construction to find out what it says.
+- A constant the code is built around — the set it switches on, the fixed list
+  it iterates — is not that kind of data: it changes only when the code does,
+  and has no notation of its own, so it stays in the code as a named arm, not a
+  file. The test is whether a reader could change the value, and mean it,
+  without touching the code. Named either way — a constant hidden inside the
+  expression that uses it is found by no one, and written twice when two places
+  need it.
 
 ## Order
 
 - The main sequence comes first: high-level, structured, skimmable. Reading it
   is what motivates the helper core and the libraries under it.
 - The helper core comes after, referenced from above.
-- Within the helper core: set up, define, use.
+- This is recursive: a fiber motivates its own helpers and types, so it comes
+  first and they follow in the order it reaches them — the main-sequence rule
+  one layer down. "Set up, define, use" is for the tight arms within a single
+  core, not for a fiber and the helpers it drives.
 - A file reads top to bottom in order, and skims top to bottom too — the
   structures and their comments alone give the shape.
 - A name used before it is defined carries a hint where it is used: what you
@@ -68,9 +78,20 @@
     whole switch is visible at once. A branch that builds its result inline
     is twenty lines, and the next case is twenty lines further down.
 - No functions defined inline inside another expression.
-- A type comes before the code that uses it, with room around it.
+- A type local to one arm comes just before it, with room around it. A type
+  shared across a section follows the fiber that motivates it, met where it is
+  first used.
 - Build data where it is used, when it reads in one pass. Naming a value
   you could have written in place is indirection with nothing behind it.
+- A one-line arm that only renames another — `++ reply reply:web:nw` — is that
+  same indirection at the arm level: call the qualified name. An alias earns
+  its place only when it binds a door's sample or shortens a name used all
+  over, not to save the reader a `:face`.
+- The same holds for a helper that wraps a single expression used in one place:
+  inline it, with a comment. A helper arm earns its name by being used more
+  than once, or by lifting a genuinely multi-line or lower-level chunk out of
+  its caller — a fiber that drops below its level for a few lines has found a
+  helper, not one that names a single line.
 
 ## Comments
 ### Layout
@@ -153,6 +174,10 @@ beside one of them is the thing to change, not a thing to add to. What
 - JSON is read and written through `+jo` in `/lib/json-utils`: `get` `got`
   `gut` for a value by path, `deg` `dog` `dug` with a `dejs:format` reparser
   for a typed read, `put` `del` `mar` `gas` to build.
+- A failure you understand is handled where it happens — a mark checked before
+  the cast, a `~` for an absent field. `+mole` and `+mule` are for running code
+  whose failure you cannot scope — arbitrary input, a gate you did not write —
+  not a blanket catch over code you could have reasoned about.
 
 ## Process and Emergence
 
