@@ -202,3 +202,33 @@ beside one of them is the thing to change, not a thing to add to. What
 - Make it work before making it read. But a stepwise unfolding process
   preserves far more legibility than a blind random walk, so there is
   usually less to go back and fix than you expect.
+
+## Libraries
+
+- A library groups helpers under one purpose; the purpose is the test of
+  belonging. There are two kinds.
+- Affordances are pure: the operations that make one data structure usable for
+  its purpose — read it, build it, transform it — often a core or door bound to
+  the structure so its arms share it without passing it each time. A builder is
+  not a kind of its own. Building a structure is one of its affordances; the
+  arm that assembles it sits with the arm that reads it.
+- Orchestration is fibers: one multi-step asynchronous process driven toward a
+  single intention. It sits on the affordances beneath it, and breaks out
+  helper fibers so each level holds one abstraction — a fiber's own descent,
+  one layer further out.
+- Which library a helper lands in, and when one splits off another, is the seam
+  rule recursed. The construction a process passes around and the helper fibers
+  it drops to both stay with it until either is written twice, outgrows a name,
+  or becomes something another library would reach for — then cut out into its
+  own library, affordances or orchestration, beneath the one it came from. A
+  library cuts libraries; no kind has a rule of its own, the joints decide.
+- The name is the purpose, plainly: what it works on, or what it is for. A
+  reader meeting the import knows what kind of thing is inside. The name is
+  never how the file came to be — what was copied, what was shared — which says
+  what produced the file, not what it does. A name that fits one of several
+  things in a file is the file saying it is two.
+- The junk drawer is the failure: helpers swept together because the same
+  nexuses held them, under a name taken from the loudest. The joints of Process
+  read at the scale of a file — it cannot be named in a few words, its arms sit
+  at unrelated levels, no two of them touch the same structure or the same
+  process. Cut along those, and each piece takes a name that fits.
