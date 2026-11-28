@@ -49,7 +49,6 @@
 /<  clankerio   /lib/clankerio.hoon  ::  talking to the clankers
 /<  text        /lib/text.hoon       ::  templating
 /<  nw          /lib/nexus-web.hoon  ::  serving a page
-/<  json-utils  /lib/json-utils.hoon ::  reading json
 ::  The explorer's view of a trip.
 ::
 /&  panes-js     ./panes.js                ::  its panes: map, trip, todos, places, events, schedule

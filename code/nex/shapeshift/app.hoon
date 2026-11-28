@@ -113,7 +113,6 @@
 ++  reply         reply:web:nw
 ++  send-json     send-json:web:nw
 ++  serve-static  serve-static:web:nw
-++  jget          jget:nw
 ++  post-json     post-json:nw
 ++  file-entries  file-entries:nw
 ::  +serve: static shell + api:
@@ -153,7 +152,7 @@
     =/  jon=(unit json)  (post-json req)
     ?~  jon  (reply eyre-id 400 'json body required')
     ?.  ?=([%o *] u.jon)  (reply eyre-id 400 'object required')
-    =/  state=@t  (jget u.jon 'state')
+    =/  state=@t  (~(get-string jo:json-utils u.jon) 'state')
     =/  questions=(unit json)  (~(get by p.u.jon) 'questions')
     ?:  |(=('' state) ?=(~ questions))  (reply eyre-id 400 'state and questions required')
     ;<  t0=@da  bind:m  get-time:io
@@ -297,7 +296,7 @@
   ^-  form:m
   ;<  cfg=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'config.json'] ,json)
   =/  model=@t
-    =/  mo  ?~(cfg '' (jget u.cfg 'model'))
+    =/  mo  ?~(cfg '' (~(get-string jo:json-utils u.cfg) 'model'))
     ?:(=('' mo) 'claude-haiku-4-5-20251001' mo)
   =/  user=@t
     %-  crip
@@ -320,7 +319,7 @@
   ?^  (~(get by p.u.resp) 'error')
     (pure:m (fail (fall (~(get by p.u.resp) 'error') s+'error')))
   =/  text=@t  (first-text u.resp)
-  =/  stop=@t  (jget u.resp 'stop_reason')
+  =/  stop=@t  (~(get-string jo:json-utils u.resp) 'stop_reason')
   =/  answers=(unit json)  (extract-json text)
   ?~  answers
     =/  why=@t
@@ -338,7 +337,7 @@
     (fall (~(get by p.u.answers) 'answers') u.answers)
   %-  pure:m
   %-  pairs:enjs:format
-  :~  ['model' s+(jget u.resp 'model')]
+  :~  ['model' s+(~(get-string jo:json-utils u.resp) 'model')]
       ['answers' inner]
       ['usage' (fall (~(get by p.u.resp) 'usage') [%o ~])]
       ['source' s+'llm']
@@ -429,7 +428,7 @@
   =/  items=(list json)  p.u.content
   |-
   ?~  items  ''
-  ?:  =('text' (jget i.items 'type'))  (jget i.items 'text')
+  ?:  =('text' (~(get-string jo:json-utils i.items) 'type'))  (~(get-string jo:json-utils i.items) 'text')
   $(items t.items)
 ::  +extract-json: the outermost {...} in a text, parsed; tolerates
 ::  fences and prose around it

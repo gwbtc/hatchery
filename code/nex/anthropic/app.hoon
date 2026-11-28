@@ -123,7 +123,7 @@
   ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
   =/  jon=json  (fall (mole |.(!<(json q.sage))) *json)
   ?.  ?=([%o *] jon)  $
-  =/  id=@t  (jget jon 'id')
+  =/  id=@t  (~(get-string jo:json-utils jon) 'id')
   =/  body=(unit json)  (~(get by p.jon) 'body')
   ?:  |(=('' id) ?=(~ body))
     ~&  >>>  "%anthropic: poke missing id or body"
@@ -149,9 +149,9 @@
   ^-  form:m
   ;<  own=json  bind:m  (get-state-as:io ,json)
   ?.  ?=([%o *] own)  stay:m
-  ?.  =('pending' (jget own 'status'))  stay:m
+  ?.  =('pending' (~(get-string jo:json-utils own) 'status'))  stay:m
   =/  request=(unit json)  (~(get by p.own) 'request')
-  =/  caller=@t  (jget own 'from')
+  =/  caller=@t  (~(get-string jo:json-utils own) 'from')
   ?~  request  stay:m
   ;<  cfg=[key=@t url=@t]  bind:m  read-config
   ?:  =('' key.cfg)
@@ -219,15 +219,15 @@
   =/  usage=(unit json)  (~(get by p.resp) 'usage')
   ?~  usage  (pure:m '')
   ?.  ?=(%o -.u.usage)  (pure:m '')
-  =/  in-tok=@ud       (jnum u.usage 'input_tokens' 0)
-  =/  out-tok=@ud      (jnum u.usage 'output_tokens' 0)
-  =/  cache-read=@ud   (jnum u.usage 'cache_read_input_tokens' 0)
-  =/  cache-write=@ud  (jnum u.usage 'cache_creation_input_tokens' 0)
+  =/  in-tok=@ud       (~(get-number jo:json-utils u.usage) 'input_tokens' 0)
+  =/  out-tok=@ud      (~(get-number jo:json-utils u.usage) 'output_tokens' 0)
+  =/  cache-read=@ud   (~(get-number jo:json-utils u.usage) 'cache_read_input_tokens' 0)
+  =/  cache-write=@ud  (~(get-number jo:json-utils u.usage) 'cache_creation_input_tokens' 0)
   =/  searches=@ud
     =/  stu=(unit json)  (~(get by p.u.usage) 'server_tool_use')
     ?.  ?=([~ %o *] stu)  0
-    (jnum u.stu 'web_search_requests' 0)
-  =/  model=@t  (jget resp 'model')
+    (~(get-number jo:json-utils u.stu) 'web_search_requests' 0)
+  =/  model=@t  (~(get-string jo:json-utils resp) 'model')
   ::  stamp the DOLLAR cost now, at the rates in force at call time —
   ::  a ledger records what was spent, it does not reprice history
   ;<  urates=(unit json)  bind:m
@@ -256,12 +256,12 @@
     ==
   =/  new=json
     %-  pairs:enjs:format
-    :~  ['input-tokens' (numb:enjs:format (add in-tok (jnum cur 'input-tokens' 0)))]
-        ['output-tokens' (numb:enjs:format (add out-tok (jnum cur 'output-tokens' 0)))]
-        ['cache-read-tokens' (numb:enjs:format (add cache-read (jnum cur 'cache-read-tokens' 0)))]
-        ['cache-write-tokens' (numb:enjs:format (add cache-write (jnum cur 'cache-write-tokens' 0)))]
-        ['requests' (numb:enjs:format (add 1 (jnum cur 'requests' 0)))]
-        ['web-searches' (numb:enjs:format (add searches (jnum cur 'web-searches' 0)))]
+    :~  ['input-tokens' (numb:enjs:format (add in-tok (~(get-number jo:json-utils cur) 'input-tokens' 0)))]
+        ['output-tokens' (numb:enjs:format (add out-tok (~(get-number jo:json-utils cur) 'output-tokens' 0)))]
+        ['cache-read-tokens' (numb:enjs:format (add cache-read (~(get-number jo:json-utils cur) 'cache-read-tokens' 0)))]
+        ['cache-write-tokens' (numb:enjs:format (add cache-write (~(get-number jo:json-utils cur) 'cache-write-tokens' 0)))]
+        ['requests' (numb:enjs:format (add 1 (~(get-number jo:json-utils cur) 'requests' 0)))]
+        ['web-searches' (numb:enjs:format (add searches (~(get-number jo:json-utils cur) 'web-searches' 0)))]
         ['calls' [%a (scag 500 `(list json)`[entry old-calls])]]
     ==
   ;<  ~  bind:m  (over:io usage-road [[/ %json] new])
@@ -319,8 +319,8 @@
     ?~(best ~ (~(get by p.rates) u.best))
   ?~  ent  [0 0]
   ?.  ?=([%o *] u.ent)  [0 0]
-  :-  (parse-hundredths (jget u.ent 'in'))
-  (parse-hundredths (jget u.ent 'out'))
+  :-  (parse-hundredths (~(get-string jo:json-utils u.ent) 'in'))
+  (parse-hundredths (~(get-string jo:json-utils u.ent) 'out'))
 ::  +parse-hundredths: '5.00' -> 500; tolerant of missing decimals
 ::
 ++  parse-hundredths
@@ -339,15 +339,13 @@
   ;<  ucfg=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'config.json'] ,json)
   =/  cfg=json  (fall ucfg *json)
   ?.  ?=([%o *] cfg)  (pure:m ['' 'https://api.anthropic.com/v1/messages'])
-  =/  url=@t  (jget cfg 'url')
+  =/  url=@t  (~(get-string jo:json-utils cfg) 'url')
   %-  pure:m
-  :-  (jget cfg 'api-key')
+  :-  (~(get-string jo:json-utils cfg) 'api-key')
   ?:(=('' url) 'https://api.anthropic.com/v1/messages' url)
 ++  reply         reply:web:nw
 ++  send-json     send-json:web:nw
 ++  serve-static  serve-static:web:nw
-++  jget          jget:nw
-++  jnum          jnum:nw
 ++  post-json     post-json:nw
 ++  count-files   count-files:nw
 ++  file-entries  file-entries:nw
@@ -388,11 +386,11 @@
       %+  skim  (file-entries calls)
       |=([nam=@ta =sang:tarball] =('pending' (call-status sang)))
     ;<  ucfg=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'config.json'] ,json)
-    =/  synced=@ud  ?~(ucfg 0 (jnum u.ucfg 'rates-synced' 0))
+    =/  synced=@ud  ?~(ucfg 0 (~(get-number jo:json-utils u.ucfg) 'rates-synced' 0))
     %+  send-json  eyre-id
     %-  pairs:enjs:format
     :~  ['keySet' b+!=('' key.cfg)]
-        ['requests' (numb:enjs:format (jnum usage 'requests' 0))]
+        ['requests' (numb:enjs:format (~(get-number jo:json-utils usage) 'requests' 0))]
         ['pending' (numb:enjs:format pending)]
         ['syncedAt' (numb:enjs:format synced)]
     ==
@@ -417,8 +415,8 @@
       %-  pairs:enjs:format
       :~  ['id' s+id]
           ['label' s+id]
-          ['in' s+(jget r 'in')]
-          ['out' s+(jget r 'out')]
+          ['in' s+(~(get-string jo:json-utils r) 'in')]
+          ['out' s+(~(get-string jo:json-utils r) 'out')]
           ['context' (numb:enjs:format 0)]
       ==
     (send-json eyre-id (pairs:enjs:format ~[['models' [%a rows]]]))
@@ -503,7 +501,7 @@
     =/  jon=(unit json)  (post-json req)
     ?~  jon  (reply eyre-id 400 'json body required')
     ?.  ?=([%o *] u.jon)  (reply eyre-id 400 'object required')
-    =/  id=@t  (jget u.jon 'id')
+    =/  id=@t  (~(get-string jo:json-utils u.jon) 'id')
     ?:  =('' id)  (reply eyre-id 400 'id required')
     ;<  *  bind:m
       (cull-soft:io [%| 1 %& /calls (crip "{(trip id)}.json")])

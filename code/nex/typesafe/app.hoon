@@ -115,7 +115,7 @@
   ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
   =/  jon=json  (fall (mole |.(!<(json q.sage))) *json)
   ?.  ?=([%o *] jon)  $
-  =/  id=@t  (jget jon 'id')
+  =/  id=@t  (~(get-string jo:json-utils jon) 'id')
   =/  body=(unit json)  (~(get by p.jon) 'body')
   ?:  |(=('' id) ?=(~ body))
     ~&  >>>  "%typesafe: poke missing id or body"
@@ -141,9 +141,9 @@
   ^-  form:m
   ;<  own=json  bind:m  (get-state-as:io ,json)
   ?.  ?=([%o *] own)  stay:m
-  ?.  =('pending' (jget own 'status'))  stay:m
+  ?.  =('pending' (~(get-string jo:json-utils own) 'status'))  stay:m
   =/  request=(unit json)  (~(get by p.own) 'request')
-  =/  caller=@t  (jget own 'from')
+  =/  caller=@t  (~(get-string jo:json-utils own) 'from')
   ?~  request  stay:m
   ;<  cfg=[key=@t model=@t]  bind:m  read-config
   ?:  =('' key.cfg)
@@ -191,9 +191,9 @@
   =/  usage=(unit json)  (~(get by p.resp) 'usage')
   ?~  usage  (pure:m ~)
   ?.  ?=(%o -.u.usage)  (pure:m ~)
-  =/  in-tok=@ud   (jnum u.usage 'input_tokens' 0)
-  =/  out-tok=@ud  (jnum u.usage 'output_tokens' 0)
-  =/  model=@t  (jget resp 'model')
+  =/  in-tok=@ud   (~(get-number jo:json-utils u.usage) 'input_tokens' 0)
+  =/  out-tok=@ud  (~(get-number jo:json-utils u.usage) 'output_tokens' 0)
+  =/  model=@t  (~(get-string jo:json-utils resp) 'model')
   ::  stamp the DOLLAR cost now, at the rate in force at call time
   ;<  urates=(unit json)  bind:m
     (peek-as:io (cord-to-road:tarball '../rates.json') ,json)
@@ -217,9 +217,9 @@
     ==
   =/  new=json
     %-  pairs:enjs:format
-    :~  ['input-tokens' (numb:enjs:format (add in-tok (jnum cur 'input-tokens' 0)))]
-        ['output-tokens' (numb:enjs:format (add out-tok (jnum cur 'output-tokens' 0)))]
-        ['requests' (numb:enjs:format (add 1 (jnum cur 'requests' 0)))]
+    :~  ['input-tokens' (numb:enjs:format (add in-tok (~(get-number jo:json-utils cur) 'input-tokens' 0)))]
+        ['output-tokens' (numb:enjs:format (add out-tok (~(get-number jo:json-utils cur) 'output-tokens' 0)))]
+        ['requests' (numb:enjs:format (add 1 (~(get-number jo:json-utils cur) 'requests' 0)))]
         ['calls' [%a (scag 500 `(list json)`[entry old-calls])]]
     ==
   (over:io usage-road [[/ %json] new])
@@ -269,7 +269,7 @@
     ?~(best ~ (~(get by p.rates) u.best))
   ?~  ent  0
   ?.  ?=([%o *] u.ent)  0
-  (parse-hundredths (jget u.ent 'in'))
+  (parse-hundredths (~(get-string jo:json-utils u.ent) 'in'))
 ::  +parse-hundredths: '42.00' -> 4200; tolerant of missing decimals
 ::
 ++  parse-hundredths
@@ -288,13 +288,11 @@
   ;<  ucfg=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'config.json'] ,json)
   =/  cfg=json  (fall ucfg *json)
   ?.  ?=([%o *] cfg)  (pure:m ['' 'jev-latest'])
-  =/  model=@t  (jget cfg 'model')
-  (pure:m [(jget cfg 'api-key') ?:(=('' model) 'jev-latest' model)])
+  =/  model=@t  (~(get-string jo:json-utils cfg) 'model')
+  (pure:m [(~(get-string jo:json-utils cfg) 'api-key') ?:(=('' model) 'jev-latest' model)])
 ++  reply         reply:web:nw
 ++  send-json     send-json:web:nw
 ++  serve-static  serve-static:web:nw
-++  jget          jget:nw
-++  jnum          jnum:nw
 ++  post-json     post-json:nw
 ++  file-entries  file-entries:nw
 ++  call-status   call-status:nw
@@ -340,12 +338,12 @@
       %+  skim  (file-entries calls)
       |=([nam=@ta =sang:tarball] =('pending' (call-status sang)))
     ;<  ucfg=(unit json)  bind:m  (peek-as:io [%| 1 %& / %'config.json'] ,json)
-    =/  synced=@ud  ?~(ucfg 0 (jnum u.ucfg 'models-synced' 0))
+    =/  synced=@ud  ?~(ucfg 0 (~(get-number jo:json-utils u.ucfg) 'models-synced' 0))
     %+  send-json  eyre-id
     %-  pairs:enjs:format
     :~  ['keySet' b+!=('' key.cfg)]
         ['model' s+model.cfg]
-        ['requests' (numb:enjs:format (jnum usage 'requests' 0))]
+        ['requests' (numb:enjs:format (~(get-number jo:json-utils usage) 'requests' 0))]
         ['pending' (numb:enjs:format pending)]
         ['models' (numb:enjs:format models)]
         ['syncedAt' (numb:enjs:format synced)]
@@ -410,11 +408,11 @@
       %+  roll  items
       |=  [mod=json acc=(map @t json)]
       ?.  ?=([%o *] mod)  acc
-      =/  id=@t  =/(i (jget mod 'id') ?:(=('' i) (jget mod 'name') i))
+      =/  id=@t  =/(i (~(get-string jo:json-utils mod) 'id') ?:(=('' i) (~(get-string jo:json-utils mod) 'name') i))
       ?:  =('' id)  acc
       %+  ~(put by acc)  id
       %-  pairs:enjs:format
-      :~  ['description' s+(jget mod 'description')]
+      :~  ['description' s+(~(get-string jo:json-utils mod) 'description')]
           ['released' (fall (~(get by p.mod) 'release_date') (fall (~(get by p.mod) 'released_at') s+''))]
       ==
     ;<  ~  bind:m  (over:io [%| 1 %& / %'models.json'] [[/ %json] `json`[%o models]])
@@ -452,7 +450,7 @@
     =/  jon=(unit json)  (post-json req)
     ?~  jon  (reply eyre-id 400 'json body required')
     ?.  ?=([%o *] u.jon)  (reply eyre-id 400 'object required')
-    =/  id=@t  (jget u.jon 'id')
+    =/  id=@t  (~(get-string jo:json-utils u.jon) 'id')
     ?:  =('' id)  (reply eyre-id 400 'id required')
     ;<  *  bind:m
       (cull-soft:io [%| 1 %& /calls (crip "{(trip id)}.json")])

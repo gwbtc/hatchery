@@ -155,7 +155,7 @@
   ;<  [=from:fiber:nexus =sage:tarball]  bind:m  take-poke-from:io
   =/  jon=json  (fall (mole |.(!<(json q.sage))) *json)
   ?.  ?=([%o *] jon)  $
-  =/  id=@t  (jget jon 'id')
+  =/  id=@t  (~(get-string jo:json-utils jon) 'id')
   =/  body=(unit json)  (~(get by p.jon) 'body')
   ?:  |(=('' id) ?=(~ body))
     ~&  >>>  "%s3: poke missing id or body"
@@ -180,9 +180,9 @@
   ^-  form:m
   ;<  own=json  bind:m  (get-state-as:io ,json)
   ?.  ?=([%o *] own)  stay:m
-  ?.  =('pending' (jget own 'status'))  stay:m
+  ?.  =('pending' (~(get-string jo:json-utils own) 'status'))  stay:m
   =/  request=(unit json)  (~(get by p.own) 'request')
-  =/  caller=@t  (jget own 'from')
+  =/  caller=@t  (~(get-string jo:json-utils own) 'from')
   ?~  request  stay:m
   ;<  resp=json  bind:m  (run-op rail u.request)
   ;<  ~  bind:m  (log-activity rail u.request resp caller)
@@ -218,9 +218,9 @@
   |=  [=rail:tarball req=json]
   =/  m  (fiber:fiber:nexus ,json)
   ^-  form:m
-  =/  op=@t  (jget req 'op')
+  =/  op=@t  (~(get-string jo:json-utils req) 'op')
   ;<  bks=buckets  bind:m  (read-buckets rail)
-  =/  bucket-name=@t  (jget req 'bucket')
+  =/  bucket-name=@t  (~(get-string jo:json-utils req) 'bucket')
   =/  cfg=(unit s3-config)  (~(get by bks) bucket-name)
   ?~  cfg
     %-  pure:m
@@ -230,11 +230,11 @@
   ?:  |(=('' access-key.u.cfg) =('' secret-key.u.cfg) =('' bucket.u.cfg) =('' endpoint.u.cfg))
     (pure:m (err (crip "bucket {(trip bucket-name)} is missing credentials")))
   ;<  mts=mounts  bind:m  (read-mounts rail)
-  =/  path=@t  (jget req 'path')
+  =/  path=@t  (~(get-string jo:json-utils req) 'path')
   =/  base=^path  /mounts/[bucket-name]
   ?+    op  (pure:m (err (crip "unknown op: {(trip op)}")))
       %list
-    ;<  keys=(each (list @t) @t)  bind:m  (list-keys u.cfg (jget req 'prefix'))
+    ;<  keys=(each (list @t) @t)  bind:m  (list-keys u.cfg (~(get-string jo:json-utils req) 'prefix'))
     ?:  ?=(%| -.keys)  (pure:m (err p.keys))
     %-  pure:m
     %-  pairs:enjs:format
@@ -243,7 +243,7 @@
     ==
   ::
       %delete
-    =/  key=@t  (jget req 'key')
+    =/  key=@t  (~(get-string jo:json-utils req) 'key')
     ?:  =('' key)  (pure:m (err 'key required'))
     ;<  resp=client-response:iris  bind:m  (s3-request u.cfg 'DELETE' key '' ~)
     ?.  ?=(%finished -.resp)  (pure:m (err 'delete failed'))
@@ -416,17 +416,17 @@
   ;<  now=@da  bind:m  get-time:io
   =/  target=@t
     =/  what=@t
-      =/  key=@t  (jget req 'key')
+      =/  key=@t  (~(get-string jo:json-utils req) 'key')
       ?.  =('' key)  key
-      =/  path=@t  (jget req 'path')
+      =/  path=@t  (~(get-string jo:json-utils req) 'path')
       ?.  =('' path)  path
-      (jget req 'prefix')
-    ?:  =('' what)  (jget req 'bucket')
-    (rap 3 ~[(jget req 'bucket') ' ' what])
-  =/  error=@t  (jget resp 'error')
+      (~(get-string jo:json-utils req) 'prefix')
+    ?:  =('' what)  (~(get-string jo:json-utils req) 'bucket')
+    (rap 3 ~[(~(get-string jo:json-utils req) 'bucket') ' ' what])
+  =/  error=@t  (~(get-string jo:json-utils resp) 'error')
   =/  entry=json
     %-  pairs:enjs:format
-    :~  ['op' s+(jget req 'op')]
+    :~  ['op' s+(~(get-string jo:json-utils req) 'op')]
         ['target' s+target]
         ['ok' b+=('' error)]
         ['error' s+error]
@@ -435,7 +435,7 @@
     ==
   =/  new=json
     %-  pairs:enjs:format
-    :~  ['requests' (numb:enjs:format (add 1 (jnum cur 'requests' 0)))]
+    :~  ['requests' (numb:enjs:format (add 1 (~(get-number jo:json-utils cur) 'requests' 0)))]
         ['log' [%a (scag 500 `(list json)`[entry old])]]
     ==
   (over:io road [[/ %json] new])
@@ -461,11 +461,11 @@
   ?.  ?=([%o *] v)  ~
   :-  ~
   :-  k
-  :*  (jget v 'access-key')
-      (jget v 'secret-key')
-      (jget v 'region')
-      (jget v 'bucket')
-      (jget v 'endpoint')
+  :*  (~(get-string jo:json-utils v) 'access-key')
+      (~(get-string jo:json-utils v) 'secret-key')
+      (~(get-string jo:json-utils v) 'region')
+      (~(get-string jo:json-utils v) 'bucket')
+      (~(get-string jo:json-utils v) 'endpoint')
   ==
 ::
 ++  bucket-json
@@ -571,8 +571,6 @@
     $(t t.t, acc [(crip (flop cur)) acc], cur ~)
   $(t t.t, cur [i.t cur])
 ::
-++  jget          jget:nw
-++  jnum          jnum:nw
 ++  post-json     post-json:nw
 ++  count-files   count-files:nw
 ++  file-entries  file-entries:nw
@@ -628,7 +626,7 @@
     :~  ['buckets' (numb:enjs:format ~(wyt by bks))]
         ['mounts' (numb:enjs:format (roll (turn ~(tap by mts) |=([* ps=(set @t)] ~(wyt in ps))) add))]
         ['pending' (numb:enjs:format pending)]
-        ['requests' (numb:enjs:format (jnum act 'requests' 0))]
+        ['requests' (numb:enjs:format (~(get-number jo:json-utils act) 'requests' 0))]
     ==
   ::
       [%api %buckets ~]
@@ -640,12 +638,12 @@
     =/  jon=(unit json)  (post-json req)
     ?~  jon  (reply eyre-id 400 'json body required')
     ?.  ?=([%o *] u.jon)  (reply eyre-id 400 'object required')
-    =/  name=@t  (jget u.jon 'name')
+    =/  name=@t  (~(get-string jo:json-utils u.jon) 'name')
     ?:  =('' name)  (reply eyre-id 400 'name required')
     ?~  (rush name sym)  (reply eyre-id 400 'name must be a lowercase term')
     ;<  bks=buckets  bind:m  (read-buckets rail)
     =/  cur=s3-config  (fall (~(get by bks) name) *s3-config)
-    =/  pick  |=([k=@t old=@t] =/(v (jget u.jon k) ?:(=('' v) old v)))
+    =/  pick  |=([k=@t old=@t] =/(v (~(get-string jo:json-utils u.jon) k) ?:(=('' v) old v)))
     =/  new=s3-config
       :*  (pick 'access-key' access-key.cur)
           (pick 'secret-key' secret-key.cur)
@@ -659,7 +657,7 @@
       [%api %bucket-remove ~]
     =/  jon=(unit json)  (post-json req)
     ?~  jon  (reply eyre-id 400 'json body required')
-    =/  name=@t  (jget u.jon 'name')
+    =/  name=@t  (~(get-string jo:json-utils u.jon) 'name')
     ?:  =('' name)  (reply eyre-id 400 'name required')
     ;<  bks=buckets  bind:m  (read-buckets rail)
     ;<  ~  bind:m  (write-buckets rail (~(del by bks) name))
@@ -688,8 +686,8 @@
     =/  jon=(unit json)  (post-json req)
     ?~  jon  (reply eyre-id 400 'json body required')
     ?.  ?=([%o *] u.jon)  (reply eyre-id 400 'object required')
-    =/  bucket-name=@t  (jget u.jon 'bucket')
-    =/  path=@t  (jget u.jon 'path')
+    =/  bucket-name=@t  (~(get-string jo:json-utils u.jon) 'bucket')
+    =/  path=@t  (~(get-string jo:json-utils u.jon) 'path')
     ;<  bks=buckets  bind:m  (read-buckets rail)
     ?.  (~(has by bks) bucket-name)  (reply eyre-id 400 'unknown bucket')
     ;<  mts=mounts  bind:m  (read-mounts rail)
@@ -701,8 +699,8 @@
     =/  jon=(unit json)  (post-json req)
     ?~  jon  (reply eyre-id 400 'json body required')
     ?.  ?=([%o *] u.jon)  (reply eyre-id 400 'object required')
-    =/  bucket-name=@t  (jget u.jon 'bucket')
-    =/  path=@t  (jget u.jon 'path')
+    =/  bucket-name=@t  (~(get-string jo:json-utils u.jon) 'bucket')
+    =/  path=@t  (~(get-string jo:json-utils u.jon) 'path')
     ;<  mts=mounts  bind:m  (read-mounts rail)
     =/  cur=(set @t)  (fall (~(get by mts) bucket-name) ~)
     ;<  ~  bind:m  (write-mounts rail (~(put by mts) bucket-name (~(del in cur) path)))
@@ -761,7 +759,7 @@
       [%api %call-cull ~]
     =/  jon=(unit json)  (post-json req)
     ?~  jon  (reply eyre-id 400 'json body required')
-    =/  id=@t  (jget u.jon 'id')
+    =/  id=@t  (~(get-string jo:json-utils u.jon) 'id')
     ?:  =('' id)  (reply eyre-id 400 'id required')
     ;<  *  bind:m  (cull-soft:io (at rail [%& /calls (crip "{(trip id)}.json")]))
     (reply eyre-id 200 'ok')
